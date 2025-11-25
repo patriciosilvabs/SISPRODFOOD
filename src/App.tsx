@@ -8,6 +8,10 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Insumos from "./pages/Insumos";
+import ItensPorcionados from "./pages/ItensPorcionados";
+import Producao from "./pages/Producao";
+import Lojas from "./pages/Lojas";
+import Configuracoes from "./pages/Configuracoes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +38,38 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
                   <Insumos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/itens-porcionados"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ItensPorcionados />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/producao"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <Producao />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/lojas"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
+                  <Lojas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/configuracoes"
+              element={
+                <ProtectedRoute requiredRoles={['Admin']}>
+                  <Configuracoes />
                 </ProtectedRoute>
               }
             />
