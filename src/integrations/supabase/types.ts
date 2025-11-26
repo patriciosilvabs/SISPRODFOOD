@@ -526,6 +526,8 @@ export type Database = {
           nome: string
           perda_percentual_adicional: number | null
           peso_unitario_g: number
+          tempo_timer_minutos: number | null
+          timer_ativo: boolean | null
           unidade_medida: Database["public"]["Enums"]["unidade_medida"]
           updated_at: string | null
         }
@@ -540,6 +542,8 @@ export type Database = {
           nome: string
           perda_percentual_adicional?: number | null
           peso_unitario_g: number
+          tempo_timer_minutos?: number | null
+          timer_ativo?: boolean | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
         }
@@ -554,6 +558,8 @@ export type Database = {
           nome?: string
           perda_percentual_adicional?: number | null
           peso_unitario_g?: number
+          tempo_timer_minutos?: number | null
+          timer_ativo?: boolean | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
         }
