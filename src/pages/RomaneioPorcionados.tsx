@@ -35,6 +35,7 @@ interface ItemSelecionado {
   item_id: string;
   item_nome: string;
   quantidade: number;
+  peso_total_kg: number;
   producao_registro_ids: string[];
 }
 
@@ -540,6 +541,7 @@ const RomaneioPorcionados = () => {
         item_id: item.item_id,
         item_nome: item.item_nome,
         quantidade: item.quantidade_disponivel,
+        peso_total_kg: 0,
         producao_registro_ids: item.producao_registro_ids
       }
     ]);
@@ -567,6 +569,19 @@ const RomaneioPorcionados = () => {
     setItensSelecionados(
       itensSelecionados.map(i =>
         i.item_id === item_id ? { ...i, quantidade } : i
+      )
+    );
+  };
+
+  const updatePesoTotal = (item_id: string, peso_total_kg: number) => {
+    if (peso_total_kg < 0) {
+      toast.error('Peso não pode ser negativo');
+      return;
+    }
+
+    setItensSelecionados(
+      itensSelecionados.map(i =>
+        i.item_id === item_id ? { ...i, peso_total_kg } : i
       )
     );
   };
@@ -910,7 +925,7 @@ const RomaneioPorcionados = () => {
                           const maxQuantidade = itemDisponivel?.quantidade_disponivel || 0;
                           
                           return (
-                            <div key={item.item_id} className="space-y-2 p-3 border rounded-lg">
+                            <div key={item.item_id} className="space-y-3 p-3 border rounded-lg">
                               <div className="flex items-center justify-between">
                                 <div className="flex-1">
                                   <p className="font-medium text-sm">{item.item_nome}</p>
@@ -924,14 +939,44 @@ const RomaneioPorcionados = () => {
                                   <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
                               </div>
-                              <Input
-                                type="number"
-                                min={1}
-                                max={maxQuantidade}
-                                value={item.quantidade}
-                                onChange={(e) => updateQuantidade(item.item_id, parseInt(e.target.value) || 0)}
-                                className="h-8"
-                              />
+                              
+                              <div className="space-y-2">
+                                <div className="space-y-1">
+                                  <Label htmlFor={`quantidade-${item.item_id}`} className="text-xs">
+                                    Quantidade (un)
+                                  </Label>
+                                  <Input
+                                    id={`quantidade-${item.item_id}`}
+                                    type="number"
+                                    min={1}
+                                    max={maxQuantidade}
+                                    value={item.quantidade}
+                                    onChange={(e) => updateQuantidade(item.item_id, parseInt(e.target.value) || 0)}
+                                    className="h-9"
+                                  />
+                                  <p className="text-xs text-muted-foreground italic">
+                                    {numberToWords(item.quantidade, 'unidade')}
+                                  </p>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <Label htmlFor={`peso-${item.item_id}`} className="text-xs">
+                                    Peso Total (kg)
+                                  </Label>
+                                  <Input
+                                    id={`peso-${item.item_id}`}
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    value={item.peso_total_kg}
+                                    onChange={(e) => updatePesoTotal(item.item_id, parseFloat(e.target.value) || 0)}
+                                    className="h-9"
+                                  />
+                                  <p className="text-xs text-muted-foreground italic">
+                                    {numberToWords(item.peso_total_kg, 'kg')}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           );
                         })
@@ -981,9 +1026,12 @@ const RomaneioPorcionados = () => {
                     <Label>Itens do Romaneio ({itensSelecionados.length})</Label>
                     <div className="border rounded-lg divide-y">
                       {itensSelecionados.map(item => (
-                        <div key={item.item_id} className="p-3 flex justify-between">
+                        <div key={item.item_id} className="p-3 flex justify-between items-center">
                           <span className="font-medium">{item.item_nome}</span>
-                          <span className="text-muted-foreground">{item.quantidade} un</span>
+                          <div className="text-right">
+                            <div className="text-muted-foreground">{item.quantidade} un</div>
+                            <div className="text-xs text-muted-foreground">{item.peso_total_kg.toFixed(1)} kg</div>
+                          </div>
                         </div>
                       ))}
                     </div>
