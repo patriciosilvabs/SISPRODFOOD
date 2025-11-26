@@ -37,6 +37,8 @@ interface ProducaoRegistro {
   data_fim: string | null;
   usuario_nome: string;
   detalhes_lojas?: DetalheLojaProducao[];
+  unidade_medida?: string;
+  equivalencia_traco?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -72,7 +74,7 @@ const ResumoDaProducao = () => {
   const getItemInsumoData = async (itemId: string) => {
     const { data, error } = await supabase
       .from('itens_porcionados')
-      .select('insumo_vinculado_id, baixar_producao_inicio, peso_unitario_g, nome')
+      .select('insumo_vinculado_id, baixar_producao_inicio, peso_unitario_g, nome, unidade_medida, equivalencia_traco, consumo_por_traco_g')
       .eq('id', itemId)
       .maybeSingle();
 
@@ -176,6 +178,15 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
+      // Buscar dados dos itens (unidade_medida, equivalencia_traco) para exibir traços
+      const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
+      const { data: itensData } = await supabase
+        .from('itens_porcionados')
+        .select('id, unidade_medida, equivalencia_traco')
+        .in('id', itemIds);
+
+      const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
+
       // Organizar registros por status
       const organizedColumns: KanbanColumns = {
         a_produzir: [],
@@ -185,6 +196,7 @@ const ResumoDaProducao = () => {
       };
 
       data?.forEach((registro) => {
+        const itemInfo = itensMap.get(registro.item_id);
         let targetColumn: StatusColumn = 'a_produzir';
         const status = registro.status || 'a_produzir';
         
@@ -199,12 +211,14 @@ const ResumoDaProducao = () => {
           targetColumn = 'finalizado';
         }
         
-        // Cast detalhes_lojas from Json to array
+        // Cast detalhes_lojas from Json to array e adicionar dados do item
         const registroTyped: ProducaoRegistro = {
           ...registro,
           detalhes_lojas: Array.isArray(registro.detalhes_lojas) 
             ? (registro.detalhes_lojas as unknown as DetalheLojaProducao[])
-            : undefined
+            : undefined,
+          unidade_medida: itemInfo?.unidade_medida,
+          equivalencia_traco: itemInfo?.equivalencia_traco,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -311,9 +325,17 @@ const ResumoDaProducao = () => {
       // Buscar dados do item para verificar se deve baixar estoque no fim
       const itemData = await getItemInsumoData(selectedRegistro.item_id);
       
-      // Se baixar_producao_inicio = false e tem insumo vinculado, deduzir estoque
+      // Se baixar_producao_inicio = false e tem insumo vinculado, deduzir estoque principal
       if (itemData && !itemData.baixar_producao_inicio && itemData.insumo_vinculado_id) {
-        const quantidadeKg = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
+        let quantidadeKg = 0;
+        
+        // Calcular quantidade baseado em traços ou unidades
+        if (itemData.unidade_medida === 'traco' && itemData.consumo_por_traco_g && itemData.equivalencia_traco) {
+          const tracos = data.unidades_reais / itemData.equivalencia_traco;
+          quantidadeKg = (tracos * itemData.consumo_por_traco_g) / 1000; // converter g para kg
+        } else {
+          quantidadeKg = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
+        }
         
         await movimentarEstoqueInsumo(
           itemData.insumo_vinculado_id,
@@ -321,6 +343,51 @@ const ResumoDaProducao = () => {
           selectedRegistro.item_nome,
           'saida'
         );
+      }
+
+      // Buscar e debitar insumos extras
+      const { data: insumosExtras, error: extrasError } = await supabase
+        .from('insumos_extras')
+        .select('*')
+        .eq('item_porcionado_id', selectedRegistro.item_id);
+
+      if (extrasError) {
+        console.error('Erro ao buscar insumos extras:', extrasError);
+      } else if (insumosExtras && insumosExtras.length > 0) {
+        // Debitar cada insumo extra
+        for (const extra of insumosExtras) {
+          let quantidadeTotal = 0;
+          
+          // Calcular quantidade baseado em traços ou unidades
+          if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
+            const tracos = data.unidades_reais / itemData.equivalencia_traco;
+            quantidadeTotal = tracos * extra.quantidade;
+          } else {
+            quantidadeTotal = data.unidades_reais * extra.quantidade;
+          }
+          
+          // Converter para kg se necessário
+          let quantidadeKg = quantidadeTotal;
+          if (extra.unidade === 'g') {
+            quantidadeKg = quantidadeTotal / 1000;
+          } else if (extra.unidade === 'l') {
+            quantidadeKg = quantidadeTotal; // manter em litros
+          } else if (extra.unidade === 'ml') {
+            quantidadeKg = quantidadeTotal / 1000;
+          }
+          
+          try {
+            await movimentarEstoqueInsumo(
+              extra.insumo_id,
+              quantidadeKg,
+              `${selectedRegistro.item_nome} (extra)`,
+              'saida'
+            );
+          } catch (error) {
+            console.error(`Erro ao debitar insumo extra ${extra.nome}:`, error);
+            toast.error(`Erro ao debitar ${extra.nome}`);
+          }
+        }
       }
 
       const { error } = await supabase

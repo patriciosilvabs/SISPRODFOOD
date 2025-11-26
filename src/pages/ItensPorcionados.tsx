@@ -48,14 +48,31 @@ interface ItemPorcionado {
 interface Insumo {
   id: string;
   nome: string;
+  unidade_medida: UnidadeMedida;
+}
+
+interface InsumoExtra {
+  id?: string;
+  insumo_id: string;
+  nome: string;
+  quantidade: number;
+  unidade: UnidadeMedida;
 }
 
 const ItensPorcionados = () => {
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [insumosExtras, setInsumosExtras] = useState<InsumoExtra[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
+  
+  // Estado para novo insumo extra
+  const [novoInsumoExtra, setNovoInsumoExtra] = useState({
+    insumo_id: '',
+    quantidade: '',
+    unidade: 'kg' as UnidadeMedida,
+  });
   const [formData, setFormData] = useState({
     nome: '',
     peso_unitario_g: '0',
@@ -82,7 +99,7 @@ const ItensPorcionados = () => {
 
       const { data: insumosData, error: insumosError } = await supabase
         .from('insumos')
-        .select('id, nome')
+        .select('id, nome, unidade_medida')
         .order('nome');
 
       if (insumosError) throw insumosError;
@@ -200,7 +217,72 @@ const ItensPorcionados = () => {
     }
   };
 
-  const openEditDialog = (item: ItemPorcionado) => {
+  const loadInsumosExtras = async (itemId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('insumos_extras')
+        .select('*')
+        .eq('item_porcionado_id', itemId);
+
+      if (error) throw error;
+      setInsumosExtras(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar insumos extras:', error);
+      toast.error('Erro ao carregar insumos extras');
+    }
+  };
+
+  const adicionarInsumoExtra = async () => {
+    if (!editingItem || !novoInsumoExtra.insumo_id || !novoInsumoExtra.quantidade) {
+      toast.error('Preencha todos os campos do insumo extra');
+      return;
+    }
+
+    try {
+      const insumoSelecionado = insumos.find(i => i.id === novoInsumoExtra.insumo_id);
+      if (!insumoSelecionado) return;
+
+      const { error } = await supabase
+        .from('insumos_extras')
+        .insert({
+          item_porcionado_id: editingItem.id,
+          insumo_id: novoInsumoExtra.insumo_id,
+          nome: insumoSelecionado.nome,
+          quantidade: parseFloat(novoInsumoExtra.quantidade),
+          unidade: novoInsumoExtra.unidade,
+        });
+
+      if (error) throw error;
+
+      toast.success('Insumo extra adicionado');
+      await loadInsumosExtras(editingItem.id);
+      setNovoInsumoExtra({ insumo_id: '', quantidade: '', unidade: 'kg' });
+    } catch (error) {
+      console.error('Erro ao adicionar insumo extra:', error);
+      toast.error('Erro ao adicionar insumo extra');
+    }
+  };
+
+  const removerInsumoExtra = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('insumos_extras')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast.success('Insumo extra removido');
+      if (editingItem) {
+        await loadInsumosExtras(editingItem.id);
+      }
+    } catch (error) {
+      console.error('Erro ao remover insumo extra:', error);
+      toast.error('Erro ao remover insumo extra');
+    }
+  };
+
+  const openEditDialog = async (item: ItemPorcionado) => {
     setEditingItem(item);
     setFormData({
       nome: item.nome,
@@ -398,6 +480,112 @@ const ItensPorcionados = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Seção de Insumos Adicionais */}
+                  {editingItem && (
+                    <div className="space-y-4 pt-4 border-t">
+                      <div>
+                        <h4 className="font-semibold mb-2">Insumos Adicionais (Baixa na Finalização)</h4>
+                        <p className="text-xs text-muted-foreground mb-4">
+                          Configure insumos extras que serão debitados automaticamente quando a produção for finalizada
+                        </p>
+                      </div>
+
+                      {/* Lista de insumos extras */}
+                      {insumosExtras.length > 0 && (
+                        <div className="space-y-2 mb-4">
+                          {insumosExtras.map((extra) => (
+                            <div key={extra.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{extra.nome}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {extra.quantidade} {extra.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => extra.id && removerInsumoExtra(extra.id)}
+                              >
+                                ✕
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Formulário para adicionar novo insumo extra */}
+                      <div className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-5 space-y-2">
+                          <Label>Insumo</Label>
+                          <Select
+                            value={novoInsumoExtra.insumo_id}
+                            onValueChange={(value) => 
+                              setNovoInsumoExtra({ ...novoInsumoExtra, insumo_id: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {insumos.map((insumo) => (
+                                <SelectItem key={insumo.id} value={insumo.id}>
+                                  {insumo.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="col-span-3 space-y-2">
+                          <Label>Quantidade</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={novoInsumoExtra.quantidade}
+                            onChange={(e) => 
+                              setNovoInsumoExtra({ ...novoInsumoExtra, quantidade: e.target.value })
+                            }
+                            placeholder="0"
+                          />
+                        </div>
+
+                        <div className="col-span-2 space-y-2">
+                          <Label>Unidade</Label>
+                          <Select
+                            value={novoInsumoExtra.unidade}
+                            onValueChange={(value: UnidadeMedida) => 
+                              setNovoInsumoExtra({ ...novoInsumoExtra, unidade: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="kg">kg</SelectItem>
+                              <SelectItem value="g">g</SelectItem>
+                              <SelectItem value="l">l</SelectItem>
+                              <SelectItem value="ml">ml</SelectItem>
+                              <SelectItem value="unidade">un</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={adicionarInsumoExtra}
+                            className="w-full"
+                          >
+                            + Adicionar
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter className="mt-6">
