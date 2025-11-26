@@ -101,7 +101,7 @@ const ItensPorcionados = () => {
       const data = {
         nome: formData.nome,
         peso_unitario_g: parseFloat(formData.peso_unitario_g),
-        insumo_vinculado_id: formData.insumo_vinculado_id || null,
+        insumo_vinculado_id: formData.insumo_vinculado_id === 'none' ? null : formData.insumo_vinculado_id || null,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
@@ -154,7 +154,7 @@ const ItensPorcionados = () => {
     setFormData({
       nome: item.nome,
       peso_unitario_g: item.peso_unitario_g.toString(),
-      insumo_vinculado_id: item.insumo_vinculado_id || '',
+      insumo_vinculado_id: item.insumo_vinculado_id || 'none',
       unidade_medida: item.unidade_medida,
       equivalencia_traco: item.equivalencia_traco?.toString() || '',
       perda_percentual_adicional: item.perda_percentual_adicional.toString(),
@@ -167,7 +167,7 @@ const ItensPorcionados = () => {
     setFormData({
       nome: '',
       peso_unitario_g: '0',
-      insumo_vinculado_id: '',
+      insumo_vinculado_id: 'none',
       unidade_medida: 'unidade',
       equivalencia_traco: '',
       perda_percentual_adicional: '0',
@@ -280,7 +280,7 @@ const ItensPorcionados = () => {
                         <SelectValue placeholder="Selecione um insumo" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Nenhum</SelectItem>
+                        <SelectItem value="none">Nenhum</SelectItem>
                         {insumos.map((insumo) => (
                           <SelectItem key={insumo.id} value={insumo.id}>
                             {insumo.nome}
