@@ -891,9 +891,11 @@ export type Database = {
           id: string
           item_nome: string
           item_porcionado_id: string | null
+          peso_recebido_kg: number | null
           peso_total_kg: number | null
           producao_registro_id: string | null
           quantidade: number
+          quantidade_recebida: number | null
           romaneio_id: string
         }
         Insert: {
@@ -901,9 +903,11 @@ export type Database = {
           id?: string
           item_nome: string
           item_porcionado_id?: string | null
+          peso_recebido_kg?: number | null
           peso_total_kg?: number | null
           producao_registro_id?: string | null
           quantidade: number
+          quantidade_recebida?: number | null
           romaneio_id: string
         }
         Update: {
@@ -911,9 +915,11 @@ export type Database = {
           id?: string
           item_nome?: string
           item_porcionado_id?: string | null
+          peso_recebido_kg?: number | null
           peso_total_kg?: number | null
           producao_registro_id?: string | null
           quantidade?: number
+          quantidade_recebida?: number | null
           romaneio_id?: string
         }
         Relationships: [
