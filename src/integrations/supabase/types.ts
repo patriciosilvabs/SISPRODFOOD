@@ -183,6 +183,54 @@ export type Database = {
           },
         ]
       }
+      estoque_loja_produtos: {
+        Row: {
+          created_at: string | null
+          data_ultima_atualizacao: string | null
+          id: string
+          loja_id: string
+          produto_id: string
+          quantidade: number
+          usuario_id: string | null
+          usuario_nome: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_ultima_atualizacao?: string | null
+          id?: string
+          loja_id: string
+          produto_id: string
+          quantidade?: number
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_ultima_atualizacao?: string | null
+          id?: string
+          loja_id?: string
+          produto_id?: string
+          quantidade?: number
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estoque_loja_produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoque_loja_produtos_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estoques_ideais_semanais: {
         Row: {
           created_at: string
