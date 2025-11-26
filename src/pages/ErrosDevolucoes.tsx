@@ -220,13 +220,14 @@ const ErrosDevolucoes = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
+                  <div className="space-y-2">
                   <Label>Foto do Produto</Label>
                   <div className="flex gap-2">
                     <Input
                       ref={fileInputRef}
                       type="file"
                       accept="image/*"
+                      capture="environment"
                       onChange={handleFileChange}
                       className="hidden"
                       id="foto-input"

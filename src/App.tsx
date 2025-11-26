@@ -23,6 +23,12 @@ import ReceberPorcionados from "./pages/ReceberPorcionados";
 import ErrosDevolucoes from "./pages/ErrosDevolucoes";
 import ListaDeComprasIA from "./pages/ListaDeComprasIA";
 import CentralDeRelatorios from "./pages/CentralDeRelatorios";
+import MonitoramentoConsumo from "./pages/relatorios/MonitoramentoConsumo";
+import RelatorioProducao from "./pages/relatorios/RelatorioProducao";
+import RelatorioRomaneios from "./pages/relatorios/RelatorioRomaneios";
+import RelatorioEstoqueProdutos from "./pages/relatorios/RelatorioEstoqueProdutos";
+import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
+import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -169,6 +175,54 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRoles={['Admin']}>
                   <GerenciarProdutos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/monitoramento-consumo"
+              element={
+                <ProtectedRoute>
+                  <MonitoramentoConsumo />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/producao"
+              element={
+                <ProtectedRoute>
+                  <RelatorioProducao />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/romaneios"
+              element={
+                <ProtectedRoute>
+                  <RelatorioRomaneios />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/estoque-produtos"
+              element={
+                <ProtectedRoute>
+                  <RelatorioEstoqueProdutos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/insumos"
+              element={
+                <ProtectedRoute>
+                  <RelatorioInsumos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/diagnostico-estoque"
+              element={
+                <ProtectedRoute>
+                  <DiagnosticoEstoque />
                 </ProtectedRoute>
               }
             />

@@ -1,51 +1,53 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Bot, Clock, Truck, Box, FileText, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 const CentralDeRelatorios = () => {
+  const navigate = useNavigate();
+  
   const reports = [
     {
       title: 'Monitoramento de Consumo (IA)',
       description: 'Acompanhe alertas e ajustes automáticos de estoque.',
       icon: Bot,
       color: 'bg-blue-100 text-blue-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/monitoramento-consumo'),
     },
     {
       title: 'Relatório de Produção',
       description: 'Histórico detalhado de toda a produção.',
       icon: Clock,
       color: 'bg-blue-100 text-blue-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/producao'),
     },
     {
       title: 'Relatório de Romaneios',
       description: 'Histórico de envios de porcionados e divergências.',
       icon: Truck,
       color: 'bg-orange-100 text-orange-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/romaneios'),
     },
     {
       title: 'Relatório de Estoque de Produtos',
       description: 'Visualize o estoque atual dos produtos gerais.',
       icon: Box,
       color: 'bg-green-100 text-green-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/estoque-produtos'),
     },
     {
       title: 'Relatório de Insumos',
       description: 'Entradas e saídas de insumos do CPD.',
       icon: FileText,
       color: 'bg-cyan-100 text-cyan-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/insumos'),
     },
     {
       title: 'Diagnóstico de Estoque',
       description: 'Analise a cobertura do estoque de porcionados.',
       icon: Search,
       color: 'bg-purple-100 text-purple-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/relatorios/diagnostico-estoque'),
     },
   ];
 
