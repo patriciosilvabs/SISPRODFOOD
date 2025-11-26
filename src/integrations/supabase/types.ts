@@ -14,6 +14,85 @@ export type Database = {
   }
   public: {
     Tables: {
+      consumo_historico: {
+        Row: {
+          consumo_programado: number
+          consumo_real: number
+          created_at: string | null
+          data: string | null
+          id: string
+          insumo_id: string
+          insumo_nome: string
+          item_id: string
+          item_nome: string
+          producao_registro_id: string | null
+          tipo_insumo: string
+          unidade: string
+          usuario_id: string
+          usuario_nome: string
+          variacao: number | null
+          variacao_percentual: number | null
+        }
+        Insert: {
+          consumo_programado: number
+          consumo_real: number
+          created_at?: string | null
+          data?: string | null
+          id?: string
+          insumo_id: string
+          insumo_nome: string
+          item_id: string
+          item_nome: string
+          producao_registro_id?: string | null
+          tipo_insumo?: string
+          unidade?: string
+          usuario_id: string
+          usuario_nome: string
+          variacao?: number | null
+          variacao_percentual?: number | null
+        }
+        Update: {
+          consumo_programado?: number
+          consumo_real?: number
+          created_at?: string | null
+          data?: string | null
+          id?: string
+          insumo_id?: string
+          insumo_nome?: string
+          item_id?: string
+          item_nome?: string
+          producao_registro_id?: string | null
+          tipo_insumo?: string
+          unidade?: string
+          usuario_id?: string
+          usuario_nome?: string
+          variacao?: number | null
+          variacao_percentual?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consumo_historico_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consumo_historico_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consumo_historico_producao_registro_id_fkey"
+            columns: ["producao_registro_id"]
+            isOneToOne: false
+            referencedRelation: "producao_registros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contagem_porcionados: {
         Row: {
           a_produzir: number | null

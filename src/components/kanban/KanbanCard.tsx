@@ -1,9 +1,17 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+interface InsumoExtraComEstoque {
+  nome: string;
+  quantidade_necessaria: number;
+  unidade: string;
+  estoque_disponivel: number;
+  estoque_suficiente: boolean;
+}
 
 interface DetalheLojaProducao {
   loja_id: string;
@@ -29,6 +37,9 @@ interface ProducaoRegistro {
   detalhes_lojas?: DetalheLojaProducao[];
   unidade_medida?: string;
   equivalencia_traco?: number | null;
+  insumo_principal_nome?: string;
+  insumo_principal_estoque_kg?: number;
+  insumosExtras?: InsumoExtraComEstoque[];
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -67,6 +78,15 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
 
   const buttonConfig = getButtonConfig();
   const ButtonIcon = buttonConfig?.icon;
+
+  // Verificar estoque insuficiente (apenas para coluna "a_produzir")
+  const estoqueInsuficiente = columnId === 'a_produzir' && 
+    registro.insumo_principal_estoque_kg !== undefined && 
+    registro.peso_programado_kg !== null &&
+    registro.peso_programado_kg > registro.insumo_principal_estoque_kg;
+
+  const temInsumosExtrasInsuficientes = columnId === 'a_produzir' &&
+    registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -113,10 +133,48 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
                   </div>
                 )}
 
-                {registro.peso_programado_kg && (
-                  <p className="text-muted-foreground">
-                    ⚖️ Insumo (estim.): <span className="font-medium">{registro.peso_programado_kg} kg</span>
-                  </p>
+                {/* Insumos Necessários */}
+                {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
+                  <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-900 rounded p-2">
+                    <p className="text-xs font-medium text-muted-foreground">📋 Insumos Necessários:</p>
+                    
+                    {/* Insumo Principal */}
+                    {registro.insumo_principal_nome && registro.peso_programado_kg && (
+                      <div className={`flex justify-between text-xs ${estoqueInsuficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
+                        <span>{registro.insumo_principal_nome}:</span>
+                        <span className="font-medium flex items-center gap-1">
+                          {registro.peso_programado_kg} kg
+                          {estoqueInsuficiente && <AlertTriangle className="h-3 w-3" />}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Insumos Extras */}
+                    {registro.insumosExtras?.map((extra, idx) => (
+                      <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
+                        <span>{extra.nome}:</span>
+                        <span className="font-medium flex items-center gap-1">
+                          {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
+                          {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Alerta de Estoque Insuficiente */}
+                {(estoqueInsuficiente || temInsumosExtrasInsuficientes) && (
+                  <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 rounded p-2 mt-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <div className="text-xs">
+                      <p className="font-semibold">Estoque insuficiente!</p>
+                      {estoqueInsuficiente && registro.insumo_principal_nome && (
+                        <p className="text-[10px] mt-0.5">
+                          {registro.insumo_principal_nome}: {registro.insumo_principal_estoque_kg} kg disponível
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 )}
               </>
             )}

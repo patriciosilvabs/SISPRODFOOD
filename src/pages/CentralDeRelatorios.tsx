@@ -1,6 +1,6 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Clock, Truck, Box, FileText, Search } from 'lucide-react';
+import { Bot, Clock, Truck, Box, FileText, Search, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const CentralDeRelatorios = () => {
@@ -20,6 +20,13 @@ const CentralDeRelatorios = () => {
       icon: Clock,
       color: 'bg-blue-100 text-blue-600',
       onClick: () => navigate('/relatorios/producao'),
+    },
+    {
+      title: 'Histórico de Consumo Real vs Programado',
+      description: 'Análise de perdas e eficiência na produção.',
+      icon: TrendingUp,
+      color: 'bg-indigo-100 text-indigo-600',
+      onClick: () => navigate('/relatorios/consumo-historico'),
     },
     {
       title: 'Relatório de Romaneios',
