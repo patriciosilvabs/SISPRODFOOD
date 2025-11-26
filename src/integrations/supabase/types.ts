@@ -194,6 +194,7 @@ export type Database = {
           loja_id: string
           produto_id: string
           quantidade: number
+          quantidade_ultimo_envio: number | null
           usuario_id: string | null
           usuario_nome: string | null
         }
@@ -207,6 +208,7 @@ export type Database = {
           loja_id: string
           produto_id: string
           quantidade?: number
+          quantidade_ultimo_envio?: number | null
           usuario_id?: string | null
           usuario_nome?: string | null
         }
@@ -220,6 +222,7 @@ export type Database = {
           loja_id?: string
           produto_id?: string
           quantidade?: number
+          quantidade_ultimo_envio?: number | null
           usuario_id?: string | null
           usuario_nome?: string | null
         }
