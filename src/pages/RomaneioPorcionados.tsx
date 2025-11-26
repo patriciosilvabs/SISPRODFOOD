@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Truck, ClipboardList, RefreshCw, Search, Plus, Trash2 } from 'lucide-react';
+import { Truck, ClipboardList, RefreshCw, Search, Plus, Trash2, Send, CheckCircle, Clock, History, Filter, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,24 @@ interface ItemSelecionado {
   producao_registro_ids: string[];
 }
 
+interface Romaneio {
+  id: string;
+  loja_id: string;
+  loja_nome: string;
+  data_criacao: string;
+  data_envio: string | null;
+  data_recebimento: string | null;
+  status: string;
+  usuario_nome: string;
+  recebido_por_nome: string | null;
+  observacao: string | null;
+  romaneio_itens: Array<{
+    item_nome: string;
+    quantidade: number;
+    peso_total_kg: number;
+  }>;
+}
+
 const RomaneioPorcionados = () => {
   const { user, profile } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
@@ -47,11 +65,50 @@ const RomaneioPorcionados = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [observacao, setObservacao] = useState('');
   const [loading, setLoading] = useState(false);
+  const [romaneiosEnviados, setRomaneiosEnviados] = useState<Romaneio[]>([]);
+  const [romaneiosHistorico, setRomaneiosHistorico] = useState<Romaneio[]>([]);
+  const [filtroStatus, setFiltroStatus] = useState<string>('todos');
+  const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [lastCreatedRomaneioId, setLastCreatedRomaneioId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLojas();
     fetchItensDisponiveis();
+    checkUserRole();
+    fetchUserLojas();
   }, []);
+
+  useEffect(() => {
+    if (userLojasIds.length > 0 || isAdmin) {
+      fetchRomaneiosEnviados();
+      fetchRomaneiosHistorico();
+    }
+  }, [userLojasIds, isAdmin, filtroStatus]);
+
+  const checkUserRole = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id);
+
+    setIsAdmin(roles?.some(r => r.role === 'Admin') || false);
+  };
+
+  const fetchUserLojas = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: lojas } = await supabase
+      .from('lojas_acesso')
+      .select('loja_id')
+      .eq('user_id', user.id);
+
+    setUserLojasIds(lojas?.map(l => l.loja_id) || []);
+  };
 
   const fetchLojas = async () => {
     const { data, error } = await supabase
@@ -96,6 +153,136 @@ const RomaneioPorcionados = () => {
     }, {});
 
     setItensDisponiveis(Object.values(agrupado));
+  };
+
+  const fetchRomaneiosEnviados = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      let query = supabase
+        .from('romaneios')
+        .select(`
+          *,
+          romaneio_itens (
+            item_nome,
+            quantidade,
+            peso_total_kg
+          )
+        `)
+        .eq('status', 'enviado')
+        .order('data_envio', { ascending: false });
+
+      if (!isAdmin && userLojasIds.length > 0) {
+        query = query.in('loja_id', userLojasIds);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      setRomaneiosEnviados(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar romaneios enviados:', error);
+    }
+  };
+
+  const fetchRomaneiosHistorico = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      let query = supabase
+        .from('romaneios')
+        .select(`
+          *,
+          romaneio_itens (
+            item_nome,
+            quantidade,
+            peso_total_kg
+          )
+        `)
+        .order('data_criacao', { ascending: false });
+
+      if (!isAdmin && userLojasIds.length > 0) {
+        query = query.in('loja_id', userLojasIds);
+      }
+
+      if (filtroStatus !== 'todos') {
+        query = query.eq('status', filtroStatus);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      setRomaneiosHistorico(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar histórico:', error);
+    }
+  };
+
+  const handleConfirmarRecebimento = async (romaneioId: string) => {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user.id)
+        .single();
+
+      const { error } = await supabase
+        .from('romaneios')
+        .update({
+          status: 'recebido',
+          data_recebimento: new Date().toISOString(),
+          recebido_por_id: user.id,
+          recebido_por_nome: userProfile?.nome || 'Usuário',
+        })
+        .eq('id', romaneioId);
+
+      if (error) throw error;
+
+      toast.success('Recebimento confirmado com sucesso!');
+
+      fetchRomaneiosEnviados();
+      fetchRomaneiosHistorico();
+    } catch (error) {
+      console.error('Erro ao confirmar recebimento:', error);
+      toast.error('Erro ao confirmar recebimento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEnviarRomaneio = async (romaneioId: string) => {
+    try {
+      setLoading(true);
+
+      const { error } = await supabase
+        .from('romaneios')
+        .update({
+          status: 'enviado',
+          data_envio: new Date().toISOString(),
+        })
+        .eq('id', romaneioId);
+
+      if (error) throw error;
+
+      toast.success('Romaneio enviado com sucesso!');
+
+      setLastCreatedRomaneioId(null);
+      setSelectedLoja('');
+      fetchRomaneiosHistorico();
+    } catch (error) {
+      console.error('Erro ao enviar romaneio:', error);
+      toast.error('Erro ao enviar romaneio');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const addItem = (item: ItemDisponivel) => {
@@ -178,7 +365,7 @@ const RomaneioPorcionados = () => {
         item_porcionado_id: item.item_id,
         item_nome: item.item_nome,
         quantidade: item.quantidade,
-        producao_registro_id: item.producao_registro_ids[0] // Simplificado
+        producao_registro_id: item.producao_registro_ids[0]
       }));
 
       const { error: itensError } = await supabase
@@ -189,12 +376,12 @@ const RomaneioPorcionados = () => {
 
       toast.success('Romaneio criado com sucesso!');
       
-      // Reset
+      setLastCreatedRomaneioId(romaneio.id);
       setCurrentStep(1);
-      setSelectedLoja('');
       setItensSelecionados([]);
       setObservacao('');
       fetchItensDisponiveis();
+      fetchRomaneiosHistorico();
       
     } catch (error) {
       console.error('Erro ao criar romaneio:', error);
@@ -227,6 +414,10 @@ const RomaneioPorcionados = () => {
             <TabsTrigger value="receber" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
               Receber Porcionados
+            </TabsTrigger>
+            <TabsTrigger value="historico" className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Histórico
             </TabsTrigger>
             <TabsTrigger value="reposicao" className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4" />
@@ -284,7 +475,6 @@ const RomaneioPorcionados = () => {
             {/* Passo 2: Escolher Itens */}
             {currentStep === 2 && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Coluna Esquerda: Itens Disponíveis */}
                 <div className="lg:col-span-2 space-y-4">
                   <Card>
                     <CardHeader>
@@ -332,7 +522,6 @@ const RomaneioPorcionados = () => {
                   </Card>
                 </div>
 
-                {/* Coluna Direita: Itens Selecionados */}
                 <div className="space-y-4">
                   <Card>
                     <CardHeader>
@@ -437,14 +626,182 @@ const RomaneioPorcionados = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ClipboardList className="h-5 w-5" />
-                  Recebimento de Porcionados
+                  <Package className="h-5 w-5" />
+                  Romaneios Pendentes de Recebimento
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Módulo em desenvolvimento. Confirme e registre o recebimento de porcionados.
-                </p>
+              <CardContent className="space-y-4">
+                {romaneiosEnviados.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">
+                    Nenhum romaneio pendente de recebimento
+                  </p>
+                ) : (
+                  romaneiosEnviados.map((romaneio) => (
+                    <Card key={romaneio.id} className="border-2">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <CardTitle className="text-lg">
+                              Romaneio #{romaneio.id.slice(0, 8)}
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              Enviado em: {format(new Date(romaneio.data_envio!), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            </p>
+                            <p className="text-sm font-medium">
+                              De: CPD | Para: {romaneio.loja_nome}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="bg-yellow-500/10">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Aguardando
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div>
+                          <h4 className="font-semibold mb-2">Itens:</h4>
+                          <div className="space-y-1">
+                            {romaneio.romaneio_itens.map((item, idx) => (
+                              <div key={idx} className="flex justify-between text-sm">
+                                <span>• {item.item_nome}</span>
+                                <span className="font-medium">{item.quantidade} un</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        {romaneio.observacao && (
+                          <div className="pt-2 border-t">
+                            <p className="text-sm text-muted-foreground">
+                              <strong>Observação:</strong> {romaneio.observacao}
+                            </p>
+                          </div>
+                        )}
+                        <Button
+                          onClick={() => handleConfirmarRecebimento(romaneio.id)}
+                          disabled={loading}
+                          className="w-full"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Confirmar Recebimento
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="historico">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Histórico de Romaneios
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4" />
+                    <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        <SelectItem value="pendente">Pendentes</SelectItem>
+                        <SelectItem value="enviado">Enviados</SelectItem>
+                        <SelectItem value="recebido">Recebidos</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {romaneiosHistorico.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">
+                    Nenhum romaneio encontrado
+                  </p>
+                ) : (
+                  romaneiosHistorico.map((romaneio) => (
+                    <Card key={romaneio.id} className="border-2">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="text-lg">
+                                {format(new Date(romaneio.data_criacao), "dd/MM/yyyy", { locale: ptBR })}
+                              </CardTitle>
+                              <span className="text-sm text-muted-foreground">
+                                | {romaneio.loja_nome}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {romaneio.romaneio_itens.length} {romaneio.romaneio_itens.length === 1 ? 'item' : 'itens'}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              romaneio.status === 'recebido'
+                                ? 'default'
+                                : romaneio.status === 'enviado'
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                          >
+                            {romaneio.status === 'recebido' && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {romaneio.status === 'enviado' && <Send className="h-3 w-3 mr-1" />}
+                            {romaneio.status === 'pendente' && <Clock className="h-3 w-3 mr-1" />}
+                            {romaneio.status === 'recebido'
+                              ? 'Recebido'
+                              : romaneio.status === 'enviado'
+                              ? 'Enviado'
+                              : 'Pendente'}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Criado por:</span>
+                            <span className="font-medium">{romaneio.usuario_nome}</span>
+                          </div>
+                          {romaneio.data_envio && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Enviado em:</span>
+                              <span className="font-medium">
+                                {format(new Date(romaneio.data_envio), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                              </span>
+                            </div>
+                          )}
+                          {romaneio.data_recebimento && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Recebido em:</span>
+                                <span className="font-medium">
+                                  {format(new Date(romaneio.data_recebimento), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Recebido por:</span>
+                                <span className="font-medium">{romaneio.recebido_por_nome}</span>
+                              </div>
+                            </>
+                          )}
+                          {lastCreatedRomaneioId === romaneio.id && romaneio.status === 'pendente' && (
+                            <Button
+                              onClick={() => handleEnviarRomaneio(romaneio.id)}
+                              disabled={loading}
+                              className="w-full mt-4"
+                            >
+                              <Send className="h-4 w-4 mr-2" />
+                              Enviar Romaneio
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -459,7 +816,7 @@ const RomaneioPorcionados = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  Módulo em desenvolvimento. Gerencie os pedidos de reposição de estoque das lojas.
+                  Módulo em desenvolvimento. Gerencie solicitações de reposição de estoque das lojas.
                 </p>
               </CardContent>
             </Card>
