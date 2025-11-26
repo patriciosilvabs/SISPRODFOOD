@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer } from 'lucide-react';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,8 @@ interface ItemPorcionado {
   equivalencia_traco: number | null;
   consumo_por_traco_g: number | null;
   perda_percentual_adicional: number;
+  timer_ativo: boolean;
+  tempo_timer_minutos: number;
 }
 
 interface Insumo {
@@ -81,6 +84,8 @@ const ItensPorcionados = () => {
     equivalencia_traco: '',
     consumo_por_traco_g: '0',
     perda_percentual_adicional: '0',
+    timer_ativo: false,
+    tempo_timer_minutos: '10',
   });
 
   useEffect(() => {
@@ -126,6 +131,8 @@ const ItensPorcionados = () => {
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
         consumo_por_traco_g: formData.consumo_por_traco_g ? parseFloat(formData.consumo_por_traco_g) : 0,
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
+        timer_ativo: formData.timer_ativo,
+        tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
       };
 
       if (editingItem) {
@@ -292,12 +299,16 @@ const ItensPorcionados = () => {
       equivalencia_traco: item.equivalencia_traco?.toString() || '',
       consumo_por_traco_g: item.consumo_por_traco_g?.toString() || '0',
       perda_percentual_adicional: item.perda_percentual_adicional.toString(),
+      timer_ativo: item.timer_ativo || false,
+      tempo_timer_minutos: item.tempo_timer_minutos?.toString() || '10',
     });
+    await loadInsumosExtras(item.id);
     setDialogOpen(true);
   };
 
   const resetForm = () => {
     setEditingItem(null);
+    setInsumosExtras([]);
     setFormData({
       nome: '',
       peso_unitario_g: '0',
@@ -306,6 +317,8 @@ const ItensPorcionados = () => {
       equivalencia_traco: '',
       consumo_por_traco_g: '0',
       perda_percentual_adicional: '0',
+      timer_ativo: false,
+      tempo_timer_minutos: '10',
     });
   };
 
@@ -479,6 +492,45 @@ const ItensPorcionados = () => {
                         required
                       />
                     </div>
+                  </div>
+
+                  {/* Timer de Produção */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="flex items-start space-x-3">
+                      <Checkbox
+                        id="timer_ativo"
+                        checked={formData.timer_ativo}
+                        onCheckedChange={(checked) => 
+                          setFormData({ ...formData, timer_ativo: checked as boolean })
+                        }
+                      />
+                      <div className="space-y-1 flex-1">
+                        <Label htmlFor="timer_ativo" className="font-medium cursor-pointer flex items-center gap-2">
+                          <Timer className="h-4 w-4" />
+                          Ativar timer de produção
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Define um cronômetro regressivo para este item na tela de produção (ex: tempo de cozimento, tempo de preparo)
+                        </p>
+                      </div>
+                    </div>
+
+                    {formData.timer_ativo && (
+                      <div className="space-y-2 ml-6">
+                        <Label htmlFor="tempo_timer">Tempo do Timer (minutos)</Label>
+                        <Input
+                          id="tempo_timer"
+                          type="number"
+                          min="1"
+                          value={formData.tempo_timer_minutos}
+                          onChange={(e) => 
+                            setFormData({ ...formData, tempo_timer_minutos: e.target.value })
+                          }
+                          placeholder="Ex: 10"
+                          className="max-w-[200px]"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Seção de Insumos Adicionais */}
