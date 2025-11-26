@@ -15,6 +15,14 @@ interface DetalheLojaProducao {
   quantidade: number;
 }
 
+interface InsumoExtraComEstoque {
+  nome: string;
+  quantidade_necessaria: number;
+  unidade: string;
+  estoque_disponivel: number;
+  estoque_suficiente: boolean;
+}
+
 interface ProducaoRegistro {
   id: string;
   item_id: string;
@@ -39,6 +47,9 @@ interface ProducaoRegistro {
   detalhes_lojas?: DetalheLojaProducao[];
   unidade_medida?: string;
   equivalencia_traco?: number | null;
+  insumo_principal_nome?: string;
+  insumo_principal_estoque_kg?: number;
+  insumosExtras?: InsumoExtraComEstoque[];
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -178,14 +189,29 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Buscar dados dos itens (unidade_medida, equivalencia_traco) para exibir traços
+      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado)
       const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
       const { data: itensData } = await supabase
         .from('itens_porcionados')
-        .select('id, unidade_medida, equivalencia_traco')
+        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id')
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
+
+      // Buscar insumos extras para todos os itens
+      const { data: insumosExtrasData } = await supabase
+        .from('insumos_extras')
+        .select('*, insumos!inner(nome, quantidade_em_estoque, unidade_medida)')
+        .in('item_porcionado_id', itemIds);
+
+      // Buscar estoque dos insumos principais
+      const insumoIds = [...new Set(itensData?.map(i => i.insumo_vinculado_id).filter(Boolean) || [])];
+      const { data: insumosData } = await supabase
+        .from('insumos')
+        .select('id, nome, quantidade_em_estoque')
+        .in('id', insumoIds);
+
+      const insumosMap = new Map(insumosData?.map(i => [i.id, i]) || []);
 
       // Organizar registros por status
       const organizedColumns: KanbanColumns = {
@@ -211,6 +237,35 @@ const ResumoDaProducao = () => {
           targetColumn = 'finalizado';
         }
         
+        // Buscar insumo principal
+        const insumo = itemInfo?.insumo_vinculado_id ? insumosMap.get(itemInfo.insumo_vinculado_id) : null;
+        
+        // Calcular insumos extras necessários (apenas para "a_produzir")
+        let insumosExtras: InsumoExtraComEstoque[] | undefined;
+        if (targetColumn === 'a_produzir' && registro.unidades_programadas) {
+          const extrasDoItem = insumosExtrasData?.filter(e => e.item_porcionado_id === registro.item_id) || [];
+          
+          insumosExtras = extrasDoItem.map(extra => {
+            let quantidadeNecessaria = 0;
+            
+            // Calcular quantidade baseado em traços ou unidades
+            if (itemInfo?.unidade_medida === 'traco' && itemInfo.equivalencia_traco) {
+              const tracos = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
+              quantidadeNecessaria = tracos * extra.quantidade;
+            } else {
+              quantidadeNecessaria = (registro.unidades_programadas || 0) * extra.quantidade;
+            }
+            
+            return {
+              nome: extra.nome,
+              quantidade_necessaria: quantidadeNecessaria,
+              unidade: extra.unidade,
+              estoque_disponivel: extra.insumos.quantidade_em_estoque || 0,
+              estoque_suficiente: quantidadeNecessaria <= (extra.insumos.quantidade_em_estoque || 0)
+            };
+          });
+        }
+        
         // Cast detalhes_lojas from Json to array e adicionar dados do item
         const registroTyped: ProducaoRegistro = {
           ...registro,
@@ -219,6 +274,9 @@ const ResumoDaProducao = () => {
             : undefined,
           unidade_medida: itemInfo?.unidade_medida,
           equivalencia_traco: itemInfo?.equivalencia_traco,
+          insumo_principal_nome: insumo?.nome,
+          insumo_principal_estoque_kg: insumo?.quantidade_em_estoque,
+          insumosExtras: insumosExtras,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -383,11 +441,53 @@ const ResumoDaProducao = () => {
               `${selectedRegistro.item_nome} (extra)`,
               'saida'
             );
+
+            // Registrar no histórico de consumo (consumo extra)
+            await supabase.from('consumo_historico').insert({
+              producao_registro_id: selectedRegistro.id,
+              item_id: selectedRegistro.item_id,
+              item_nome: selectedRegistro.item_nome,
+              insumo_id: extra.insumo_id,
+              insumo_nome: extra.nome,
+              tipo_insumo: 'extra',
+              consumo_programado: selectedRegistro.peso_programado_kg || 0,
+              consumo_real: quantidadeKg,
+              unidade: extra.unidade,
+              usuario_id: user?.id || '',
+              usuario_nome: profile?.nome || 'Sistema'
+            });
           } catch (error) {
             console.error(`Erro ao debitar insumo extra ${extra.nome}:`, error);
             toast.error(`Erro ao debitar ${extra.nome}`);
           }
         }
+      }
+
+      // Registrar consumo do insumo principal no histórico
+      if (itemData?.insumo_vinculado_id) {
+        let consumoProgramado = selectedRegistro.peso_programado_kg || 0;
+        let consumoReal = 0;
+        
+        if (itemData.unidade_medida === 'traco' && itemData.consumo_por_traco_g && itemData.equivalencia_traco) {
+          const tracos = data.unidades_reais / itemData.equivalencia_traco;
+          consumoReal = (tracos * itemData.consumo_por_traco_g) / 1000;
+        } else {
+          consumoReal = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
+        }
+
+        await supabase.from('consumo_historico').insert({
+          producao_registro_id: selectedRegistro.id,
+          item_id: selectedRegistro.item_id,
+          item_nome: selectedRegistro.item_nome,
+          insumo_id: itemData.insumo_vinculado_id,
+          insumo_nome: itemData.nome,
+          tipo_insumo: 'principal',
+          consumo_programado: consumoProgramado,
+          consumo_real: consumoReal,
+          unidade: 'kg',
+          usuario_id: user?.id || '',
+          usuario_nome: profile?.nome || 'Sistema'
+        });
       }
 
       const { error } = await supabase

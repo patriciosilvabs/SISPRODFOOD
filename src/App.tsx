@@ -29,6 +29,7 @@ import RelatorioRomaneios from "./pages/relatorios/RelatorioRomaneios";
 import RelatorioEstoqueProdutos from "./pages/relatorios/RelatorioEstoqueProdutos";
 import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
 import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
+import RelatorioConsumoHistorico from "./pages/relatorios/RelatorioConsumoHistorico";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -223,6 +224,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <DiagnosticoEstoque />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/relatorios/consumo-historico"
+              element={
+                <ProtectedRoute>
+                  <RelatorioConsumoHistorico />
                 </ProtectedRoute>
               }
             />
