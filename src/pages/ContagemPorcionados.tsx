@@ -230,6 +230,7 @@ const ContagemPorcionados = () => {
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
+        a_produzir: aProduzir,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
       };
@@ -244,12 +245,15 @@ const ContagemPorcionados = () => {
 
       // Atualizar registro de produção agregando TODAS as lojas
       if (itemData) {
-        // 1. Buscar TODAS as contagens de TODAS as lojas para este item
+        // 1. Buscar TODAS as contagens de TODAS as lojas para este item (apenas do dia atual)
+        const hoje = new Date().toISOString().split('T')[0];
         const { data: todasContagens } = await supabase
           .from('contagem_porcionados')
           .select('loja_id, a_produzir, ideal_amanha, final_sobra')
           .eq('item_porcionado_id', itemId)
-          .gt('a_produzir', 0);
+          .gt('a_produzir', 0)
+          .gte('updated_at', `${hoje}T00:00:00`)
+          .lte('updated_at', `${hoje}T23:59:59`);
 
         if (todasContagens && todasContagens.length > 0) {
           // 2. Buscar nomes das lojas
