@@ -116,25 +116,25 @@ export type Database = {
         Row: {
           data_ultima_movimentacao: string | null
           id: string
-          produto_id: string
+          item_porcionado_id: string
           quantidade: number | null
         }
         Insert: {
           data_ultima_movimentacao?: string | null
           id?: string
-          produto_id: string
+          item_porcionado_id: string
           quantidade?: number | null
         }
         Update: {
           data_ultima_movimentacao?: string | null
           id?: string
-          produto_id?: string
+          item_porcionado_id?: string
           quantidade?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "estoque_cpd_produto_id_fkey"
-            columns: ["produto_id"]
+            columns: ["item_porcionado_id"]
             isOneToOne: true
             referencedRelation: "produtos"
             referencedColumns: ["id"]
@@ -807,12 +807,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      decrementar_estoque_cpd: {
+        Args: { p_item_id: string; p_quantidade: number }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      incrementar_estoque_cpd: {
+        Args: { p_item_id: string; p_quantidade: number }
+        Returns: undefined
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
