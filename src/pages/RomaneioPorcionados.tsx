@@ -128,29 +128,38 @@ const RomaneioPorcionados = () => {
 
   const fetchItensDisponiveis = async () => {
     try {
-      // Buscar estoque CPD com nome do item
+      // 1. Buscar estoque CPD com quantidade > 0
       const { data: estoque, error: estoqueError } = await supabase
         .from('estoque_cpd')
-        .select(`
-          item_porcionado_id,
-          quantidade,
-          data_ultima_movimentacao,
-          itens_porcionados!inner (
-            nome
-          )
-        `)
+        .select('item_porcionado_id, quantidade, data_ultima_movimentacao')
         .gt('quantidade', 0);
 
       if (estoqueError) throw estoqueError;
+      if (!estoque || estoque.length === 0) {
+        setItensDisponiveis([]);
+        return;
+      }
 
-      // Mapear para estrutura ItemDisponivel
-      const itens: ItemDisponivel[] = estoque?.map(e => ({
+      // 2. Buscar nomes dos itens porcionados
+      const itemIds = estoque.map(e => e.item_porcionado_id);
+      const { data: itensData, error: itensError } = await supabase
+        .from('itens_porcionados')
+        .select('id, nome')
+        .in('id', itemIds);
+
+      if (itensError) throw itensError;
+
+      // 3. Criar mapa de id -> nome
+      const nomesMap = new Map(itensData?.map(i => [i.id, i.nome]) || []);
+
+      // 4. Combinar dados
+      const itens: ItemDisponivel[] = estoque.map(e => ({
         item_id: e.item_porcionado_id,
-        item_nome: e.itens_porcionados.nome,
+        item_nome: nomesMap.get(e.item_porcionado_id) || 'Item desconhecido',
         quantidade_disponivel: e.quantidade,
         data_producao: e.data_ultima_movimentacao,
         producao_registro_ids: []
-      })) || [];
+      }));
 
       setItensDisponiveis(itens);
     } catch (error) {
