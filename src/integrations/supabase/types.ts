@@ -626,21 +626,33 @@ export type Database = {
       produtos: {
         Row: {
           categoria: Database["public"]["Enums"]["categoria_produto"]
+          classificacao: string | null
+          codigo: string | null
           created_at: string | null
           id: string
           nome: string
+          unidade_consumo: string | null
+          updated_at: string | null
         }
         Insert: {
           categoria: Database["public"]["Enums"]["categoria_produto"]
+          classificacao?: string | null
+          codigo?: string | null
           created_at?: string | null
           id?: string
           nome: string
+          unidade_consumo?: string | null
+          updated_at?: string | null
         }
         Update: {
           categoria?: Database["public"]["Enums"]["categoria_produto"]
+          classificacao?: string | null
+          codigo?: string | null
           created_at?: string | null
           id?: string
           nome?: string
+          unidade_consumo?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -826,7 +838,16 @@ export type Database = {
     }
     Enums: {
       app_role: "Admin" | "Produção" | "Loja"
-      categoria_produto: "congelado" | "refrigerado" | "ambiente" | "diversos"
+      categoria_produto:
+        | "congelado"
+        | "refrigerado"
+        | "ambiente"
+        | "diversos"
+        | "material_escritorio"
+        | "material_limpeza"
+        | "embalagens"
+        | "descartaveis"
+        | "equipamentos"
       tipo_movimento: "entrada" | "saida"
       unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco"
     }
@@ -957,7 +978,17 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["Admin", "Produção", "Loja"],
-      categoria_produto: ["congelado", "refrigerado", "ambiente", "diversos"],
+      categoria_produto: [
+        "congelado",
+        "refrigerado",
+        "ambiente",
+        "diversos",
+        "material_escritorio",
+        "material_limpeza",
+        "embalagens",
+        "descartaveis",
+        "equipamentos",
+      ],
       tipo_movimento: ["entrada", "saida"],
       unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco"],
     },

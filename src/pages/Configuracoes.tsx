@@ -58,7 +58,7 @@ const Configuracoes = () => {
       description: 'Cadastre caixas, molhos, materiais de limpeza, etc.',
       icon: Box,
       color: 'bg-green-100 text-green-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/gerenciar-produtos'),
     },
     {
       title: 'Gerenciar Patrimônio',
