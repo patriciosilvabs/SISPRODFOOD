@@ -91,7 +91,7 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
                     <Badge variant="secondary" className="font-semibold">
                       {registro.unidade_medida === 'traco' && registro.equivalencia_traco ? (
                         <>
-                          {Math.round(registro.unidades_programadas / registro.equivalencia_traco)} traços ({registro.unidades_programadas} un)
+                          {Math.ceil(registro.unidades_programadas / registro.equivalencia_traco)} traços ({Math.ceil(registro.unidades_programadas / registro.equivalencia_traco) * registro.equivalencia_traco} un)
                         </>
                       ) : (
                         `${registro.unidades_programadas} un`
