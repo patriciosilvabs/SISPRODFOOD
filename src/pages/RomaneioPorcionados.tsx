@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { numberToWords } from '@/lib/numberToWords';
 
 interface Loja {
   id: string;
@@ -49,6 +50,7 @@ interface Romaneio {
   recebido_por_nome: string | null;
   observacao: string | null;
   romaneio_itens: Array<{
+    id?: string;
     item_nome: string;
     quantidade: number;
     peso_total_kg: number;
@@ -72,6 +74,17 @@ const RomaneioPorcionados = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastCreatedRomaneioId, setLastCreatedRomaneioId] = useState<string | null>(null);
   const [romaneiosPendentes, setRomaneiosPendentes] = useState<Romaneio[]>([]);
+  
+  // Estados para controlar quantidades recebidas
+  const [recebimentos, setRecebimentos] = useState<{
+    [itemId: string]: {
+      quantidade_recebida: number;
+      peso_recebido_kg: number;
+    }
+  }>({});
+  const [observacaoRecebimento, setObservacaoRecebimento] = useState<{
+    [romaneioId: string]: string
+  }>({});
 
   useEffect(() => {
     fetchLojas();
@@ -116,6 +129,25 @@ const RomaneioPorcionados = () => {
       fetchRomaneiosHistorico();
     }
   }, [userLojasIds, isAdmin, filtroStatus]);
+  
+  // Inicializar recebimentos quando romaneios enviados forem carregados
+  useEffect(() => {
+    const novosRecebimentos: typeof recebimentos = {};
+    romaneiosEnviados.forEach(romaneio => {
+      romaneio.romaneio_itens.forEach((item, idx) => {
+        const itemId = item.id || `${romaneio.id}-${idx}`;
+        if (!recebimentos[itemId]) {
+          novosRecebimentos[itemId] = {
+            quantidade_recebida: item.quantidade,
+            peso_recebido_kg: item.peso_total_kg || 0
+          };
+        }
+      });
+    });
+    if (Object.keys(novosRecebimentos).length > 0) {
+      setRecebimentos(prev => ({ ...prev, ...novosRecebimentos }));
+    }
+  }, [romaneiosEnviados]);
 
   const checkUserRole = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -254,6 +286,7 @@ const RomaneioPorcionados = () => {
         .select(`
           *,
           romaneio_itens (
+            id,
             item_nome,
             quantidade,
             peso_total_kg
@@ -346,6 +379,45 @@ const RomaneioPorcionados = () => {
         .eq('id', user.id)
         .single();
 
+      // Buscar romaneio e seus itens
+      const romaneio = romaneiosEnviados.find(r => r.id === romaneioId);
+      if (!romaneio) throw new Error('Romaneio não encontrado');
+
+      // Buscar IDs dos itens
+      const { data: itensData, error: itensError } = await supabase
+        .from('romaneio_itens')
+        .select('id, item_nome')
+        .eq('romaneio_id', romaneioId);
+
+      if (itensError) throw itensError;
+
+      // Validar que todos os itens têm quantidade recebida preenchida
+      const itensParaAtualizar = itensData?.map(item => {
+        const recebimento = recebimentos[item.id];
+        if (!recebimento || recebimento.quantidade_recebida === undefined || recebimento.quantidade_recebida === null) {
+          throw new Error(`Informe a quantidade recebida de ${item.item_nome}`);
+        }
+        return {
+          id: item.id,
+          quantidade_recebida: recebimento.quantidade_recebida,
+          peso_recebido_kg: recebimento.peso_recebido_kg || null
+        };
+      });
+
+      // Atualizar cada item com quantidade recebida
+      for (const item of itensParaAtualizar || []) {
+        const { error: updateError } = await supabase
+          .from('romaneio_itens')
+          .update({
+            quantidade_recebida: item.quantidade_recebida,
+            peso_recebido_kg: item.peso_recebido_kg
+          })
+          .eq('id', item.id);
+
+        if (updateError) throw updateError;
+      }
+
+      // Atualizar status do romaneio
       const { error } = await supabase
         .from('romaneios')
         .update({
@@ -353,6 +425,7 @@ const RomaneioPorcionados = () => {
           data_recebimento: new Date().toISOString(),
           recebido_por_id: user.id,
           recebido_por_nome: userProfile?.nome || 'Usuário',
+          observacao: observacaoRecebimento[romaneioId] || null
         })
         .eq('id', romaneioId);
 
@@ -360,11 +433,20 @@ const RomaneioPorcionados = () => {
 
       toast.success('Recebimento confirmado com sucesso!');
 
+      // Limpar estados de recebimento
+      const updatedRecebimentos = { ...recebimentos };
+      itensData?.forEach(item => delete updatedRecebimentos[item.id]);
+      setRecebimentos(updatedRecebimentos);
+      
+      const updatedObservacoes = { ...observacaoRecebimento };
+      delete updatedObservacoes[romaneioId];
+      setObservacaoRecebimento(updatedObservacoes);
+
       fetchRomaneiosEnviados();
       fetchRomaneiosHistorico();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao confirmar recebimento:', error);
-      toast.error('Erro ao confirmar recebimento');
+      toast.error(error.message || 'Erro ao confirmar recebimento');
     } finally {
       setLoading(false);
     }
@@ -967,23 +1049,122 @@ const RomaneioPorcionados = () => {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div>
-                          <h4 className="font-semibold mb-2">Itens:</h4>
-                          <div className="space-y-1">
-                            {romaneio.romaneio_itens.map((item, idx) => (
-                              <div key={idx} className="flex justify-between text-sm">
-                                <span>• {item.item_nome}</span>
-                                <span className="font-medium">{item.quantidade} un</span>
-                              </div>
-                            ))}
+                          <h4 className="font-semibold mb-3">Itens Enviados:</h4>
+                          <div className="space-y-4">
+                            {romaneio.romaneio_itens.map((item, idx) => {
+                              const itemId = item.id || `${romaneio.id}-${idx}`;
+                              const recebimento = recebimentos[itemId] || { quantidade_recebida: item.quantidade, peso_recebido_kg: item.peso_total_kg };
+                              const hasDivergenciaQtd = recebimento.quantidade_recebida !== item.quantidade;
+                              const hasDivergenciaPeso = item.peso_total_kg ? Math.abs(recebimento.peso_recebido_kg - item.peso_total_kg) > 0.1 : false;
+                              const hasDivergencia = hasDivergenciaQtd || hasDivergenciaPeso;
+                              
+                              return (
+                                <div key={itemId} className="p-4 border rounded-lg space-y-3 bg-muted/20">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">{item.item_nome}</span>
+                                    {hasDivergencia ? (
+                                      <Badge variant="destructive" className="text-xs">⚠️ Divergência</Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-xs bg-green-500/10">✓ OK</Badge>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <Label className="text-xs text-muted-foreground">Qtd Enviada</Label>
+                                      <div className="p-2 bg-background rounded border">
+                                        <p className="font-semibold">{item.quantidade} un</p>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                      <Label className="text-xs text-muted-foreground">Qtd Recebida *</Label>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={recebimento.quantidade_recebida}
+                                        onChange={(e) => {
+                                          const valor = parseInt(e.target.value) || 0;
+                                          setRecebimentos(prev => ({
+                                            ...prev,
+                                            [itemId]: {
+                                              ...prev[itemId],
+                                              quantidade_recebida: valor,
+                                              peso_recebido_kg: prev[itemId]?.peso_recebido_kg || item.peso_total_kg
+                                            }
+                                          }));
+                                        }}
+                                        className={hasDivergenciaQtd ? 'border-yellow-500' : ''}
+                                      />
+                                      <p className="text-xs text-muted-foreground italic">
+                                        {numberToWords(recebimento.quantidade_recebida, 'unidade')}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  
+                                  {item.peso_total_kg > 0 && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground">Peso Enviado</Label>
+                                        <div className="p-2 bg-background rounded border">
+                                          <p className="font-semibold">{item.peso_total_kg.toFixed(1)} kg</p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground">Peso Recebido *</Label>
+                                        <Input
+                                          type="number"
+                                          step="0.1"
+                                          min={0}
+                                          value={recebimento.peso_recebido_kg}
+                                          onChange={(e) => {
+                                            const valor = parseFloat(e.target.value) || 0;
+                                            setRecebimentos(prev => ({
+                                              ...prev,
+                                              [itemId]: {
+                                                ...prev[itemId],
+                                                quantidade_recebida: prev[itemId]?.quantidade_recebida || item.quantidade,
+                                                peso_recebido_kg: valor
+                                              }
+                                            }));
+                                          }}
+                                          className={hasDivergenciaPeso ? 'border-yellow-500' : ''}
+                                        />
+                                        <p className="text-xs text-muted-foreground italic">
+                                          {numberToWords(recebimento.peso_recebido_kg, 'kg')}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
+                        
                         {romaneio.observacao && (
                           <div className="pt-2 border-t">
                             <p className="text-sm text-muted-foreground">
-                              <strong>Observação:</strong> {romaneio.observacao}
+                              <strong>Observação CPD:</strong> {romaneio.observacao}
                             </p>
                           </div>
                         )}
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor={`obs-${romaneio.id}`}>Observação de Divergência (opcional)</Label>
+                          <Textarea
+                            id={`obs-${romaneio.id}`}
+                            placeholder="Ex: 2 unidades danificadas no transporte..."
+                            value={observacaoRecebimento[romaneio.id] || ''}
+                            onChange={(e) => setObservacaoRecebimento(prev => ({
+                              ...prev,
+                              [romaneio.id]: e.target.value
+                            }))}
+                            rows={2}
+                          />
+                        </div>
+                        
                         <Button
                           onClick={() => handleConfirmarRecebimento(romaneio.id)}
                           disabled={loading}
