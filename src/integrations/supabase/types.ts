@@ -433,6 +433,7 @@ export type Database = {
         Row: {
           ativo: boolean
           baixar_producao_inicio: boolean | null
+          consumo_por_traco_g: number | null
           created_at: string | null
           equivalencia_traco: number | null
           id: string
@@ -446,6 +447,7 @@ export type Database = {
         Insert: {
           ativo?: boolean
           baixar_producao_inicio?: boolean | null
+          consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
           id?: string
@@ -459,6 +461,7 @@ export type Database = {
         Update: {
           ativo?: boolean
           baixar_producao_inicio?: boolean | null
+          consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
           id?: string
