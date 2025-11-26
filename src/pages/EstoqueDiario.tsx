@@ -7,9 +7,9 @@ const EstoqueDiario = () => {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Estoque Diário (Geral)</h1>
+          <h1 className="text-3xl font-bold">Estoque da Loja</h1>
           <p className="text-muted-foreground mt-1">
-            Controle o estoque diário geral do sistema
+            Controle o estoque da loja
           </p>
         </div>
 
@@ -17,7 +17,7 @@ const EstoqueDiario = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Trash2 className="h-5 w-5" />
-              Estoque Diário Geral
+              Estoque da Loja
             </CardTitle>
           </CardHeader>
           <CardContent>

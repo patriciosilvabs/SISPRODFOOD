@@ -4,20 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Package, 
-  ShoppingBag, 
-  Store, 
   Factory, 
   BarChart3, 
   LogOut, 
   Menu,
   Settings,
   Search,
-  LayoutDashboard,
   Trash2,
   FileText,
   Flag,
   Truck,
-  ClipboardList,
   AlertTriangle,
   ShoppingCart,
   Clock
@@ -59,20 +55,13 @@ export const Layout = ({ children }: LayoutProps) => {
           <NavLink to="/resumo-da-producao" icon={Search}>Resumo da Produção</NavLink>
           <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
           <NavLink to="/contagem-porcionados" icon={Flag}>Contagem Porcionados</NavLink>
-          <NavLink to="/painel-kanban" icon={LayoutDashboard}>Painel Kanban</NavLink>
-          <NavLink to="/estoque-diario" icon={Trash2}>Estoque Diário (Geral)</NavLink>
+          <NavLink to="/estoque-diario" icon={Trash2}>Estoque da Loja</NavLink>
           <NavLink to="/atender-pedidos-diarios" icon={FileText}>Atender Pedidos Diários</NavLink>
-          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio Porcionados</NavLink>
-          <NavLink to="/receber-porcionados" icon={ClipboardList}>Receber Porcionados</NavLink>
+          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
           <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
           <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
-          <NavLink to="/itens-porcionados" icon={ShoppingBag}>Itens Porcionados</NavLink>
           <NavLink to="/producao" icon={Factory}>Produção</NavLink>
         </>
-      )}
-      
-      {(isAdmin() || hasRole('Loja')) && (
-        <NavLink to="/lojas" icon={Store}>Lojas</NavLink>
       )}
       
       <NavLink to="/central-de-relatorios" icon={Clock}>Central de Relatórios</NavLink>
