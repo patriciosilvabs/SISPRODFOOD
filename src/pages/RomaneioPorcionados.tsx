@@ -127,62 +127,36 @@ const RomaneioPorcionados = () => {
   };
 
   const fetchItensDisponiveis = async () => {
-    // 1. Buscar registros de produção finalizados
-    const { data, error } = await supabase
-      .from('producao_registros')
-      .select('id, item_id, item_nome, unidades_reais, data_fim')
-      .eq('status', 'finalizado')
-      .order('data_fim', { ascending: false });
-    
-    if (error) {
+    try {
+      // Buscar estoque CPD com nome do item
+      const { data: estoque, error: estoqueError } = await supabase
+        .from('estoque_cpd')
+        .select(`
+          item_porcionado_id,
+          quantidade,
+          data_ultima_movimentacao,
+          itens_porcionados!inner (
+            nome
+          )
+        `)
+        .gt('quantidade', 0);
+
+      if (estoqueError) throw estoqueError;
+
+      // Mapear para estrutura ItemDisponivel
+      const itens: ItemDisponivel[] = estoque?.map(e => ({
+        item_id: e.item_porcionado_id,
+        item_nome: e.itens_porcionados.nome,
+        quantidade_disponivel: e.quantidade,
+        data_producao: e.data_ultima_movimentacao,
+        producao_registro_ids: []
+      })) || [];
+
+      setItensDisponiveis(itens);
+    } catch (error) {
+      console.error('Erro ao buscar itens:', error);
       toast.error('Erro ao carregar itens disponíveis');
-      return;
     }
-
-    // 2. Buscar itens já em romaneios (exceto cancelados se existir esse status)
-    const { data: romaneioItens } = await supabase
-      .from('romaneio_itens')
-      .select(`
-        item_porcionado_id,
-        quantidade,
-        romaneios!inner (status)
-      `);
-
-    // 3. Calcular total já em romaneios por item
-    const quantidadesEmRomaneio: Record<string, number> = {};
-    romaneioItens?.forEach(ri => {
-      if (!quantidadesEmRomaneio[ri.item_porcionado_id]) {
-        quantidadesEmRomaneio[ri.item_porcionado_id] = 0;
-      }
-      quantidadesEmRomaneio[ri.item_porcionado_id] += ri.quantidade;
-    });
-
-    // 4. Agrupar por item_id e calcular quantidade total produzida
-    const agrupado = data.reduce((acc: Record<string, ItemDisponivel>, reg) => {
-      if (!acc[reg.item_id]) {
-        acc[reg.item_id] = {
-          item_id: reg.item_id,
-          item_nome: reg.item_nome,
-          quantidade_disponivel: 0,
-          data_producao: reg.data_fim,
-          producao_registro_ids: []
-        };
-      }
-      acc[reg.item_id].quantidade_disponivel += reg.unidades_reais || 0;
-      acc[reg.item_id].producao_registro_ids.push(reg.id);
-      return acc;
-    }, {});
-
-    // 5. Subtrair quantidades já em romaneios
-    Object.keys(agrupado).forEach(itemId => {
-      const qtdEmRomaneio = quantidadesEmRomaneio[itemId] || 0;
-      agrupado[itemId].quantidade_disponivel -= qtdEmRomaneio;
-    });
-
-    // 6. Filtrar apenas itens com quantidade > 0
-    const itensComEstoque = Object.values(agrupado).filter(i => i.quantidade_disponivel > 0);
-
-    setItensDisponiveis(itensComEstoque);
   };
 
   const fetchRomaneiosEnviados = async () => {
@@ -315,6 +289,28 @@ const RomaneioPorcionados = () => {
     try {
       setLoading(true);
 
+      // Buscar itens do romaneio
+      const { data: romaneioItens, error: itensError } = await supabase
+        .from('romaneio_itens')
+        .select('item_porcionado_id, quantidade')
+        .eq('romaneio_id', romaneioId);
+
+      if (itensError) throw itensError;
+
+      // Decrementar estoque CPD para cada item do romaneio
+      for (const item of romaneioItens || []) {
+        const { error: estoqueError } = await supabase.rpc('decrementar_estoque_cpd', {
+          p_item_id: item.item_porcionado_id,
+          p_quantidade: item.quantidade
+        });
+
+        if (estoqueError) {
+          console.error('Erro ao decrementar estoque:', estoqueError);
+          throw new Error('Erro ao atualizar estoque');
+        }
+      }
+
+      // Atualizar status do romaneio
       const { error } = await supabase
         .from('romaneios')
         .update({
@@ -329,9 +325,12 @@ const RomaneioPorcionados = () => {
 
       setLastCreatedRomaneioId(null);
       setSelectedLoja('');
-      fetchRomaneiosEnviados();
-      fetchRomaneiosPendentes();
-      fetchRomaneiosHistorico();
+      
+      // Recarregar dados
+      await fetchRomaneiosEnviados();
+      await fetchRomaneiosPendentes();
+      await fetchRomaneiosHistorico();
+      await fetchItensDisponiveis();
     } catch (error) {
       console.error('Erro ao enviar romaneio:', error);
       toast.error('Erro ao enviar romaneio');

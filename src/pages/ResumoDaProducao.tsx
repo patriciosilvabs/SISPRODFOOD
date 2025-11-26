@@ -323,7 +323,19 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      toast.success('Produção finalizada com sucesso!');
+      // Incrementar estoque CPD com unidades produzidas
+      const { error: estoqueError } = await supabase.rpc('incrementar_estoque_cpd', {
+        p_item_id: selectedRegistro.item_id,
+        p_quantidade: data.unidades_reais
+      });
+
+      if (estoqueError) {
+        console.error('Erro ao atualizar estoque CPD:', estoqueError);
+        toast.error('Produção finalizada, mas erro ao atualizar estoque');
+      } else {
+        toast.success('Produção finalizada com sucesso!');
+      }
+      
       loadProducaoRegistros();
       setModalFinalizar(false);
       setSelectedRegistro(null);
