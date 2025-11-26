@@ -665,6 +665,108 @@ export type Database = {
         }
         Relationships: []
       }
+      romaneio_itens: {
+        Row: {
+          created_at: string | null
+          id: string
+          item_nome: string
+          item_porcionado_id: string | null
+          peso_total_kg: number | null
+          producao_registro_id: string | null
+          quantidade: number
+          romaneio_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          item_nome: string
+          item_porcionado_id?: string | null
+          peso_total_kg?: number | null
+          producao_registro_id?: string | null
+          quantidade: number
+          romaneio_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          item_nome?: string
+          item_porcionado_id?: string | null
+          peso_total_kg?: number | null
+          producao_registro_id?: string | null
+          quantidade?: number
+          romaneio_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneio_itens_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneio_itens_producao_registro_id_fkey"
+            columns: ["producao_registro_id"]
+            isOneToOne: false
+            referencedRelation: "producao_registros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneio_itens_romaneio_id_fkey"
+            columns: ["romaneio_id"]
+            isOneToOne: false
+            referencedRelation: "romaneios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      romaneios: {
+        Row: {
+          created_at: string | null
+          data_criacao: string | null
+          data_envio: string | null
+          id: string
+          loja_id: string
+          loja_nome: string
+          observacao: string | null
+          status: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          id?: string
+          loja_id: string
+          loja_nome: string
+          observacao?: string | null
+          status?: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          id?: string
+          loja_id?: string
+          loja_nome?: string
+          observacao?: string | null
+          status?: string | null
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneios_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
