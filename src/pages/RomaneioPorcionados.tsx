@@ -508,10 +508,6 @@ const RomaneioPorcionados = () => {
               <History className="h-4 w-4" />
               Histórico
             </TabsTrigger>
-            <TabsTrigger value="reposicao" className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Reposição de Estoque
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="romaneio" className="space-y-6">
@@ -912,22 +908,6 @@ const RomaneioPorcionados = () => {
                     </Card>
                   ))
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="reposicao">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <RefreshCw className="h-5 w-5" />
-                  Reposição de Estoque das Lojas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Módulo em desenvolvimento. Gerencie solicitações de reposição de estoque das lojas.
-                </p>
               </CardContent>
             </Card>
           </TabsContent>

@@ -4,10 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Save, Package, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Loja {
@@ -59,6 +62,10 @@ const EstoqueDiario = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<string>('');
+  const [quantidadesEnvio, setQuantidadesEnvio] = useState<{ [key: string]: number }>({});
+  const [observacaoEnvio, setObservacaoEnvio] = useState('');
+  const [apenasComEnvio, setApenasComEnvio] = useState(true);
+  const [sendingProducts, setSendingProducts] = useState(false);
 
   // Obter dia da semana atual
   const diaAtual = useMemo(() => {
@@ -235,6 +242,110 @@ const EstoqueDiario = () => {
     });
   };
 
+  // Atualizar quantidade de envio
+  const handleQuantidadeEnvioChange = (produtoId: string, valor: string) => {
+    const quantidade = valor === '' ? 0 : Number(valor);
+    setQuantidadesEnvio(prev => ({
+      ...prev,
+      [produtoId]: quantidade
+    }));
+  };
+
+  // Inicializar quantidades de envio com "A Enviar"
+  useEffect(() => {
+    const novasQuantidades: { [key: string]: number } = {};
+    produtosComEstoque.forEach(p => {
+      if (p.a_enviar > 0) {
+        novasQuantidades[p.id] = p.a_enviar;
+      }
+    });
+    setQuantidadesEnvio(novasQuantidades);
+  }, [produtosComEstoque]);
+
+  // Filtrar produtos para envio
+  const produtosParaEnvio = useMemo(() => {
+    const filtrados = produtosComEstoque.filter(p => 
+      categoriaFilter === 'todas' ? true : p.categoria === categoriaFilter
+    );
+
+    if (apenasComEnvio) {
+      return filtrados.filter(p => p.a_enviar > 0);
+    }
+    return filtrados;
+  }, [produtosComEstoque, categoriaFilter, apenasComEnvio]);
+
+  // Confirmar envio de produtos
+  const handleConfirmarEnvio = async () => {
+    if (!user || !lojaSelecionada) return;
+
+    const produtosEnviar = Object.entries(quantidadesEnvio).filter(([_, qtd]) => qtd > 0);
+    
+    if (produtosEnviar.length === 0) {
+      toast.error('Selecione pelo menos um produto para enviar');
+      return;
+    }
+
+    try {
+      setSendingProducts(true);
+
+      // Buscar nome do usuário
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user.id)
+        .single();
+
+      const usuarioNome = profile?.nome || user.email || 'Usuário';
+
+      // Atualizar estoque da loja
+      const updates = produtosEnviar.map(([produtoId, quantidade]) => {
+        const produtoAtual = produtosComEstoque.find(p => p.id === produtoId);
+        const novoEstoque = (produtoAtual?.estoque_atual || 0) + quantidade;
+
+        return {
+          loja_id: lojaSelecionada,
+          produto_id: produtoId,
+          quantidade: novoEstoque,
+          usuario_id: user.id,
+          usuario_nome: usuarioNome,
+          data_ultima_atualizacao: new Date().toISOString()
+        };
+      });
+
+      const { error } = await supabase
+        .from('estoque_loja_produtos')
+        .upsert(updates, {
+          onConflict: 'loja_id,produto_id'
+        });
+
+      if (error) throw error;
+
+      toast.success(`${produtosEnviar.length} produto(s) enviado(s) com sucesso!`);
+      
+      // Resetar quantidades
+      setQuantidadesEnvio({});
+      setObservacaoEnvio('');
+      
+      // Recarregar dados
+      const { data: estoquesAtuaisData } = await supabase
+        .from('estoque_loja_produtos')
+        .select('produto_id, quantidade')
+        .eq('loja_id', lojaSelecionada);
+      
+      if (estoquesAtuaisData) {
+        setEstoquesAtuais(estoquesAtuaisData.map(e => ({
+          produto_id: e.produto_id,
+          quantidade: Number(e.quantidade)
+        })));
+      }
+    } catch (error) {
+      console.error('Erro ao enviar produtos:', error);
+      toast.error('Erro ao enviar produtos');
+    } finally {
+      setSendingProducts(false);
+    }
+  };
+
   // Salvar estoques
   const handleSalvar = async () => {
     if (!user || !lojaSelecionada) return;
@@ -317,14 +428,28 @@ const EstoqueDiario = () => {
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Estoque de Produtos
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <Tabs defaultValue="contagem" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="contagem" className="gap-2">
+              <Package className="h-4 w-4" />
+              Contagem Loja
+            </TabsTrigger>
+            <TabsTrigger value="envio" className="gap-2">
+              <Truck className="h-4 w-4" />
+              Envio CPD
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ABA 1: CONTAGEM LOJA */}
+          <TabsContent value="contagem">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Estoque de Produtos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
             {/* Filtros */}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
@@ -442,6 +567,158 @@ const EstoqueDiario = () => {
             )}
           </CardContent>
         </Card>
+      </TabsContent>
+
+      {/* ABA 2: ENVIO CPD */}
+      <TabsContent value="envio">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5" />
+              Envio de Produtos - CPD
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filtros */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Selecione a Loja de Destino</label>
+                <Select value={lojaSelecionada} onValueChange={setLojaSelecionada}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma loja" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lojas.map(loja => (
+                      <SelectItem key={loja.id} value={loja.id}>
+                        {loja.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Filtrar por Categoria</label>
+                <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as categorias" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as categorias</SelectItem>
+                    {categorias.map(cat => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Tabela de Produtos para Envio */}
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : produtosParaEnvio.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {apenasComEnvio ? 'Nenhum produto com pendência de envio.' : 'Nenhum produto encontrado.'}
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-3 font-medium">Produto</th>
+                        <th className="text-left p-3 font-medium">Unid.</th>
+                        <th className="text-center p-3 font-medium">Est. Mín.<br />(Hoje)</th>
+                        <th className="text-center p-3 font-medium">Est. Atual<br />(Loja)</th>
+                        <th className="text-center p-3 font-medium">A Enviar<br />(Calc.)</th>
+                        <th className="text-center p-3 font-medium">Qtd Envio</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {produtosParaEnvio.map(produto => (
+                        <tr key={produto.id} className="border-b hover:bg-muted/50">
+                          <td className="p-3">
+                            <div>
+                              <div className="font-medium">{produto.nome}</div>
+                              {produto.codigo && (
+                                <div className="text-sm text-muted-foreground">{produto.codigo}</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-muted-foreground">{produto.unidade_consumo || 'unid.'}</td>
+                          <td className="p-3 text-center font-medium">{produto.estoque_minimo}</td>
+                          <td className="p-3 text-center">{produto.estoque_atual}</td>
+                          <td className="p-3 text-center">
+                            <span className={`font-semibold ${produto.a_enviar > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                              {produto.a_enviar.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={quantidadesEnvio[produto.id] || 0}
+                              onChange={(e) => handleQuantidadeEnvioChange(produto.id, e.target.value)}
+                              className="w-24 mx-auto text-center"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Observação */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Observação</label>
+                  <Textarea
+                    placeholder="Adicione uma observação sobre o envio (opcional)"
+                    value={observacaoEnvio}
+                    onChange={(e) => setObservacaoEnvio(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
+                {/* Filtro apenas com envio */}
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="apenas-envio"
+                    checked={apenasComEnvio}
+                    onCheckedChange={(checked) => setApenasComEnvio(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="apenas-envio"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Mostrar apenas itens com envio pendente
+                  </label>
+                </div>
+
+                {/* Botão Confirmar Envio */}
+                <div className="flex justify-end pt-4 border-t">
+                  <Button 
+                    onClick={handleConfirmarEnvio}
+                    disabled={sendingProducts || Object.values(quantidadesEnvio).every(q => q === 0)}
+                    className="gap-2"
+                    size="lg"
+                  >
+                    <Truck className="h-4 w-4" />
+                    {sendingProducts ? 'Enviando...' : 'Confirmar Envio de Produtos'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
       </div>
     </Layout>
   );
