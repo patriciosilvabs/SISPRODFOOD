@@ -256,31 +256,45 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
             )}
 
             {/* FINALIZADO */}
-            {columnId === 'finalizado' && (
-              <>
-                {registro.unidades_reais && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">✅ Reais:</span>
-                    <Badge variant="default" className="font-semibold bg-green-600">
-                      {registro.unidades_reais} un
-                    </Badge>
-                  </div>
-                )}
-                {registro.peso_final_kg && (
-                  <p className="text-muted-foreground">
-                    ⚖️ Peso final: <span className="font-medium text-foreground">{registro.peso_final_kg} kg</span>
-                  </p>
-                )}
-                {registro.data_fim && (
-                  <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
-                    <CheckCircle2 className="h-3 w-3" />
-                    <span className="font-medium">
-                      Finalizado às {format(new Date(registro.data_fim), 'HH:mm', { locale: ptBR })}
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
+          {columnId === 'finalizado' && (
+            <>
+              {registro.unidades_reais && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">✅ Reais:</span>
+                  <Badge variant="default" className="font-semibold bg-green-600">
+                    {registro.unidades_reais} un
+                  </Badge>
+                </div>
+              )}
+              {registro.peso_final_kg && (
+                <p className="text-muted-foreground">
+                  ⚖️ Peso final: <span className="font-medium text-foreground">{registro.peso_final_kg} kg</span>
+                </p>
+              )}
+              
+              {/* Detalhamento por Loja */}
+              {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
+                <div className="mt-2 space-y-1 bg-green-50 dark:bg-green-950 rounded p-2">
+                  <p className="text-xs font-medium text-green-700 dark:text-green-300">🏪 Por loja:</p>
+                  {registro.detalhes_lojas.map((loja) => (
+                    <div key={loja.loja_id} className="flex justify-between text-xs text-green-600 dark:text-green-400">
+                      <span>{loja.loja_nome}:</span>
+                      <span className="font-medium">{loja.quantidade} un</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {registro.data_fim && (
+                <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  <span className="font-medium">
+                    Finalizado às {format(new Date(registro.data_fim), 'HH:mm', { locale: ptBR })}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
           </div>
 
           {/* Usuário e Data */}
