@@ -7,6 +7,9 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Package } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { numberToWords } from '@/lib/numberToWords';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +44,7 @@ interface Insumo {
   unidade_medida: UnidadeMedida;
   estoque_minimo: number;
   perda_percentual: number;
+  data_ultima_movimentacao: string | null;
 }
 
 const Insumos = () => {
@@ -225,6 +229,11 @@ const Insumos = () => {
                         }
                         required
                       />
+                      {formData.quantidade_em_estoque && parseFloat(formData.quantidade_em_estoque) > 0 && (
+                        <p className="text-xs text-muted-foreground italic">
+                          {numberToWords(formData.quantidade_em_estoque, formData.unidade_medida)}
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -265,6 +274,11 @@ const Insumos = () => {
                         }
                         required
                       />
+                      {formData.estoque_minimo && parseFloat(formData.estoque_minimo) > 0 && (
+                        <p className="text-xs text-muted-foreground italic">
+                          {numberToWords(formData.estoque_minimo, formData.unidade_medida)}
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -319,13 +333,14 @@ const Insumos = () => {
                   <TableHead>Unidade</TableHead>
                   <TableHead>Estoque Mínimo</TableHead>
                   <TableHead>Perda (%)</TableHead>
+                  <TableHead>Última Atualização</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {insumos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       Nenhum insumo cadastrado
                     </TableCell>
                   </TableRow>
@@ -347,6 +362,15 @@ const Insumos = () => {
                       <TableCell>{insumo.unidade_medida}</TableCell>
                       <TableCell>{insumo.estoque_minimo.toFixed(2)}</TableCell>
                       <TableCell>{insumo.perda_percentual}%</TableCell>
+                      <TableCell className="text-sm">
+                        {insumo.data_ultima_movimentacao ? (
+                          <span className="text-muted-foreground">
+                            {format(new Date(insumo.data_ultima_movimentacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground italic">Sem movimentação</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
                           variant="ghost"

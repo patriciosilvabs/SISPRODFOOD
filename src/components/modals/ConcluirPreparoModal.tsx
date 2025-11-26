@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Package } from 'lucide-react';
+import { numberToWords } from '@/lib/numberToWords';
 
 interface ConcluirPreparoModalProps {
   open: boolean;
@@ -81,6 +82,11 @@ export function ConcluirPreparoModal({
               required
               className="text-lg"
             />
+            {pesoPreparo && parseFloat(pesoPreparo) > 0 && (
+              <p className="text-sm font-medium text-primary">
+                {numberToWords(pesoPreparo, 'kg')}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Peso total depois da fatiação/ralação/cozimento/assamento
             </p>
@@ -99,6 +105,11 @@ export function ConcluirPreparoModal({
               onChange={(e) => setSobraPreparo(e.target.value)}
               className="text-lg"
             />
+            {sobraPreparo && parseFloat(sobraPreparo) > 0 && (
+              <p className="text-sm font-medium text-primary">
+                {numberToWords(sobraPreparo, 'kg')}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Pedaços não aproveitados, estragados, etc
             </p>

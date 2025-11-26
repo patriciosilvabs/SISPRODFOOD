@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Package, CheckCircle2 } from 'lucide-react';
+import { numberToWords } from '@/lib/numberToWords';
 
 interface FinalizarProducaoModalProps {
   open: boolean;
@@ -100,6 +101,11 @@ export function FinalizarProducaoModal({
               required
               className="text-lg"
             />
+            {unidadesReais && parseInt(unidadesReais) > 0 && (
+              <p className="text-sm font-medium text-primary">
+                {numberToWords(unidadesReais, 'unidade')}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -115,6 +121,11 @@ export function FinalizarProducaoModal({
               onChange={(e) => setPesoFinal(e.target.value)}
               className="text-lg"
             />
+            {pesoFinal && parseFloat(pesoFinal) > 0 && (
+              <p className="text-sm font-medium text-primary">
+                {numberToWords(pesoFinal, 'kg')}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Peso total dos itens embalados (opcional)
             </p>
@@ -133,6 +144,11 @@ export function FinalizarProducaoModal({
               onChange={(e) => setSobra(e.target.value)}
               className="text-lg"
             />
+            {sobra && parseFloat(sobra) > 0 && (
+              <p className="text-sm font-medium text-primary">
+                {numberToWords(sobra, 'kg')}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Restos do processo de porcionamento (opcional)
             </p>

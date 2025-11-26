@@ -57,11 +57,11 @@ export const Layout = ({ children }: LayoutProps) => {
       {(isAdmin() || hasRole('Produção')) && (
         <>
           <NavLink to="/resumo-da-producao" icon={Search}>Resumo da Produção</NavLink>
+          <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
+          <NavLink to="/contagem-porcionados" icon={Flag}>Contagem Porcionados</NavLink>
           <NavLink to="/painel-kanban" icon={LayoutDashboard}>Painel Kanban</NavLink>
           <NavLink to="/estoque-diario" icon={Trash2}>Estoque Diário (Geral)</NavLink>
           <NavLink to="/atender-pedidos-diarios" icon={FileText}>Atender Pedidos Diários</NavLink>
-          <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
-          <NavLink to="/contagem-porcionados" icon={Flag}>Contagem Porcionados</NavLink>
           <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio Porcionados</NavLink>
           <NavLink to="/receber-porcionados" icon={ClipboardList}>Receber Porcionados</NavLink>
           <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
