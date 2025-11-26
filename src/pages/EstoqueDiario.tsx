@@ -425,10 +425,18 @@ const EstoqueDiario = () => {
 
       toast.success('Estoque atualizado com sucesso!');
       
+      // Atualizar estado local com os novos timestamps
+      const agora = new Date().toISOString();
+      setEstoquesAtuais(prev => prev.map(e => ({
+        ...e,
+        data_ultima_contagem: agora
+        // Não sobrescreve data_ultimo_envio
+      })));
+      
       // Atualizar última atualização
-      const agora = new Date();
+      const agoraDate = new Date();
       setUltimaAtualizacao(
-        `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} por ${usuarioNome}`
+        `${agoraDate.toLocaleDateString('pt-BR')} às ${agoraDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} por ${usuarioNome}`
       );
     } catch (error) {
       console.error('Erro ao salvar estoque:', error);
