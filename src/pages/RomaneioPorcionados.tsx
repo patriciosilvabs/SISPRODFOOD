@@ -75,7 +75,6 @@ const RomaneioPorcionados = () => {
 
   useEffect(() => {
     fetchLojas();
-    fetchItensDisponiveis();
     checkUserRole();
     fetchUserLojas();
     fetchRomaneiosPendentes();
@@ -92,7 +91,9 @@ const RomaneioPorcionados = () => {
         },
         (payload) => {
           console.log('Estoque CPD atualizado:', payload);
-          fetchItensDisponiveis();
+          if (selectedLoja) {
+            fetchItensDisponiveis();
+          }
         }
       )
       .subscribe();
@@ -101,6 +102,13 @@ const RomaneioPorcionados = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Recarregar itens quando loja for selecionada
+  useEffect(() => {
+    if (selectedLoja) {
+      fetchItensDisponiveis();
+    }
+  }, [selectedLoja]);
 
   useEffect(() => {
     if (userLojasIds.length > 0 || isAdmin) {
@@ -148,41 +156,103 @@ const RomaneioPorcionados = () => {
   };
 
   const fetchItensDisponiveis = async () => {
+    if (!selectedLoja) {
+      setItensDisponiveis([]);
+      return;
+    }
+
     try {
-      // 1. Buscar estoque CPD com quantidade > 0
-      const { data: estoque, error: estoqueError } = await supabase
+      // 1. Buscar produções finalizadas com detalhes por loja
+      const { data: producoes, error: producoesError } = await supabase
+        .from('producao_registros')
+        .select('id, item_id, item_nome, detalhes_lojas, unidades_reais')
+        .eq('status', 'finalizado');
+
+      if (producoesError) throw producoesError;
+
+      // 2. Buscar romaneios já enviados/pendentes para a loja selecionada
+      const { data: romaneiosExistentes, error: romaneiosError } = await supabase
+        .from('romaneio_itens')
+        .select(`
+          item_porcionado_id,
+          quantidade,
+          romaneios!inner(loja_id, status)
+        `)
+        .eq('romaneios.loja_id', selectedLoja)
+        .in('romaneios.status', ['pendente', 'enviado']);
+
+      if (romaneiosError) throw romaneiosError;
+
+      // 3. Criar mapa de quantidades já reservadas por item
+      const quantidadesReservadas = new Map<string, number>();
+      romaneiosExistentes?.forEach(item => {
+        const atual = quantidadesReservadas.get(item.item_porcionado_id) || 0;
+        quantidadesReservadas.set(item.item_porcionado_id, atual + item.quantidade);
+      });
+
+      // 4. Buscar estoque CPD disponível
+      const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_cpd')
-        .select('item_porcionado_id, quantidade, data_ultima_movimentacao')
-        .gt('quantidade', 0);
+        .select('item_porcionado_id, quantidade');
 
       if (estoqueError) throw estoqueError;
-      if (!estoque || estoque.length === 0) {
-        setItensDisponiveis([]);
-        return;
-      }
 
-      // 2. Buscar nomes dos itens porcionados
-      const itemIds = estoque.map(e => e.item_porcionado_id);
-      const { data: itensData, error: itensError } = await supabase
-        .from('itens_porcionados')
-        .select('id, nome')
-        .in('id', itemIds);
+      const estoqueCpdMap = new Map(
+        estoqueCpd?.map(e => [e.item_porcionado_id, e.quantidade]) || []
+      );
 
-      if (itensError) throw itensError;
+      // 5. Filtrar e agregar quantidades para a loja selecionada
+      const itensPorLoja = new Map<string, {
+        item_id: string;
+        item_nome: string;
+        quantidade_solicitada: number;
+        producao_registro_ids: string[];
+      }>();
 
-      // 3. Criar mapa de id -> nome
-      const nomesMap = new Map(itensData?.map(i => [i.id, i.nome]) || []);
+      producoes?.forEach(prod => {
+        const detalhes = (prod.detalhes_lojas as any[]) || [];
+        const detalheLojaAtual = detalhes.find(d => d.loja_id === selectedLoja);
 
-      // 4. Combinar dados
-      const itens: ItemDisponivel[] = estoque.map(e => ({
-        item_id: e.item_porcionado_id,
-        item_nome: nomesMap.get(e.item_porcionado_id) || 'Item desconhecido',
-        quantidade_disponivel: e.quantidade,
-        data_producao: e.data_ultima_movimentacao,
-        producao_registro_ids: []
-      }));
+        if (detalheLojaAtual && detalheLojaAtual.quantidade > 0) {
+          const atual = itensPorLoja.get(prod.item_id) || {
+            item_id: prod.item_id,
+            item_nome: prod.item_nome,
+            quantidade_solicitada: 0,
+            producao_registro_ids: []
+          };
+          
+          itensPorLoja.set(prod.item_id, {
+            item_id: prod.item_id,
+            item_nome: prod.item_nome,
+            quantidade_solicitada: atual.quantidade_solicitada + detalheLojaAtual.quantidade,
+            producao_registro_ids: [...atual.producao_registro_ids, prod.id]
+          });
+        }
+      });
 
-      setItensDisponiveis(itens);
+      // 6. Validar contra estoque CPD e criar lista de itens disponíveis
+      const itensDisponiveis: ItemDisponivel[] = [];
+      
+      itensPorLoja.forEach(item => {
+        const estoqueDisponivel = estoqueCpdMap.get(item.item_id) || 0;
+        const quantidadeReservada = quantidadesReservadas.get(item.item_id) || 0;
+        const quantidadeReal = estoqueDisponivel - quantidadeReservada;
+        
+        // Quantidade final: menor entre o que a loja precisa e o que está disponível
+        const quantidadeFinal = Math.min(item.quantidade_solicitada, quantidadeReal);
+
+        if (quantidadeFinal > 0) {
+          itensDisponiveis.push({
+            item_id: item.item_id,
+            item_nome: item.item_nome,
+            quantidade_disponivel: quantidadeFinal,
+            data_producao: new Date().toISOString(),
+            producao_registro_ids: item.producao_registro_ids
+          });
+        }
+      });
+
+      setItensDisponiveis(itensDisponiveis);
     } catch (error) {
       console.error('Erro ao buscar itens:', error);
       toast.error('Erro ao carregar itens disponíveis');
@@ -446,6 +516,10 @@ const RomaneioPorcionados = () => {
     setCurrentStep(currentStep + 1);
   };
 
+  const getNomeLojaSelecionada = () => {
+    return lojas.find(l => l.id === selectedLoja)?.nome || '';
+  };
+
   const handleVoltarPasso = () => {
     setCurrentStep(currentStep - 1);
   };
@@ -625,6 +699,16 @@ const RomaneioPorcionados = () => {
             {/* Passo 2: Escolher Itens */}
             {currentStep === 2 && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Header com loja selecionada */}
+                <div className="lg:col-span-3 mb-2">
+                  <div className="bg-primary/10 p-3 rounded-lg flex items-center gap-2">
+                    <Truck className="h-5 w-5" />
+                    <span className="font-semibold">
+                      Enviando para: {getNomeLojaSelecionada()}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="lg:col-span-2 space-y-4">
                   <Card>
                     <CardHeader>
@@ -740,7 +824,15 @@ const RomaneioPorcionados = () => {
             {currentStep === 3 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Conferir e Finalizar Romaneio</CardTitle>
+                  <div className="space-y-3">
+                    <CardTitle>Conferir e Finalizar Romaneio</CardTitle>
+                    <div className="bg-primary/10 p-3 rounded-lg flex items-center gap-2">
+                      <Truck className="h-5 w-5" />
+                      <span className="font-semibold">
+                        Enviando para: {getNomeLojaSelecionada()}
+                      </span>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
