@@ -12,6 +12,16 @@ import ItensPorcionados from "./pages/ItensPorcionados";
 import Producao from "./pages/Producao";
 import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
+import ResumoDaProducao from "./pages/ResumoDaProducao";
+import PainelKanban from "./pages/PainelKanban";
+import EstoqueDiario from "./pages/EstoqueDiario";
+import AtenderPedidosDiarios from "./pages/AtenderPedidosDiarios";
+import ContagemPorcionados from "./pages/ContagemPorcionados";
+import RomaneioPorcionados from "./pages/RomaneioPorcionados";
+import ReceberPorcionados from "./pages/ReceberPorcionados";
+import ErrosDevolucoes from "./pages/ErrosDevolucoes";
+import ListaDeComprasIA from "./pages/ListaDeComprasIA";
+import CentralDeRelatorios from "./pages/CentralDeRelatorios";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,10 +44,82 @@ const App = () => (
               }
             />
             <Route
+              path="/resumo-da-producao"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ResumoDaProducao />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/painel-kanban"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <PainelKanban />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/estoque-diario"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <EstoqueDiario />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/atender-pedidos-diarios"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <AtenderPedidosDiarios />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/insumos"
               element={
                 <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
                   <Insumos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/contagem-porcionados"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ContagemPorcionados />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/romaneio-porcionados"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <RomaneioPorcionados />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/receber-porcionados"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ReceberPorcionados />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/erros-devolucoes"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ErrosDevolucoes />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/lista-de-compras-ia"
+              element={
+                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                  <ListaDeComprasIA />
                 </ProtectedRoute>
               }
             />
@@ -62,6 +144,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
                   <Lojas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/central-de-relatorios"
+              element={
+                <ProtectedRoute>
+                  <CentralDeRelatorios />
                 </ProtectedRoute>
               }
             />
