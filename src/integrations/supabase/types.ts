@@ -186,6 +186,7 @@ export type Database = {
       estoque_loja_produtos: {
         Row: {
           created_at: string | null
+          data_confirmacao_recebimento: string | null
           data_ultima_atualizacao: string | null
           data_ultima_contagem: string | null
           data_ultimo_envio: string | null
@@ -198,6 +199,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          data_confirmacao_recebimento?: string | null
           data_ultima_atualizacao?: string | null
           data_ultima_contagem?: string | null
           data_ultimo_envio?: string | null
@@ -210,6 +212,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          data_confirmacao_recebimento?: string | null
           data_ultima_atualizacao?: string | null
           data_ultima_contagem?: string | null
           data_ultimo_envio?: string | null

@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck } from 'lucide-react';
+import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck, PackageCheck } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Loja {
@@ -42,6 +42,7 @@ interface EstoqueAtual {
   quantidade: number;
   data_ultima_contagem?: string;
   data_ultimo_envio?: string;
+  data_confirmacao_recebimento?: string;
 }
 
 interface ProdutoEstoque extends Produto {
@@ -68,6 +69,8 @@ const EstoqueDiario = () => {
   const [observacaoEnvio, setObservacaoEnvio] = useState('');
   const [apenasComEnvio, setApenasComEnvio] = useState(true);
   const [sendingProducts, setSendingProducts] = useState(false);
+  const [receivingProducts, setReceivingProducts] = useState(false);
+  const [observacaoRecebimento, setObservacaoRecebimento] = useState('');
 
   // Obter dia da semana atual
   const diaAtual = useMemo(() => {
@@ -167,7 +170,7 @@ const EstoqueDiario = () => {
         // Buscar estoques atuais da loja
         const { data: estoquesAtuaisData, error: estoquesAtuaisError } = await supabase
           .from('estoque_loja_produtos')
-          .select('produto_id, quantidade, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio')
+          .select('produto_id, quantidade, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
           .eq('loja_id', lojaSelecionada);
 
         if (estoquesAtuaisError) throw estoquesAtuaisError;
@@ -177,7 +180,8 @@ const EstoqueDiario = () => {
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
           data_ultima_contagem: e.data_ultima_contagem,
-          data_ultimo_envio: e.data_ultimo_envio
+          data_ultimo_envio: e.data_ultimo_envio,
+          data_confirmacao_recebimento: e.data_confirmacao_recebimento
         }));
         setEstoquesAtuais(estoquesMap);
 
@@ -312,6 +316,25 @@ const EstoqueDiario = () => {
     return filtrados;
   }, [produtosComEstoque, categoriaFilter, apenasComEnvio, estoquesAtuais]);
 
+  // Filtrar produtos pendentes de recebimento (enviados mas não confirmados)
+  const produtosPendentesRecebimento = useMemo(() => {
+    return produtosComEstoque.filter(p => {
+      // Filtro de categoria
+      if (categoriaFilter !== 'todas' && p.categoria !== categoriaFilter) {
+        return false;
+      }
+
+      const estoqueInfo = estoquesAtuais.find(e => e.produto_id === p.id);
+      
+      // Tem data_ultimo_envio mas não tem data_confirmacao_recebimento
+      // OU data_ultimo_envio é mais recente que data_confirmacao_recebimento
+      if (!estoqueInfo?.data_ultimo_envio) return false;
+      if (!estoqueInfo?.data_confirmacao_recebimento) return true; // Nunca confirmado
+      
+      return new Date(estoqueInfo.data_ultimo_envio) > new Date(estoqueInfo.data_confirmacao_recebimento);
+    });
+  }, [produtosComEstoque, categoriaFilter, estoquesAtuais]);
+
   // Confirmar envio de produtos
   const handleConfirmarEnvio = async () => {
     if (!user || !lojaSelecionada) return;
@@ -368,7 +391,7 @@ const EstoqueDiario = () => {
       // Recarregar dados
       const { data: estoquesAtuaisData } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio')
+        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
         .eq('loja_id', lojaSelecionada);
       
       if (estoquesAtuaisData) {
@@ -376,7 +399,8 @@ const EstoqueDiario = () => {
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
           data_ultima_contagem: e.data_ultima_contagem,
-          data_ultimo_envio: e.data_ultimo_envio
+          data_ultimo_envio: e.data_ultimo_envio,
+          data_confirmacao_recebimento: e.data_confirmacao_recebimento
         })));
       }
     } catch (error) {
@@ -428,7 +452,7 @@ const EstoqueDiario = () => {
       // Recarregar dados do banco para garantir sincronização completa
       const { data: dadosAtualizados } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio')
+        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
         .eq('loja_id', lojaSelecionada);
 
       if (dadosAtualizados) {
@@ -436,7 +460,8 @@ const EstoqueDiario = () => {
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
           data_ultima_contagem: e.data_ultima_contagem,
-          data_ultimo_envio: e.data_ultimo_envio
+          data_ultimo_envio: e.data_ultimo_envio,
+          data_confirmacao_recebimento: e.data_confirmacao_recebimento
         })));
       }
       
@@ -450,6 +475,72 @@ const EstoqueDiario = () => {
       toast.error('Erro ao salvar estoque');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Confirmar recebimento de produtos
+  const handleConfirmarRecebimento = async () => {
+    if (!user || !lojaSelecionada) return;
+
+    if (produtosPendentesRecebimento.length === 0) {
+      toast.error('Nenhum produto pendente de recebimento');
+      return;
+    }
+
+    try {
+      setReceivingProducts(true);
+
+      // Buscar nome do usuário
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user.id)
+        .single();
+
+      const usuarioNome = profile?.nome || user.email || 'Usuário';
+
+      // Atualizar todos os produtos pendentes com confirmação de recebimento
+      const updates = produtosPendentesRecebimento.map(produto => ({
+        loja_id: lojaSelecionada,
+        produto_id: produto.id,
+        data_confirmacao_recebimento: new Date().toISOString(),
+        usuario_id: user.id,
+        usuario_nome: usuarioNome,
+        data_ultima_atualizacao: new Date().toISOString()
+      }));
+
+      const { error } = await supabase
+        .from('estoque_loja_produtos')
+        .upsert(updates, {
+          onConflict: 'loja_id,produto_id'
+        });
+
+      if (error) throw error;
+
+      toast.success(`${produtosPendentesRecebimento.length} produto(s) confirmado(s) como recebido(s)!`);
+      
+      // Resetar observação
+      setObservacaoRecebimento('');
+      
+      // Recarregar dados
+      const { data: estoquesAtuaisData } = await supabase
+        .from('estoque_loja_produtos')
+        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
+        .eq('loja_id', lojaSelecionada);
+      
+      if (estoquesAtuaisData) {
+        setEstoquesAtuais(estoquesAtuaisData.map(e => ({
+          produto_id: e.produto_id,
+          quantidade: Number(e.quantidade),
+          data_ultima_contagem: e.data_ultima_contagem,
+          data_ultimo_envio: e.data_ultimo_envio
+        })));
+      }
+    } catch (error) {
+      console.error('Erro ao confirmar recebimento:', error);
+      toast.error('Erro ao confirmar recebimento');
+    } finally {
+      setReceivingProducts(false);
     }
   };
 
@@ -486,14 +577,18 @@ const EstoqueDiario = () => {
         </div>
 
         <Tabs defaultValue="contagem" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="contagem" className="gap-2">
               <Package className="h-4 w-4" />
-              Contagem Loja
+              Reposição de Estoque
             </TabsTrigger>
             <TabsTrigger value="envio" className="gap-2">
               <Truck className="h-4 w-4" />
               Envio CPD
+            </TabsTrigger>
+            <TabsTrigger value="receber" className="gap-2">
+              <PackageCheck className="h-4 w-4" />
+              Receber Reposição
             </TabsTrigger>
           </TabsList>
 
@@ -768,6 +863,137 @@ const EstoqueDiario = () => {
                   >
                     <Truck className="h-4 w-4" />
                     {sendingProducts ? 'Enviando...' : 'Confirmar Envio de Produtos'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* ABA 3: RECEBER REPOSIÇÃO */}
+      <TabsContent value="receber">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PackageCheck className="h-5 w-5" />
+              Receber Reposição de Estoque
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filtros */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Selecione a Loja</label>
+                <Select value={lojaSelecionada} onValueChange={setLojaSelecionada}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma loja" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lojas.map(loja => (
+                      <SelectItem key={loja.id} value={loja.id}>
+                        {loja.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Filtrar por Categoria</label>
+                <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as categorias" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as categorias</SelectItem>
+                    {categorias.map(cat => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Tabela de Produtos Pendentes de Recebimento */}
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : produtosPendentesRecebimento.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Nenhum produto pendente de recebimento.
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-3 font-medium">Produto</th>
+                        <th className="text-left p-3 font-medium">Unid.</th>
+                        <th className="text-center p-3 font-medium">Est. Atual</th>
+                        <th className="text-center p-3 font-medium">Data Envio</th>
+                        <th className="text-center p-3 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {produtosPendentesRecebimento.map(produto => {
+                        const estoqueInfo = estoquesAtuais.find(e => e.produto_id === produto.id);
+                        const dataEnvio = estoqueInfo?.data_ultimo_envio 
+                          ? new Date(estoqueInfo.data_ultimo_envio).toLocaleDateString('pt-BR')
+                          : '-';
+                        
+                        return (
+                          <tr key={produto.id} className="border-b hover:bg-muted/50">
+                            <td className="p-3">
+                              <div>
+                                <div className="font-medium">{produto.nome}</div>
+                                {produto.codigo && (
+                                  <div className="text-sm text-muted-foreground">{produto.codigo}</div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3 text-muted-foreground">{produto.unidade_consumo || 'unid.'}</td>
+                            <td className="p-3 text-center font-medium">{produto.estoque_atual}</td>
+                            <td className="p-3 text-center">{dataEnvio}</td>
+                            <td className="p-3 text-center">
+                              <span className="text-yellow-600 text-sm font-medium">
+                                Pendente
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Observação */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Observação sobre o Recebimento (opcional)</label>
+                  <Textarea
+                    placeholder="Adicione observações sobre o recebimento (divergências, avarias, etc.)"
+                    value={observacaoRecebimento}
+                    onChange={(e) => setObservacaoRecebimento(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
+                {/* Botão Confirmar Recebimento */}
+                <div className="flex justify-end pt-4 border-t">
+                  <Button 
+                    onClick={handleConfirmarRecebimento}
+                    disabled={receivingProducts || produtosPendentesRecebimento.length === 0}
+                    className="gap-2"
+                    size="lg"
+                  >
+                    <PackageCheck className="h-4 w-4" />
+                    {receivingProducts ? 'Confirmando...' : 'Confirmar Recebimento de Todos'}
                   </Button>
                 </div>
               </>
