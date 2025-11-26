@@ -40,6 +40,7 @@ interface EstoqueMinimo {
 interface EstoqueAtual {
   produto_id: string;
   quantidade: number;
+  quantidade_ultimo_envio?: number;
   data_ultima_contagem?: string;
   data_ultimo_envio?: string;
   data_confirmacao_recebimento?: string;
@@ -71,6 +72,7 @@ const EstoqueDiario = () => {
   const [sendingProducts, setSendingProducts] = useState(false);
   const [receivingProducts, setReceivingProducts] = useState(false);
   const [observacaoRecebimento, setObservacaoRecebimento] = useState('');
+  const [quantidadesRecebidas, setQuantidadesRecebidas] = useState<{ [key: string]: number }>({});
 
   // Obter dia da semana atual
   const diaAtual = useMemo(() => {
@@ -170,7 +172,7 @@ const EstoqueDiario = () => {
         // Buscar estoques atuais da loja
         const { data: estoquesAtuaisData, error: estoquesAtuaisError } = await supabase
           .from('estoque_loja_produtos')
-          .select('produto_id, quantidade, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
+          .select('produto_id, quantidade, quantidade_ultimo_envio, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
           .eq('loja_id', lojaSelecionada);
 
         if (estoquesAtuaisError) throw estoquesAtuaisError;
@@ -179,6 +181,7 @@ const EstoqueDiario = () => {
         const estoquesMap = (estoquesAtuaisData || []).map(e => ({
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
+          quantidade_ultimo_envio: e.quantidade_ultimo_envio ? Number(e.quantidade_ultimo_envio) : undefined,
           data_ultima_contagem: e.data_ultima_contagem,
           data_ultimo_envio: e.data_ultimo_envio,
           data_confirmacao_recebimento: e.data_confirmacao_recebimento
@@ -318,7 +321,7 @@ const EstoqueDiario = () => {
 
   // Filtrar produtos pendentes de recebimento (enviados mas não confirmados)
   const produtosPendentesRecebimento = useMemo(() => {
-    return produtosComEstoque.filter(p => {
+    const pendentes = produtosComEstoque.filter(p => {
       // Filtro de categoria
       if (categoriaFilter !== 'todas' && p.categoria !== categoriaFilter) {
         return false;
@@ -333,6 +336,18 @@ const EstoqueDiario = () => {
       
       return new Date(estoqueInfo.data_ultimo_envio) > new Date(estoqueInfo.data_confirmacao_recebimento);
     });
+    
+    // Inicializar quantidades recebidas com quantidades enviadas
+    const novasQuantidades: { [key: string]: number } = {};
+    pendentes.forEach(p => {
+      const estoqueInfo = estoquesAtuais.find(e => e.produto_id === p.id);
+      if (estoqueInfo?.quantidade_ultimo_envio) {
+        novasQuantidades[p.id] = estoqueInfo.quantidade_ultimo_envio;
+      }
+    });
+    setQuantidadesRecebidas(novasQuantidades);
+    
+    return pendentes;
   }, [produtosComEstoque, categoriaFilter, estoquesAtuais]);
 
   // Confirmar envio de produtos
@@ -367,6 +382,7 @@ const EstoqueDiario = () => {
           loja_id: lojaSelecionada,
           produto_id: produtoId,
           quantidade: novoEstoque,
+          quantidade_ultimo_envio: quantidade, // Armazena quantidade enviada
           usuario_id: user.id,
           usuario_nome: usuarioNome,
           data_ultima_atualizacao: new Date().toISOString(),
@@ -391,13 +407,14 @@ const EstoqueDiario = () => {
       // Recarregar dados
       const { data: estoquesAtuaisData } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
+        .select('produto_id, quantidade, quantidade_ultimo_envio, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
         .eq('loja_id', lojaSelecionada);
       
       if (estoquesAtuaisData) {
         setEstoquesAtuais(estoquesAtuaisData.map(e => ({
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
+          quantidade_ultimo_envio: e.quantidade_ultimo_envio ? Number(e.quantidade_ultimo_envio) : undefined,
           data_ultima_contagem: e.data_ultima_contagem,
           data_ultimo_envio: e.data_ultimo_envio,
           data_confirmacao_recebimento: e.data_confirmacao_recebimento
@@ -452,13 +469,14 @@ const EstoqueDiario = () => {
       // Recarregar dados do banco para garantir sincronização completa
       const { data: dadosAtualizados } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
+        .select('produto_id, quantidade, quantidade_ultimo_envio, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
         .eq('loja_id', lojaSelecionada);
 
       if (dadosAtualizados) {
         setEstoquesAtuais(dadosAtualizados.map(e => ({
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
+          quantidade_ultimo_envio: e.quantidade_ultimo_envio ? Number(e.quantidade_ultimo_envio) : undefined,
           data_ultima_contagem: e.data_ultima_contagem,
           data_ultimo_envio: e.data_ultimo_envio,
           data_confirmacao_recebimento: e.data_confirmacao_recebimento
@@ -476,6 +494,15 @@ const EstoqueDiario = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Atualizar quantidade recebida de um produto
+  const handleQuantidadeRecebidaChange = (produtoId: string, valor: string) => {
+    const quantidade = valor === '' ? 0 : Number(valor);
+    setQuantidadesRecebidas(prev => ({
+      ...prev,
+      [produtoId]: quantidade
+    }));
   };
 
   // Confirmar recebimento de produtos
@@ -499,15 +526,26 @@ const EstoqueDiario = () => {
 
       const usuarioNome = profile?.nome || user.email || 'Usuário';
 
-      // Atualizar todos os produtos pendentes com confirmação de recebimento
-      const updates = produtosPendentesRecebimento.map(produto => ({
-        loja_id: lojaSelecionada,
-        produto_id: produto.id,
-        data_confirmacao_recebimento: new Date().toISOString(),
-        usuario_id: user.id,
-        usuario_nome: usuarioNome,
-        data_ultima_atualizacao: new Date().toISOString()
-      }));
+      // Atualizar estoque com a quantidade realmente recebida
+      const updates = produtosPendentesRecebimento.map(produto => {
+        const estoqueInfo = estoquesAtuais.find(e => e.produto_id === produto.id);
+        const quantidadeEnviada = estoqueInfo?.quantidade_ultimo_envio || 0;
+        const quantidadeRecebida = quantidadesRecebidas[produto.id] || quantidadeEnviada;
+        const estoqueAtual = produto.estoque_atual || 0;
+        
+        // Ajustar estoque: remover o que foi enviado e adicionar o que foi realmente recebido
+        const novoEstoque = estoqueAtual - quantidadeEnviada + quantidadeRecebida;
+        
+        return {
+          loja_id: lojaSelecionada,
+          produto_id: produto.id,
+          quantidade: novoEstoque,
+          data_confirmacao_recebimento: new Date().toISOString(),
+          usuario_id: user.id,
+          usuario_nome: usuarioNome,
+          data_ultima_atualizacao: new Date().toISOString()
+        };
+      });
 
       const { error } = await supabase
         .from('estoque_loja_produtos')
@@ -517,23 +555,42 @@ const EstoqueDiario = () => {
 
       if (error) throw error;
 
-      toast.success(`${produtosPendentesRecebimento.length} produto(s) confirmado(s) como recebido(s)!`);
+      // Verificar divergências
+      let comDivergencia = 0;
+      produtosPendentesRecebimento.forEach(produto => {
+        const estoqueInfo = estoquesAtuais.find(e => e.produto_id === produto.id);
+        const quantidadeEnviada = estoqueInfo?.quantidade_ultimo_envio || 0;
+        const quantidadeRecebida = quantidadesRecebidas[produto.id] || quantidadeEnviada;
+        
+        if (quantidadeRecebida !== quantidadeEnviada) {
+          comDivergencia++;
+        }
+      });
+
+      const mensagem = comDivergencia > 0 
+        ? `${produtosPendentesRecebimento.length} produto(s) confirmado(s)! ${comDivergencia} com divergência.`
+        : `${produtosPendentesRecebimento.length} produto(s) confirmado(s) sem divergências!`;
       
-      // Resetar observação
+      toast.success(mensagem);
+      
+      // Resetar estados
       setObservacaoRecebimento('');
+      setQuantidadesRecebidas({});
       
       // Recarregar dados
       const { data: estoquesAtuaisData } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
+        .select('produto_id, quantidade, quantidade_ultimo_envio, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
         .eq('loja_id', lojaSelecionada);
       
       if (estoquesAtuaisData) {
         setEstoquesAtuais(estoquesAtuaisData.map(e => ({
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
+          quantidade_ultimo_envio: e.quantidade_ultimo_envio ? Number(e.quantidade_ultimo_envio) : undefined,
           data_ultima_contagem: e.data_ultima_contagem,
-          data_ultimo_envio: e.data_ultimo_envio
+          data_ultimo_envio: e.data_ultimo_envio,
+          data_confirmacao_recebimento: e.data_confirmacao_recebimento
         })));
       }
     } catch (error) {
@@ -936,17 +993,17 @@ const EstoqueDiario = () => {
                       <tr className="border-b">
                         <th className="text-left p-3 font-medium">Produto</th>
                         <th className="text-left p-3 font-medium">Unid.</th>
-                        <th className="text-center p-3 font-medium">Est. Atual</th>
-                        <th className="text-center p-3 font-medium">Data Envio</th>
+                        <th className="text-center p-3 font-medium">Qtd Enviada</th>
+                        <th className="text-center p-3 font-medium">Qtd Recebida</th>
                         <th className="text-center p-3 font-medium">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {produtosPendentesRecebimento.map(produto => {
                         const estoqueInfo = estoquesAtuais.find(e => e.produto_id === produto.id);
-                        const dataEnvio = estoqueInfo?.data_ultimo_envio 
-                          ? new Date(estoqueInfo.data_ultimo_envio).toLocaleDateString('pt-BR')
-                          : '-';
+                        const quantidadeEnviada = estoqueInfo?.quantidade_ultimo_envio || 0;
+                        const quantidadeRecebida = quantidadesRecebidas[produto.id] || quantidadeEnviada;
+                        const temDivergencia = quantidadeRecebida !== quantidadeEnviada;
                         
                         return (
                           <tr key={produto.id} className="border-b hover:bg-muted/50">
@@ -959,12 +1016,35 @@ const EstoqueDiario = () => {
                               </div>
                             </td>
                             <td className="p-3 text-muted-foreground">{produto.unidade_consumo || 'unid.'}</td>
-                            <td className="p-3 text-center font-medium">{produto.estoque_atual}</td>
-                            <td className="p-3 text-center">{dataEnvio}</td>
                             <td className="p-3 text-center">
-                              <span className="text-yellow-600 text-sm font-medium">
-                                Pendente
-                              </span>
+                              <span className="font-medium">{quantidadeEnviada.toFixed(2)}</span>
+                            </td>
+                            <td className="p-3">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={quantidadeRecebida}
+                                onChange={(e) => handleQuantidadeRecebidaChange(produto.id, e.target.value)}
+                                className="w-28 mx-auto text-center"
+                              />
+                            </td>
+                            <td className="p-3 text-center">
+                              {temDivergencia ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                  <span className="text-yellow-600 text-sm font-medium">
+                                    Divergência
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-center gap-1">
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-600 text-sm font-medium">
+                                    OK
+                                  </span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
