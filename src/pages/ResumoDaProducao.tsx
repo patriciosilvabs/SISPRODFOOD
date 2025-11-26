@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAlarmSound } from '@/hooks/useAlarmSound';
+import { Volume2, VolumeX } from 'lucide-react';
 
 interface DetalheLojaProducao {
   loja_id: string;
@@ -53,6 +56,8 @@ interface ProducaoRegistro {
   demanda_lojas?: number | null;
   reserva_configurada?: number | null;
   sobra_reserva?: number | null;
+  timer_ativo?: boolean;
+  tempo_timer_minutos?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -73,6 +78,7 @@ const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
 
 const ResumoDaProducao = () => {
   const { user, profile } = useAuth();
+  const { playAlarm, stopAlarm } = useAlarmSound();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -83,6 +89,29 @@ const ResumoDaProducao = () => {
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
+  const [alarmPlaying, setAlarmPlaying] = useState(false);
+  const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
+
+  const handleStopAlarm = () => {
+    stopAlarm();
+    setAlarmPlaying(false);
+  };
+
+  // Função para notificar quando timer acabar
+  const handleTimerFinished = (registroId: string) => {
+    setFinishedTimers(prev => {
+      const newSet = new Set(prev);
+      if (!newSet.has(registroId)) {
+        newSet.add(registroId);
+        // Tocar alarme apenas uma vez por timer
+        if (!alarmPlaying) {
+          playAlarm();
+          setAlarmPlaying(true);
+        }
+      }
+      return newSet;
+    });
+  };
 
   // Função para buscar dados do item e insumo vinculado
   const getItemInsumoData = async (itemId: string) => {
@@ -192,11 +221,11 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado)
+      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado, timer_ativo, tempo_timer_minutos)
       const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
       const { data: itensData } = await supabase
         .from('itens_porcionados')
-        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id')
+        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos')
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
@@ -280,6 +309,8 @@ const ResumoDaProducao = () => {
           insumo_principal_nome: insumo?.nome,
           insumo_principal_estoque_kg: insumo?.quantidade_em_estoque,
           insumosExtras: insumosExtras,
+          timer_ativo: itemInfo?.timer_ativo,
+          tempo_timer_minutos: itemInfo?.tempo_timer_minutos,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -350,6 +381,18 @@ const ResumoDaProducao = () => {
     if (!selectedRegistro) return;
 
     try {
+      // Parar alarme se estiver tocando
+      if (alarmPlaying) {
+        handleStopAlarm();
+      }
+      
+      // Remover do set de timers finalizados
+      setFinishedTimers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(selectedRegistro.id);
+        return newSet;
+      });
+
       const { error } = await supabase
         .from('producao_registros')
         .update({
@@ -564,11 +607,24 @@ const ResumoDaProducao = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Resumo da Produção</h1>
-          <p className="text-muted-foreground mt-1">
-            Gerencie o fluxo de produção através do Kanban
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Resumo da Produção</h1>
+            <p className="text-muted-foreground mt-1">
+              Gerencie o fluxo de produção através do Kanban
+            </p>
+          </div>
+          {alarmPlaying && (
+            <Button
+              onClick={handleStopAlarm}
+              variant="destructive"
+              size="lg"
+              className="animate-pulse"
+            >
+              <VolumeX className="h-5 w-5 mr-2" />
+              Parar Alarme
+            </Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -590,6 +646,7 @@ const ResumoDaProducao = () => {
                       registro={registro}
                       columnId={columnId}
                       onAction={() => handleCardAction(registro, columnId)}
+                      onTimerFinished={handleTimerFinished}
                     />
                   ))}
                   

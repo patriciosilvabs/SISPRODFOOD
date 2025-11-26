@@ -4,6 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { TimerDisplay } from './TimerDisplay';
+import { useProductionTimer } from '@/hooks/useProductionTimer';
+import { useEffect } from 'react';
 
 interface InsumoExtraComEstoque {
   nome: string;
@@ -21,6 +24,7 @@ interface DetalheLojaProducao {
 
 interface ProducaoRegistro {
   id: string;
+  item_id: string;
   item_nome: string;
   status: string;
   unidades_programadas: number | null;
@@ -43,6 +47,8 @@ interface ProducaoRegistro {
   demanda_lojas?: number | null;
   reserva_configurada?: number | null;
   sobra_reserva?: number | null;
+  timer_ativo?: boolean;
+  tempo_timer_minutos?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -51,9 +57,25 @@ interface KanbanCardProps {
   registro: ProducaoRegistro;
   columnId: StatusColumn;
   onAction: () => void;
+  onTimerFinished?: (registroId: string) => void;
 }
 
-export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
+export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: KanbanCardProps) {
+  // Hook para gerenciar timer (apenas para EM PREPARO)
+  const timerState = useProductionTimer(
+    registro.id,
+    registro.tempo_timer_minutos || 10,
+    registro.timer_ativo || false,
+    registro.data_inicio_preparo || null
+  );
+
+  // Notificar quando timer acabar
+  useEffect(() => {
+    if (columnId === 'em_preparo' && timerState.isFinished && onTimerFinished) {
+      onTimerFinished(registro.id);
+    }
+  }, [timerState.isFinished, columnId, registro.id, onTimerFinished]);
+
   const getButtonConfig = () => {
     switch (columnId) {
       case 'a_produzir':
@@ -92,7 +114,9 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
     registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className={`hover:shadow-md transition-shadow ${
+      columnId === 'em_preparo' && timerState.isFinished ? 'ring-4 ring-red-500 animate-pulse' : ''
+    }`}>
       <CardContent className="p-4">
         <div className="space-y-3">
           {/* Header */}
@@ -210,6 +234,16 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
             {/* EM PREPARO */}
             {columnId === 'em_preparo' && (
               <>
+                {/* Timer Display */}
+                {registro.timer_ativo && registro.tempo_timer_minutos && timerState.isActive && (
+                  <div className="mb-3">
+                    <TimerDisplay
+                      secondsRemaining={timerState.secondsRemaining}
+                      isFinished={timerState.isFinished}
+                    />
+                  </div>
+                )}
+                
                 {registro.unidades_programadas && (
                   <p className="text-muted-foreground">
                     📦 Programadas: <span className="font-medium">{registro.unidades_programadas} un</span>
