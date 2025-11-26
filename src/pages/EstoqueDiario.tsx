@@ -40,6 +40,8 @@ interface EstoqueMinimo {
 interface EstoqueAtual {
   produto_id: string;
   quantidade: number;
+  data_ultima_contagem?: string;
+  data_ultimo_envio?: string;
 }
 
 interface ProdutoEstoque extends Produto {
@@ -165,7 +167,7 @@ const EstoqueDiario = () => {
         // Buscar estoques atuais da loja
         const { data: estoquesAtuaisData, error: estoquesAtuaisError } = await supabase
           .from('estoque_loja_produtos')
-          .select('produto_id, quantidade, data_ultima_atualizacao, usuario_nome')
+          .select('produto_id, quantidade, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio')
           .eq('loja_id', lojaSelecionada);
 
         if (estoquesAtuaisError) throw estoquesAtuaisError;
@@ -173,7 +175,9 @@ const EstoqueDiario = () => {
         // Converter para o formato esperado
         const estoquesMap = (estoquesAtuaisData || []).map(e => ({
           produto_id: e.produto_id,
-          quantidade: Number(e.quantidade)
+          quantidade: Number(e.quantidade),
+          data_ultima_contagem: e.data_ultima_contagem,
+          data_ultimo_envio: e.data_ultimo_envio
         }));
         setEstoquesAtuais(estoquesMap);
 
@@ -284,17 +288,29 @@ const EstoqueDiario = () => {
     setQuantidadesEnvio(novasQuantidades);
   }, [produtosComEstoque]);
 
-  // Filtrar produtos para envio
+  // Filtrar produtos para envio (apenas com contagem pendente)
   const produtosParaEnvio = useMemo(() => {
-    const filtrados = produtosComEstoque.filter(p => 
-      categoriaFilter === 'todas' ? true : p.categoria === categoriaFilter
-    );
+    const filtrados = produtosComEstoque.filter(p => {
+      // Filtro de categoria
+      if (categoriaFilter !== 'todas' && p.categoria !== categoriaFilter) {
+        return false;
+      }
+
+      // Buscar informações de timestamp
+      const estoqueInfo = estoquesAtuais.find(e => e.produto_id === p.id);
+      
+      // Só mostra se há contagem pendente (nova contagem após último envio)
+      if (!estoqueInfo?.data_ultima_contagem) return false; // Sem contagem
+      if (!estoqueInfo?.data_ultimo_envio) return true; // Nunca enviado
+      
+      return new Date(estoqueInfo.data_ultima_contagem) > new Date(estoqueInfo.data_ultimo_envio);
+    });
 
     if (apenasComEnvio) {
       return filtrados.filter(p => p.a_enviar > 0);
     }
     return filtrados;
-  }, [produtosComEstoque, categoriaFilter, apenasComEnvio]);
+  }, [produtosComEstoque, categoriaFilter, apenasComEnvio, estoquesAtuais]);
 
   // Confirmar envio de produtos
   const handleConfirmarEnvio = async () => {
@@ -330,7 +346,8 @@ const EstoqueDiario = () => {
           quantidade: novoEstoque,
           usuario_id: user.id,
           usuario_nome: usuarioNome,
-          data_ultima_atualizacao: new Date().toISOString()
+          data_ultima_atualizacao: new Date().toISOString(),
+          data_ultimo_envio: new Date().toISOString() // Marca como enviado
         };
       });
 
@@ -351,13 +368,15 @@ const EstoqueDiario = () => {
       // Recarregar dados
       const { data: estoquesAtuaisData } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, quantidade')
+        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio')
         .eq('loja_id', lojaSelecionada);
       
       if (estoquesAtuaisData) {
         setEstoquesAtuais(estoquesAtuaisData.map(e => ({
           produto_id: e.produto_id,
-          quantidade: Number(e.quantidade)
+          quantidade: Number(e.quantidade),
+          data_ultima_contagem: e.data_ultima_contagem,
+          data_ultimo_envio: e.data_ultimo_envio
         })));
       }
     } catch (error) {
@@ -391,7 +410,8 @@ const EstoqueDiario = () => {
         quantidade: e.quantidade,
         usuario_id: user.id,
         usuario_nome: usuarioNome,
-        data_ultima_atualizacao: new Date().toISOString()
+        data_ultima_atualizacao: new Date().toISOString(),
+        data_ultima_contagem: new Date().toISOString() // Marca nova contagem
       }));
 
       // Fazer upsert (insert or update)

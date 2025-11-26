@@ -187,6 +187,8 @@ export type Database = {
         Row: {
           created_at: string | null
           data_ultima_atualizacao: string | null
+          data_ultima_contagem: string | null
+          data_ultimo_envio: string | null
           id: string
           loja_id: string
           produto_id: string
@@ -197,6 +199,8 @@ export type Database = {
         Insert: {
           created_at?: string | null
           data_ultima_atualizacao?: string | null
+          data_ultima_contagem?: string | null
+          data_ultimo_envio?: string | null
           id?: string
           loja_id: string
           produto_id: string
@@ -207,6 +211,8 @@ export type Database = {
         Update: {
           created_at?: string | null
           data_ultima_atualizacao?: string | null
+          data_ultima_contagem?: string | null
+          data_ultimo_envio?: string | null
           id?: string
           loja_id?: string
           produto_id?: string
