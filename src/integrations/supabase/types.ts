@@ -431,6 +431,7 @@ export type Database = {
       }
       itens_porcionados: {
         Row: {
+          ativo: boolean
           baixar_producao_inicio: boolean | null
           created_at: string | null
           equivalencia_traco: number | null
@@ -443,6 +444,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          ativo?: boolean
           baixar_producao_inicio?: boolean | null
           created_at?: string | null
           equivalencia_traco?: number | null
@@ -455,6 +457,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          ativo?: boolean
           baixar_producao_inicio?: boolean | null
           created_at?: string | null
           equivalencia_traco?: number | null
