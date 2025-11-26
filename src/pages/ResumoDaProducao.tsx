@@ -7,9 +7,11 @@ import { toast } from 'sonner';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ProducaoRegistro {
   id: string;
+  item_id: string;
   item_nome: string;
   status: string;
   unidades_programadas: number | null;
@@ -47,6 +49,7 @@ const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
 };
 
 const ResumoDaProducao = () => {
+  const { user, profile } = useAuth();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -57,6 +60,80 @@ const ResumoDaProducao = () => {
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
+
+  // Função para buscar dados do item e insumo vinculado
+  const getItemInsumoData = async (itemId: string) => {
+    const { data, error } = await supabase
+      .from('itens_porcionados')
+      .select('insumo_vinculado_id, baixar_producao_inicio, peso_unitario_g, nome')
+      .eq('id', itemId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar dados do item:', error);
+      return null;
+    }
+    return data;
+  };
+
+  // Função para movimentar estoque de insumo
+  const movimentarEstoqueInsumo = async (
+    insumoId: string,
+    quantidade: number,
+    itemNome: string,
+    tipo: 'entrada' | 'saida'
+  ) => {
+    try {
+      // 1. Buscar insumo e estoque atual
+      const { data: insumo, error: insumoError } = await supabase
+        .from('insumos')
+        .select('nome, quantidade_em_estoque')
+        .eq('id', insumoId)
+        .single();
+
+      if (insumoError) throw insumoError;
+
+      // 2. Calcular novo estoque
+      const estoqueAtual = insumo.quantidade_em_estoque || 0;
+      const novoEstoque = tipo === 'saida' 
+        ? estoqueAtual - quantidade 
+        : estoqueAtual + quantidade;
+
+      // 3. Atualizar estoque do insumo
+      const { error: updateError } = await supabase
+        .from('insumos')
+        .update({ 
+          quantidade_em_estoque: novoEstoque,
+          data_ultima_movimentacao: new Date().toISOString()
+        })
+        .eq('id', insumoId);
+
+      if (updateError) throw updateError;
+
+      // 4. Registrar no log
+      const { error: logError } = await supabase
+        .from('insumos_log')
+        .insert({
+          insumo_id: insumoId,
+          insumo_nome: insumo.nome,
+          quantidade: tipo === 'saida' ? -quantidade : quantidade,
+          tipo: tipo,
+          usuario_id: user?.id || '',
+          usuario_nome: profile?.nome || 'Sistema',
+        });
+
+      if (logError) throw logError;
+
+      // 5. Toast de sucesso
+      toast.success(
+        `✅ Estoque de ${insumo.nome} atualizado: ${tipo === 'saida' ? '-' : '+'}${quantidade} kg`
+      );
+    } catch (error) {
+      console.error('Erro ao movimentar estoque:', error);
+      toast.error('Erro ao atualizar estoque do insumo');
+      throw error;
+    }
+  };
 
   useEffect(() => {
     loadProducaoRegistros();
@@ -131,8 +208,8 @@ const ResumoDaProducao = () => {
     setSelectedRegistro(registro);
 
     if (columnId === 'a_produzir') {
-      // Transição direta para EM PREPARO
-      await transitionToPreparo(registro.id);
+      // Transição direta para EM PREPARO (com registro completo)
+      await transitionToPreparo(registro.id, registro);
     } else if (columnId === 'em_preparo') {
       // Abrir modal de preparo
       setModalPreparo(true);
@@ -142,8 +219,21 @@ const ResumoDaProducao = () => {
     }
   };
 
-  const transitionToPreparo = async (registroId: string) => {
+  const transitionToPreparo = async (registroId: string, registro: ProducaoRegistro) => {
     try {
+      // Buscar dados do item para verificar se deve baixar estoque no início
+      const itemData = await getItemInsumoData(registro.item_id);
+      
+      // Se baixar_producao_inicio = true e tem insumo vinculado, deduzir estoque
+      if (itemData?.baixar_producao_inicio && itemData.insumo_vinculado_id && registro.peso_programado_kg) {
+        await movimentarEstoqueInsumo(
+          itemData.insumo_vinculado_id,
+          registro.peso_programado_kg,
+          registro.item_nome,
+          'saida'
+        );
+      }
+
       const { error } = await supabase
         .from('producao_registros')
         .update({
@@ -203,6 +293,21 @@ const ResumoDaProducao = () => {
     if (!selectedRegistro) return;
 
     try {
+      // Buscar dados do item para verificar se deve baixar estoque no fim
+      const itemData = await getItemInsumoData(selectedRegistro.item_id);
+      
+      // Se baixar_producao_inicio = false e tem insumo vinculado, deduzir estoque
+      if (itemData && !itemData.baixar_producao_inicio && itemData.insumo_vinculado_id) {
+        const quantidadeKg = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
+        
+        await movimentarEstoqueInsumo(
+          itemData.insumo_vinculado_id,
+          quantidadeKg,
+          selectedRegistro.item_nome,
+          'saida'
+        );
+      }
+
       const { error } = await supabase
         .from('producao_registros')
         .update({
