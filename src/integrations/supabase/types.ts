@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      configuracoes_sistema: {
+        Row: {
+          chave: string
+          id: string
+          updated_at: string | null
+          valor: string | null
+        }
+        Insert: {
+          chave: string
+          id?: string
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Update: {
+          chave?: string
+          id?: string
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Relationships: []
+      }
       consumo_historico: {
         Row: {
           consumo_programado: number

@@ -4,33 +4,131 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ConfigurarReservaDiariaModal } from '@/components/modals/ConfigurarReservaDiariaModal';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const Configuracoes = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [currentSoundUrl, setCurrentSoundUrl] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+  useEffect(() => {
+    loadCurrentSound();
+  }, []);
+
+  const loadCurrentSound = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('configuracoes_sistema')
+        .select('valor')
+        .eq('chave', 'alarm_sound_url')
+        .maybeSingle();
+
+      if (error) throw error;
+      setCurrentSoundUrl(data?.valor || null);
+    } catch (error) {
+      console.error('Erro ao carregar som:', error);
     }
   };
 
-  const handleSaveSound = () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // Validar tipo de arquivo
+      if (!file.type.includes('audio')) {
+        toast.error('Por favor, selecione um arquivo de áudio válido');
+        return;
+      }
+      
+      setSelectedFile(file);
+    }
+  };
+
+  const handleSaveSound = async () => {
     if (!selectedFile) {
       toast.error('Nenhum arquivo selecionado');
       return;
     }
-    // TODO: Implement sound upload logic
-    toast.success('Som salvo com sucesso');
+
+    try {
+      setUploading(true);
+
+      // 1. Upload do arquivo para storage
+      const fileName = `alarm-${Date.now()}.mp3`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('alarm-sounds')
+        .upload(fileName, selectedFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Obter URL pública do arquivo
+      const { data: urlData } = supabase.storage
+        .from('alarm-sounds')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+
+      // 3. Salvar URL na tabela de configurações
+      const { error: configError } = await supabase
+        .from('configuracoes_sistema')
+        .upsert({
+          chave: 'alarm_sound_url',
+          valor: publicUrl,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'chave'
+        });
+
+      if (configError) throw configError;
+
+      setCurrentSoundUrl(publicUrl);
+      setSelectedFile(null);
+      toast.success('Som do alarme salvo com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar som:', error);
+      toast.error('Erro ao salvar som do alarme');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleTestSound = () => {
-    // TODO: Implement sound test logic
-    toast.info('Testando som atual');
+    if (!currentSoundUrl) {
+      // Tocar beep padrão
+      toast.info('Nenhum som personalizado configurado. Tocando beep padrão...');
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.3;
+
+      oscillator.start();
+      setTimeout(() => oscillator.stop(), 1000);
+      return;
+    }
+
+    // Tocar som configurado
+    const audio = new Audio(currentSoundUrl);
+    audio.play().catch((err) => {
+      console.error('Erro ao tocar som:', err);
+      toast.error('Erro ao testar som');
+    });
+    toast.info('Tocando som configurado...');
   };
 
   const configCards = [
@@ -154,13 +252,22 @@ const Configuracoes = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleSaveSound} className="flex-1">
-                    Salvar Som
+                  <Button 
+                    onClick={handleSaveSound} 
+                    className="flex-1"
+                    disabled={!selectedFile || uploading}
+                  >
+                    {uploading ? 'Salvando...' : 'Salvar Som'}
                   </Button>
                   <Button onClick={handleTestSound} variant="secondary" className="flex-1">
-                    Testar Som Atual
+                    Testar Som {currentSoundUrl ? 'Atual' : 'Padrão'}
                   </Button>
                 </div>
+                {currentSoundUrl && (
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                    ✓ Som personalizado configurado
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
