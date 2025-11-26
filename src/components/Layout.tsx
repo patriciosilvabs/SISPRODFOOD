@@ -10,7 +10,17 @@ import {
   BarChart3, 
   LogOut, 
   Menu,
-  Settings
+  Settings,
+  Search,
+  LayoutDashboard,
+  Trash2,
+  FileText,
+  Flag,
+  Truck,
+  ClipboardList,
+  AlertTriangle,
+  ShoppingCart,
+  Clock
 } from 'lucide-react';
 import {
   Sheet,
@@ -46,7 +56,16 @@ export const Layout = ({ children }: LayoutProps) => {
       
       {(isAdmin() || hasRole('Produção')) && (
         <>
-          <NavLink to="/insumos" icon={Package}>Insumos</NavLink>
+          <NavLink to="/resumo-da-producao" icon={Search}>Resumo da Produção</NavLink>
+          <NavLink to="/painel-kanban" icon={LayoutDashboard}>Painel Kanban</NavLink>
+          <NavLink to="/estoque-diario" icon={Trash2}>Estoque Diário (Geral)</NavLink>
+          <NavLink to="/atender-pedidos-diarios" icon={FileText}>Atender Pedidos Diários</NavLink>
+          <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
+          <NavLink to="/contagem-porcionados" icon={Flag}>Contagem Porcionados</NavLink>
+          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio Porcionados</NavLink>
+          <NavLink to="/receber-porcionados" icon={ClipboardList}>Receber Porcionados</NavLink>
+          <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
+          <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
           <NavLink to="/itens-porcionados" icon={ShoppingBag}>Itens Porcionados</NavLink>
           <NavLink to="/producao" icon={Factory}>Produção</NavLink>
         </>
@@ -55,6 +74,8 @@ export const Layout = ({ children }: LayoutProps) => {
       {(isAdmin() || hasRole('Loja')) && (
         <NavLink to="/lojas" icon={Store}>Lojas</NavLink>
       )}
+      
+      <NavLink to="/central-de-relatorios" icon={Clock}>Central de Relatórios</NavLink>
       
       {isAdmin() && (
         <NavLink to="/configuracoes" icon={Settings}>Configurações</NavLink>
