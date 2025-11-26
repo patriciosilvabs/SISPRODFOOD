@@ -133,10 +133,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "estoque_cpd_produto_id_fkey"
+            foreignKeyName: "estoque_cpd_item_porcionado_id_fkey"
             columns: ["item_porcionado_id"]
             isOneToOne: true
-            referencedRelation: "produtos"
+            referencedRelation: "itens_porcionados"
             referencedColumns: ["id"]
           },
         ]
