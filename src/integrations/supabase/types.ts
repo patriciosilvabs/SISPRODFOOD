@@ -183,6 +183,66 @@ export type Database = {
           },
         ]
       }
+      estoques_ideais_semanais: {
+        Row: {
+          created_at: string
+          domingo: number
+          id: string
+          item_porcionado_id: string
+          loja_id: string
+          quarta: number
+          quinta: number
+          sabado: number
+          segunda: number
+          sexta: number
+          terca: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          item_porcionado_id: string
+          loja_id: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          item_porcionado_id?: string
+          loja_id?: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estoques_ideais_semanais_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoques_ideais_semanais_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insumos: {
         Row: {
           created_at: string | null
