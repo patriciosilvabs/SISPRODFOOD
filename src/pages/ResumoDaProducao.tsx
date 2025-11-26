@@ -332,6 +332,17 @@ const ResumoDaProducao = () => {
       // Transição direta para EM PREPARO (com registro completo)
       await transitionToPreparo(registro.id, registro);
     } else if (columnId === 'em_preparo') {
+      // Parar alarme IMEDIATAMENTE ao clicar no botão
+      if (alarmPlaying) {
+        handleStopAlarm();
+      }
+      // Remover do set de timers finalizados
+      setFinishedTimers(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(registro.id);
+        return newSet;
+      });
+      
       // Abrir modal de preparo
       setModalPreparo(true);
     } else if (columnId === 'em_porcionamento') {
@@ -381,18 +392,6 @@ const ResumoDaProducao = () => {
     if (!selectedRegistro) return;
 
     try {
-      // Parar alarme se estiver tocando
-      if (alarmPlaying) {
-        handleStopAlarm();
-      }
-      
-      // Remover do set de timers finalizados
-      setFinishedTimers(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(selectedRegistro.id);
-        return newSet;
-      });
-
       const { error } = await supabase
         .from('producao_registros')
         .update({
