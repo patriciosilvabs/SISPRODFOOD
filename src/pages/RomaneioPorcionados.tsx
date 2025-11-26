@@ -569,6 +569,47 @@ const RomaneioPorcionados = () => {
     }
   };
 
+  const handleExcluirRomaneio = async (romaneioId: string) => {
+    const confirmDelete = window.confirm(
+      'Tem certeza que deseja excluir este romaneio? Esta ação não pode ser desfeita.'
+    );
+    
+    if (!confirmDelete) return;
+    
+    try {
+      setLoading(true);
+      
+      // 1. Excluir itens do romaneio primeiro
+      const { error: itensError } = await supabase
+        .from('romaneio_itens')
+        .delete()
+        .eq('romaneio_id', romaneioId);
+      
+      if (itensError) throw itensError;
+      
+      // 2. Excluir o romaneio
+      const { error: romaneioError } = await supabase
+        .from('romaneios')
+        .delete()
+        .eq('id', romaneioId)
+        .eq('status', 'pendente');
+      
+      if (romaneioError) throw romaneioError;
+      
+      toast.success('Romaneio excluído com sucesso!');
+      
+      // 3. Recarregar dados
+      await fetchRomaneiosPendentes();
+      await fetchItensDisponiveis();
+      
+    } catch (error) {
+      console.error('Erro ao excluir romaneio:', error);
+      toast.error('Erro ao excluir romaneio');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const itensFiltrados = itensDisponiveis.filter(item =>
     item.item_nome.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -615,20 +656,43 @@ const RomaneioPorcionados = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {romaneiosPendentes.map((romaneio) => (
-                    <div key={romaneio.id} className="flex items-center justify-between p-4 border rounded-lg bg-background">
-                      <div className="space-y-1">
-                        <p className="font-semibold">{romaneio.loja_nome}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {romaneio.romaneio_itens.length} {romaneio.romaneio_itens.length === 1 ? 'item' : 'itens'} • Criado em {format(new Date(romaneio.data_criacao), 'dd/MM/yyyy HH:mm')}
-                        </p>
+                    <div key={romaneio.id} className="p-4 border rounded-lg bg-background space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1 flex-1">
+                          <p className="font-semibold">{romaneio.loja_nome}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {romaneio.romaneio_itens.length} {romaneio.romaneio_itens.length === 1 ? 'item' : 'itens'} • Criado em {format(new Date(romaneio.data_criacao), 'dd/MM/yyyy HH:mm')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            onClick={() => handleExcluirRomaneio(romaneio.id)}
+                            disabled={loading}
+                            title="Excluir romaneio"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={() => handleEnviarRomaneio(romaneio.id)}
+                            disabled={loading}
+                          >
+                            <Send className="h-4 w-4 mr-2" />
+                            Enviar
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        onClick={() => handleEnviarRomaneio(romaneio.id)}
-                        disabled={loading}
-                      >
-                        <Send className="h-4 w-4 mr-2" />
-                        Enviar
-                      </Button>
+                      
+                      {/* Resumo dos itens */}
+                      <div className="pl-4 border-l-2 border-muted space-y-1">
+                        {romaneio.romaneio_itens.map((item, idx) => (
+                          <div key={idx} className="text-sm text-muted-foreground">
+                            • <span className="font-medium text-foreground">{item.item_nome}</span>: {item.quantidade} un
+                            {item.peso_total_kg && <span className="text-xs"> ({item.peso_total_kg.toFixed(1)} kg)</span>}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </CardContent>
