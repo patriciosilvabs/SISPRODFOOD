@@ -247,22 +247,48 @@ const ContagemPorcionados = () => {
         const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
         const pesoProgramadoKg = aProduzir * pesoUnitarioKg;
 
-        const producaoData = {
-          item_id: itemId,
-          item_nome: itemData.nome,
-          status: 'a_produzir',
-          unidades_programadas: aProduzir,
-          peso_programado_kg: pesoProgramadoKg,
-          usuario_id: user.id,
-          usuario_nome: profile?.nome || user.email || 'Usuário',
-        };
-
-        const { error: producaoError } = await supabase
+        // 1. Verificar se já existe registro "a_produzir" para este item
+        const { data: registroExistente } = await supabase
           .from('producao_registros')
-          .insert(producaoData);
+          .select('id')
+          .eq('item_id', itemId)
+          .eq('status', 'a_produzir')
+          .maybeSingle();
 
-        if (producaoError) {
-          console.error('Erro ao criar registro de produção:', producaoError);
+        if (registroExistente) {
+          // 2. Atualizar registro existente
+          const { error: updateError } = await supabase
+            .from('producao_registros')
+            .update({
+              unidades_programadas: aProduzir,
+              peso_programado_kg: pesoProgramadoKg,
+              usuario_id: user.id,
+              usuario_nome: profile?.nome || user.email || 'Usuário',
+            })
+            .eq('id', registroExistente.id);
+
+          if (updateError) {
+            console.error('Erro ao atualizar registro de produção:', updateError);
+          }
+        } else {
+          // 3. Criar novo registro
+          const producaoData = {
+            item_id: itemId,
+            item_nome: itemData.nome,
+            status: 'a_produzir',
+            unidades_programadas: aProduzir,
+            peso_programado_kg: pesoProgramadoKg,
+            usuario_id: user.id,
+            usuario_nome: profile?.nome || user.email || 'Usuário',
+          };
+
+          const { error: insertError } = await supabase
+            .from('producao_registros')
+            .insert(producaoData);
+
+          if (insertError) {
+            console.error('Erro ao criar registro de produção:', insertError);
+          }
         }
       }
 
