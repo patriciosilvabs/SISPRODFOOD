@@ -350,6 +350,16 @@ const ResumoDaProducao = () => {
       } else {
         toast.success('Produção finalizada com sucesso!');
       }
+
+      // Resetar a_produzir das contagens relacionadas para não incluir em futuras agregações
+      const { error: resetError } = await supabase
+        .from('contagem_porcionados')
+        .update({ a_produzir: 0 })
+        .eq('item_porcionado_id', selectedRegistro.item_id);
+
+      if (resetError) {
+        console.error('Erro ao resetar contagens:', resetError);
+      }
       
       loadProducaoRegistros();
       setModalFinalizar(false);
