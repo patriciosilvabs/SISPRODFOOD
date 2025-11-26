@@ -725,10 +725,13 @@ export type Database = {
           created_at: string | null
           data_criacao: string | null
           data_envio: string | null
+          data_recebimento: string | null
           id: string
           loja_id: string
           loja_nome: string
           observacao: string | null
+          recebido_por_id: string | null
+          recebido_por_nome: string | null
           status: string | null
           usuario_id: string
           usuario_nome: string
@@ -737,10 +740,13 @@ export type Database = {
           created_at?: string | null
           data_criacao?: string | null
           data_envio?: string | null
+          data_recebimento?: string | null
           id?: string
           loja_id: string
           loja_nome: string
           observacao?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
           status?: string | null
           usuario_id: string
           usuario_nome: string
@@ -749,10 +755,13 @@ export type Database = {
           created_at?: string | null
           data_criacao?: string | null
           data_envio?: string | null
+          data_recebimento?: string | null
           id?: string
           loja_id?: string
           loja_nome?: string
           observacao?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
           status?: string | null
           usuario_id?: string
           usuario_nome?: string
