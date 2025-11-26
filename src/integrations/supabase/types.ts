@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      contagem_porcionados: {
+        Row: {
+          a_produzir: number | null
+          created_at: string
+          final_sobra: number
+          id: string
+          ideal_amanha: number
+          item_porcionado_id: string
+          loja_id: string
+          peso_total_g: number | null
+          updated_at: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          a_produzir?: number | null
+          created_at?: string
+          final_sobra?: number
+          id?: string
+          ideal_amanha?: number
+          item_porcionado_id: string
+          loja_id: string
+          peso_total_g?: number | null
+          updated_at?: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          a_produzir?: number | null
+          created_at?: string
+          final_sobra?: number
+          id?: string
+          ideal_amanha?: number
+          item_porcionado_id?: string
+          loja_id?: string
+          peso_total_g?: number | null
+          updated_at?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contagem_porcionados_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contagem_porcionados_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       erros_devolucoes: {
         Row: {
           created_at: string
