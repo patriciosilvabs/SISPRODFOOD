@@ -27,6 +27,8 @@ interface ProducaoRegistro {
   data_fim: string | null;
   usuario_nome: string;
   detalhes_lojas?: DetalheLojaProducao[];
+  unidade_medida?: string;
+  equivalencia_traco?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -87,7 +89,13 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">📦 Total:</span>
                     <Badge variant="secondary" className="font-semibold">
-                      {registro.unidades_programadas} un
+                      {registro.unidade_medida === 'traco' && registro.equivalencia_traco ? (
+                        <>
+                          {Math.round(registro.unidades_programadas / registro.equivalencia_traco)} traços ({registro.unidades_programadas} un)
+                        </>
+                      ) : (
+                        `${registro.unidades_programadas} un`
+                      )}
                     </Badge>
                   </div>
                 )}
