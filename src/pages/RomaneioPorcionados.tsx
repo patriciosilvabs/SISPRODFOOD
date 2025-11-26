@@ -174,27 +174,36 @@ const RomaneioPorcionados = () => {
 
       if (estoqueError) throw estoqueError;
 
-      // 2. Buscar produções finalizadas com detalhes_lojas
+      // 2. Buscar produções finalizadas ORDENADAS por data (mais recente primeiro)
       const { data: producoes, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('item_id, item_nome, detalhes_lojas')
-        .eq('status', 'finalizado');
+        .select('item_id, item_nome, detalhes_lojas, data_fim')
+        .eq('status', 'finalizado')
+        .order('data_fim', { ascending: false });
 
       if (producoesError) throw producoesError;
 
-      // 3. Agregar quantidades solicitadas para a loja selecionada
-      const quantidadesPorItem = new Map<string, number>();
+      // 3. Para cada item, pegar APENAS a produção mais recente
+      const ultimaProducaoPorItem = new Map<string, any>();
       producoes?.forEach(prod => {
+        if (!ultimaProducaoPorItem.has(prod.item_id)) {
+          ultimaProducaoPorItem.set(prod.item_id, prod);
+        }
+        // Ignora produções anteriores - só a primeira (mais recente) é usada
+      });
+
+      // 4. Extrair quantidade da loja selecionada da última produção
+      const quantidadesPorItem = new Map<string, number>();
+      ultimaProducaoPorItem.forEach((prod, item_id) => {
         const detalhes = prod.detalhes_lojas as any[];
         const detalheLoja = detalhes?.find((d: any) => d.loja_id === selectedLoja);
         if (detalheLoja && detalheLoja.quantidade > 0) {
-          const atual = quantidadesPorItem.get(prod.item_id) || 0;
-          quantidadesPorItem.set(prod.item_id, atual + detalheLoja.quantidade);
+          quantidadesPorItem.set(item_id, detalheLoja.quantidade);
         }
       });
 
-      // 4. Descontar romaneios já enviados/pendentes para essa loja
-      const { data: romaneiosExistentes, error: romaneiosError } = await supabase
+      // 5. Descontar apenas romaneios PENDENTES (não enviados)
+      const { data: romaneiosPendentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
         .select(`
           item_porcionado_id,
@@ -202,27 +211,26 @@ const RomaneioPorcionados = () => {
           romaneios!inner(loja_id, status)
         `)
         .eq('romaneios.loja_id', selectedLoja)
-        .in('romaneios.status', ['pendente', 'enviado']);
+        .eq('romaneios.status', 'pendente');
 
       if (romaneiosError) throw romaneiosError;
 
-      // 5. Calcular quantidade ainda devida à loja
-      romaneiosExistentes?.forEach(ri => {
+      romaneiosPendentes?.forEach(ri => {
         const atual = quantidadesPorItem.get(ri.item_porcionado_id) || 0;
         quantidadesPorItem.set(ri.item_porcionado_id, Math.max(0, atual - ri.quantidade));
       });
 
-      // 6. Criar lista final, limitada pelo estoque_cpd disponível
+      // 6. Criar lista final, limitada pelo estoque_cpd
       const itensFinais: ItemDisponivel[] = [];
       estoqueCpd?.forEach(est => {
-        const quantidadeSolicitada = quantidadesPorItem.get(est.item_porcionado_id) || 0;
-        const disponivel = Math.min(quantidadeSolicitada, est.quantidade || 0);
+        const quantidadeDaLoja = quantidadesPorItem.get(est.item_porcionado_id) || 0;
+        const disponivel = Math.min(quantidadeDaLoja, est.quantidade || 0);
         
         if (disponivel > 0) {
           itensFinais.push({
             item_id: est.item_porcionado_id,
             item_nome: est.itens_porcionados.nome,
-            quantidade_disponivel: disponivel,
+            quantidade_disponivel: disponivel, // 101 para ALEIXO, 101 para CACHOEIRINHA
             data_producao: new Date().toISOString(),
             producao_registro_ids: []
           });
