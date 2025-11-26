@@ -2,14 +2,16 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { ConfigurarReservaDiariaModal } from '@/components/modals/ConfigurarReservaDiariaModal';
 
 const Configuracoes = () => {
   const navigate = useNavigate();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [reservaModalOpen, setReservaModalOpen] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -38,6 +40,13 @@ const Configuracoes = () => {
       icon: TrendingUp,
       color: 'bg-cyan-100 text-cyan-600',
       onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+    },
+    {
+      title: 'Reserva Mínima por Dia',
+      description: 'Configure a reserva de segurança do CPD por dia da semana.',
+      icon: Calendar,
+      color: 'bg-orange-100 text-orange-600',
+      onClick: () => setReservaModalOpen(true),
     },
     {
       title: 'Gerenciar Insumos',
@@ -85,6 +94,11 @@ const Configuracoes = () => {
 
   return (
     <Layout>
+      <ConfigurarReservaDiariaModal 
+        open={reservaModalOpen} 
+        onOpenChange={setReservaModalOpen} 
+      />
+      
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Configurações do Sistema</h1>

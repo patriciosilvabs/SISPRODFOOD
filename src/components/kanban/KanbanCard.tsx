@@ -40,6 +40,9 @@ interface ProducaoRegistro {
   insumo_principal_nome?: string;
   insumo_principal_estoque_kg?: number;
   insumosExtras?: InsumoExtraComEstoque[];
+  demanda_lojas?: number | null;
+  reserva_configurada?: number | null;
+  sobra_reserva?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -117,6 +120,31 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
                         `${registro.unidades_programadas} un`
                       )}
                     </Badge>
+                  </div>
+                )}
+
+                {/* Composição da Produção */}
+                {(registro.demanda_lojas || registro.reserva_configurada || registro.sobra_reserva) && (
+                  <div className="mt-2 space-y-1 bg-blue-50 dark:bg-blue-950 rounded p-2">
+                    <p className="text-xs font-medium text-blue-700 dark:text-blue-300">📊 Composição:</p>
+                    {registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                        <span>• Demanda Lojas:</span>
+                        <span className="font-medium">{registro.demanda_lojas} un</span>
+                      </div>
+                    )}
+                    {registro.reserva_configurada !== null && registro.reserva_configurada !== undefined && registro.reserva_configurada > 0 && (
+                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                        <span>• Reserva do Dia:</span>
+                        <span className="font-medium">{registro.reserva_configurada} un</span>
+                      </div>
+                    )}
+                    {registro.sobra_reserva !== null && registro.sobra_reserva !== undefined && registro.sobra_reserva > 0 && (
+                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                        <span>• Arredondamento:</span>
+                        <span className="font-medium">+{registro.sobra_reserva} un</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 
