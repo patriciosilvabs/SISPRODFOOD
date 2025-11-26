@@ -1,7 +1,7 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Truck, ClipboardList } from 'lucide-react';
+import { Truck, ClipboardList, RefreshCw } from 'lucide-react';
 
 const RomaneioPorcionados = () => {
   return (
@@ -10,7 +10,7 @@ const RomaneioPorcionados = () => {
         <div>
           <h1 className="text-3xl font-bold">Romaneio</h1>
           <p className="text-muted-foreground mt-1">
-            Gerencie os romaneios de envio e recebimento de porcionados
+            Gerencie romaneios de envio, recebimento e reposição de estoque das lojas
           </p>
         </div>
 
@@ -23,6 +23,10 @@ const RomaneioPorcionados = () => {
             <TabsTrigger value="receber" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
               Receber Porcionados
+            </TabsTrigger>
+            <TabsTrigger value="reposicao" className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Reposição de Estoque
             </TabsTrigger>
           </TabsList>
 
@@ -53,6 +57,22 @@ const RomaneioPorcionados = () => {
               <CardContent>
                 <p className="text-muted-foreground">
                   Módulo em desenvolvimento. Confirme e registre o recebimento de porcionados.
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="reposicao">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <RefreshCw className="h-5 w-5" />
+                  Reposição de Estoque das Lojas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">
+                  Módulo em desenvolvimento. Gerencie os pedidos de reposição de estoque das lojas.
                 </p>
               </CardContent>
             </Card>

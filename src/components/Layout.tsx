@@ -4,14 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Package, 
-  Factory, 
   BarChart3, 
   LogOut, 
   Menu,
   Settings,
   Search,
   Trash2,
-  FileText,
   Flag,
   Truck,
   AlertTriangle,
@@ -56,11 +54,9 @@ export const Layout = ({ children }: LayoutProps) => {
           <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
           <NavLink to="/contagem-porcionados" icon={Flag}>Contagem Porcionados</NavLink>
           <NavLink to="/estoque-diario" icon={Trash2}>Estoque da Loja</NavLink>
-          <NavLink to="/atender-pedidos-diarios" icon={FileText}>Atender Pedidos Diários</NavLink>
           <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
           <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
           <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
-          <NavLink to="/producao" icon={Factory}>Produção</NavLink>
         </>
       )}
       
