@@ -37,7 +37,16 @@ export function FinalizarProducaoModal({
     e.preventDefault();
     
     const unidadesNum = parseInt(unidadesReais);
+    const pesoFinalNum = parseFloat(pesoFinal);
+    const sobraNum = parseFloat(sobra);
+    
     if (isNaN(unidadesNum) || unidadesNum <= 0) {
+      return;
+    }
+    if (isNaN(pesoFinalNum) || pesoFinalNum < 0) {
+      return;
+    }
+    if (isNaN(sobraNum) || sobraNum < 0) {
       return;
     }
 
@@ -110,7 +119,7 @@ export function FinalizarProducaoModal({
 
           <div className="space-y-2">
             <Label htmlFor="peso-final" className="text-base">
-              PESO FINAL (kg)
+              PESO FINAL (kg) <span className="text-destructive">*</span>
             </Label>
             <Input
               id="peso-final"
@@ -119,6 +128,7 @@ export function FinalizarProducaoModal({
               placeholder="Ex: 2.3"
               value={pesoFinal}
               onChange={(e) => setPesoFinal(e.target.value)}
+              required
               className="text-lg"
             />
             {pesoFinal && parseFloat(pesoFinal) > 0 && (
@@ -127,13 +137,13 @@ export function FinalizarProducaoModal({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Peso total dos itens embalados (opcional)
+              Peso total dos itens embalados
             </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="sobra" className="text-base">
-              SOBRA/PERDA (kg)
+              SOBRA/PERDA (kg) <span className="text-destructive">*</span>
             </Label>
             <Input
               id="sobra"
@@ -142,6 +152,7 @@ export function FinalizarProducaoModal({
               placeholder="Ex: 0.2"
               value={sobra}
               onChange={(e) => setSobra(e.target.value)}
+              required
               className="text-lg"
             />
             {sobra && parseFloat(sobra) > 0 && (
@@ -150,7 +161,7 @@ export function FinalizarProducaoModal({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Restos do processo de porcionamento (opcional)
+              Restos do processo de porcionamento
             </p>
           </div>
 
@@ -176,7 +187,7 @@ export function FinalizarProducaoModal({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSubmitting || !unidadesReais}>
+            <Button type="submit" disabled={isSubmitting || !unidadesReais || !pesoFinal || sobra === ''}>
               {isSubmitting ? 'Finalizando...' : '✅ Finalizar'}
             </Button>
           </DialogFooter>
