@@ -49,6 +49,26 @@ const ResumoDaProducao = () => {
 
   useEffect(() => {
     loadProducaoRegistros();
+
+    // Configurar realtime para atualizações automáticas
+    const channel = supabase
+      .channel('producao-registros-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'producao_registros'
+        },
+        () => {
+          loadProducaoRegistros();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadProducaoRegistros = async () => {

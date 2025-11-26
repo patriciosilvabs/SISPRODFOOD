@@ -198,12 +198,23 @@ const ContagemPorcionados = () => {
         .eq('id', user.id)
         .single();
 
+      // Buscar informações do item
+      const { data: itemData } = await supabase
+        .from('itens_porcionados')
+        .select('nome, peso_unitario_g')
+        .eq('id', itemId)
+        .single();
+
+      const finalSobra = parseInt(values.final_sobra) || 0;
+      const idealAmanha = parseInt(values.ideal_amanha) || 0;
+      const aProduzir = Math.max(0, idealAmanha - finalSobra);
+
       const dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
-        final_sobra: parseInt(values.final_sobra) || 0,
+        final_sobra: finalSobra,
         peso_total_g: values.peso_total_g ? parseFloat(values.peso_total_g) : null,
-        ideal_amanha: parseInt(values.ideal_amanha) || 0,
+        ideal_amanha: idealAmanha,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
       };
@@ -215,6 +226,30 @@ const ContagemPorcionados = () => {
         });
 
       if (error) throw error;
+
+      // Se há algo a produzir, criar/atualizar registro de produção
+      if (aProduzir > 0 && itemData) {
+        const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
+        const pesoProgramadoKg = aProduzir * pesoUnitarioKg;
+
+        const producaoData = {
+          item_id: itemId,
+          item_nome: itemData.nome,
+          status: 'a_produzir',
+          unidades_programadas: aProduzir,
+          peso_programado_kg: pesoProgramadoKg,
+          usuario_id: user.id,
+          usuario_nome: profile?.nome || user.email || 'Usuário',
+        };
+
+        const { error: producaoError } = await supabase
+          .from('producao_registros')
+          .insert(producaoData);
+
+        if (producaoError) {
+          console.error('Erro ao criar registro de produção:', producaoError);
+        }
+      }
 
       toast.success('Contagem salva com sucesso');
       loadData();
