@@ -425,13 +425,20 @@ const EstoqueDiario = () => {
 
       toast.success('Estoque atualizado com sucesso!');
       
-      // Atualizar estado local com os novos timestamps
-      const agora = new Date().toISOString();
-      setEstoquesAtuais(prev => prev.map(e => ({
-        ...e,
-        data_ultima_contagem: agora
-        // Não sobrescreve data_ultimo_envio
-      })));
+      // Recarregar dados do banco para garantir sincronização completa
+      const { data: dadosAtualizados } = await supabase
+        .from('estoque_loja_produtos')
+        .select('produto_id, quantidade, data_ultima_contagem, data_ultimo_envio')
+        .eq('loja_id', lojaSelecionada);
+
+      if (dadosAtualizados) {
+        setEstoquesAtuais(dadosAtualizados.map(e => ({
+          produto_id: e.produto_id,
+          quantidade: Number(e.quantidade),
+          data_ultima_contagem: e.data_ultima_contagem,
+          data_ultimo_envio: e.data_ultimo_envio
+        })));
+      }
       
       // Atualizar última atualização
       const agoraDate = new Date();
