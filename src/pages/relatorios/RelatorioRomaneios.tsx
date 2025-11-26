@@ -10,6 +10,14 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+interface RomaneioItem {
+  romaneio_id: string;
+  quantidade: number;
+  quantidade_recebida: number | null;
+  peso_total_kg: number | null;
+  peso_recebido_kg: number | null;
+}
+
 interface Romaneio {
   id: string;
   loja_nome: string;
@@ -20,6 +28,7 @@ interface Romaneio {
   usuario_nome: string;
   recebido_por_nome: string | null;
   observacao: string | null;
+  tem_divergencia?: boolean;
 }
 
 const RelatorioRomaneios = () => {
@@ -39,13 +48,34 @@ const RelatorioRomaneios = () => {
   const loadRomaneios = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      
+      // Buscar romaneios
+      const { data: romaneiosData, error: romaneiosError } = await supabase
         .from('romaneios')
         .select('*')
         .order('data_criacao', { ascending: false });
 
-      if (error) throw error;
-      setRomaneios(data || []);
+      if (romaneiosError) throw romaneiosError;
+
+      // Buscar itens dos romaneios para verificar divergências
+      const { data: itensData, error: itensError } = await supabase
+        .from('romaneio_itens')
+        .select('romaneio_id, quantidade, quantidade_recebida, peso_total_kg, peso_recebido_kg');
+
+      if (itensError) throw itensError;
+
+      // Mapear romaneios com informação de divergência
+      const romaneiosComDivergencia = (romaneiosData || []).map((romaneio) => {
+        const itens = (itensData || []).filter((item) => item.romaneio_id === romaneio.id);
+        const temDivergencia = itens.some(
+          (item) =>
+            (item.quantidade_recebida !== null && item.quantidade_recebida !== item.quantidade) ||
+            (item.peso_recebido_kg !== null && item.peso_recebido_kg !== item.peso_total_kg)
+        );
+        return { ...romaneio, tem_divergencia: temDivergencia };
+      });
+
+      setRomaneios(romaneiosComDivergencia);
     } catch (error) {
       console.error('Erro ao carregar romaneios:', error);
       toast.error('Erro ao carregar dados de romaneios');
@@ -66,20 +96,20 @@ const RelatorioRomaneios = () => {
 
   const getStatusBadge = (status: string | null) => {
     switch (status) {
-      case 'PENDENTE':
+      case 'pendente':
         return <Badge variant="secondary"><Clock className="mr-1 h-3 w-3" />Pendente</Badge>;
-      case 'ENVIADO':
+      case 'enviado':
         return <Badge variant="default"><Truck className="mr-1 h-3 w-3" />Enviado</Badge>;
-      case 'RECEBIDO':
+      case 'recebido':
         return <Badge variant="default" className="bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Recebido</Badge>;
       default:
         return <Badge variant="outline">-</Badge>;
     }
   };
 
-  const totalPendentes = romaneios.filter((r) => r.status === 'PENDENTE').length;
-  const totalEnviados = romaneios.filter((r) => r.status === 'ENVIADO').length;
-  const totalRecebidos = romaneios.filter((r) => r.status === 'RECEBIDO').length;
+  const totalPendentes = romaneios.filter((r) => r.status === 'pendente').length;
+  const totalEnviados = romaneios.filter((r) => r.status === 'enviado').length;
+  const totalRecebidos = romaneios.filter((r) => r.status === 'recebido').length;
 
   if (loading) {
     return (
@@ -160,9 +190,9 @@ const RelatorioRomaneios = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos os Status</SelectItem>
-                  <SelectItem value="PENDENTE">Pendente</SelectItem>
-                  <SelectItem value="ENVIADO">Enviado</SelectItem>
-                  <SelectItem value="RECEBIDO">Recebido</SelectItem>
+                  <SelectItem value="pendente">Pendente</SelectItem>
+                  <SelectItem value="enviado">Enviado</SelectItem>
+                  <SelectItem value="recebido">Recebido</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -183,6 +213,7 @@ const RelatorioRomaneios = () => {
                   <TableHead>Data Envio</TableHead>
                   <TableHead>Data Recebimento</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Divergência</TableHead>
                   <TableHead>Criado Por</TableHead>
                   <TableHead>Recebido Por</TableHead>
                 </TableRow>
@@ -190,7 +221,7 @@ const RelatorioRomaneios = () => {
               <TableBody>
                 {filteredRomaneios.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       Nenhum romaneio encontrado
                     </TableCell>
                   </TableRow>
@@ -214,6 +245,17 @@ const RelatorioRomaneios = () => {
                           : '-'}
                       </TableCell>
                       <TableCell>{getStatusBadge(romaneio.status)}</TableCell>
+                      <TableCell>
+                        {romaneio.status === 'recebido' ? (
+                          romaneio.tem_divergencia ? (
+                            <Badge variant="destructive">⚠️ Com Divergência</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-green-600 border-green-600">✓ OK</Badge>
+                          )
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
                       <TableCell>{romaneio.usuario_nome}</TableCell>
                       <TableCell>{romaneio.recebido_por_nome || '-'}</TableCell>
                     </TableRow>
