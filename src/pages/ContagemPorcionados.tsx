@@ -203,7 +203,7 @@ const ContagemPorcionados = () => {
       // Buscar informações do item
       const { data: itemData } = await supabase
         .from('itens_porcionados')
-        .select('nome, peso_unitario_g')
+        .select('nome, peso_unitario_g, unidade_medida, equivalencia_traco, consumo_por_traco_g')
         .eq('id', itemId)
         .single();
 
@@ -271,8 +271,18 @@ const ContagemPorcionados = () => {
           }));
 
           const totalAProduzir = todasContagens.reduce((sum, c) => sum + c.a_produzir, 0);
-          const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
-          const pesoProgramadoTotal = totalAProduzir * pesoUnitarioKg;
+          
+          // Calcular peso programado baseado no tipo de unidade
+          let pesoProgramadoTotal = 0;
+          if (itemData.unidade_medida === 'traco' && itemData.equivalencia_traco && itemData.consumo_por_traco_g) {
+            // Para itens em traço: calcular baseado no consumo de insumo por traço
+            const tracos = Math.ceil(totalAProduzir / itemData.equivalencia_traco);
+            pesoProgramadoTotal = (tracos * itemData.consumo_por_traco_g) / 1000; // converter g para kg
+          } else {
+            // Para itens normais: usar peso unitário
+            const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
+            pesoProgramadoTotal = totalAProduzir * pesoUnitarioKg;
+          }
 
           // 4. Verificar se já existe registro "a_produzir" para este item
           const { data: registroExistente } = await supabase
