@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      erros_devolucoes: {
+        Row: {
+          created_at: string
+          descricao: string
+          foto_url: string | null
+          id: string
+          loja_id: string
+          loja_nome: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string
+          descricao: string
+          foto_url?: string | null
+          id?: string
+          loja_id: string
+          loja_nome: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string
+          foto_url?: string | null
+          id?: string
+          loja_id?: string
+          loja_nome?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "erros_devolucoes_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estoque_cpd: {
         Row: {
           data_ultima_movimentacao: string | null
