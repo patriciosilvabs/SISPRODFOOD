@@ -162,7 +162,7 @@ const RomaneioPorcionados = () => {
     }
 
     try {
-      // 1. Buscar estoque CPD disponível (fonte de verdade)
+      // 1. Buscar estoque CPD (limite máximo físico)
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_cpd')
         .select(`
@@ -174,8 +174,27 @@ const RomaneioPorcionados = () => {
 
       if (estoqueError) throw estoqueError;
 
-      // 2. Buscar romaneios PENDENTES para a loja (ainda não enviados)
-      const { data: romaneiosPendentes, error: romaneiosError } = await supabase
+      // 2. Buscar produções finalizadas com detalhes_lojas
+      const { data: producoes, error: producoesError } = await supabase
+        .from('producao_registros')
+        .select('item_id, item_nome, detalhes_lojas')
+        .eq('status', 'finalizado');
+
+      if (producoesError) throw producoesError;
+
+      // 3. Agregar quantidades solicitadas para a loja selecionada
+      const quantidadesPorItem = new Map<string, number>();
+      producoes?.forEach(prod => {
+        const detalhes = prod.detalhes_lojas as any[];
+        const detalheLoja = detalhes?.find((d: any) => d.loja_id === selectedLoja);
+        if (detalheLoja && detalheLoja.quantidade > 0) {
+          const atual = quantidadesPorItem.get(prod.item_id) || 0;
+          quantidadesPorItem.set(prod.item_id, atual + detalheLoja.quantidade);
+        }
+      });
+
+      // 4. Descontar romaneios já enviados/pendentes para essa loja
+      const { data: romaneiosExistentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
         .select(`
           item_porcionado_id,
@@ -183,28 +202,26 @@ const RomaneioPorcionados = () => {
           romaneios!inner(loja_id, status)
         `)
         .eq('romaneios.loja_id', selectedLoja)
-        .eq('romaneios.status', 'pendente');
+        .in('romaneios.status', ['pendente', 'enviado']);
 
       if (romaneiosError) throw romaneiosError;
 
-      // 3. Criar mapa de reservas pendentes
-      const reservasPendentes = new Map<string, number>();
-      romaneiosPendentes?.forEach(item => {
-        const atual = reservasPendentes.get(item.item_porcionado_id) || 0;
-        reservasPendentes.set(item.item_porcionado_id, atual + item.quantidade);
+      // 5. Calcular quantidade ainda devida à loja
+      romaneiosExistentes?.forEach(ri => {
+        const atual = quantidadesPorItem.get(ri.item_porcionado_id) || 0;
+        quantidadesPorItem.set(ri.item_porcionado_id, Math.max(0, atual - ri.quantidade));
       });
 
-      // 4. Calcular disponibilidade real
-      const itensDisponiveis: ItemDisponivel[] = [];
-      
-      estoqueCpd?.forEach(estoque => {
-        const reservado = reservasPendentes.get(estoque.item_porcionado_id) || 0;
-        const disponivel = (estoque.quantidade || 0) - reservado;
+      // 6. Criar lista final, limitada pelo estoque_cpd disponível
+      const itensFinais: ItemDisponivel[] = [];
+      estoqueCpd?.forEach(est => {
+        const quantidadeSolicitada = quantidadesPorItem.get(est.item_porcionado_id) || 0;
+        const disponivel = Math.min(quantidadeSolicitada, est.quantidade || 0);
         
         if (disponivel > 0) {
-          itensDisponiveis.push({
-            item_id: estoque.item_porcionado_id,
-            item_nome: estoque.itens_porcionados.nome,
+          itensFinais.push({
+            item_id: est.item_porcionado_id,
+            item_nome: est.itens_porcionados.nome,
             quantidade_disponivel: disponivel,
             data_producao: new Date().toISOString(),
             producao_registro_ids: []
@@ -212,7 +229,7 @@ const RomaneioPorcionados = () => {
         }
       });
 
-      setItensDisponiveis(itensDisponiveis);
+      setItensDisponiveis(itensFinais);
     } catch (error) {
       console.error('Erro ao buscar itens:', error);
       toast.error('Erro ao carregar itens disponíveis');
