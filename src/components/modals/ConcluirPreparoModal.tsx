@@ -33,7 +33,12 @@ export function ConcluirPreparoModal({
     e.preventDefault();
     
     const pesoNum = parseFloat(pesoPreparo);
+    const sobraNum = parseFloat(sobraPreparo);
+    
     if (isNaN(pesoNum) || pesoNum <= 0) {
+      return;
+    }
+    if (isNaN(sobraNum) || sobraNum < 0) {
       return;
     }
 
@@ -94,7 +99,7 @@ export function ConcluirPreparoModal({
 
           <div className="space-y-2">
             <Label htmlFor="sobra-preparo" className="text-base">
-              SOBRA/PERDA (kg)
+              SOBRA/PERDA (kg) <span className="text-destructive">*</span>
             </Label>
             <Input
               id="sobra-preparo"
@@ -103,6 +108,7 @@ export function ConcluirPreparoModal({
               placeholder="Ex: 0.1"
               value={sobraPreparo}
               onChange={(e) => setSobraPreparo(e.target.value)}
+              required
               className="text-lg"
             />
             {sobraPreparo && parseFloat(sobraPreparo) > 0 && (
@@ -137,7 +143,7 @@ export function ConcluirPreparoModal({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSubmitting || !pesoPreparo}>
+            <Button type="submit" disabled={isSubmitting || !pesoPreparo || sobraPreparo === ''}>
               {isSubmitting ? 'Avançando...' : 'Avançar para Porcionamento'}
             </Button>
           </DialogFooter>
