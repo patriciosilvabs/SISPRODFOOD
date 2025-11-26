@@ -77,6 +77,7 @@ const ContagemPorcionados = () => {
     sabado: 200,
     domingo: 200,
   });
+  const [estoquesIdeaisMap, setEstoquesIdeaisMap] = useState<Record<string, EstoqueIdeal>>({});
 
   useEffect(() => {
     loadData();
@@ -107,6 +108,29 @@ const ContagemPorcionados = () => {
         .order('updated_at', { ascending: false });
       
       if (contagensError) throw contagensError;
+
+      // Carregar estoques ideais semanais
+      const { data: estoquesData, error: estoquesError } = await supabase
+        .from('estoques_ideais_semanais')
+        .select('*');
+      
+      if (estoquesError) throw estoquesError;
+
+      // Criar mapa de estoques ideais por loja e item
+      const estoquesMap: Record<string, EstoqueIdeal> = {};
+      (estoquesData || []).forEach((estoque: any) => {
+        const key = `${estoque.loja_id}-${estoque.item_porcionado_id}`;
+        estoquesMap[key] = {
+          segunda: estoque.segunda,
+          terca: estoque.terca,
+          quarta: estoque.quarta,
+          quinta: estoque.quinta,
+          sexta: estoque.sexta,
+          sabado: estoque.sabado,
+          domingo: estoque.domingo,
+        };
+      });
+      setEstoquesIdeaisMap(estoquesMap);
 
       setLojas(lojasData || []);
       setItens(itensData || []);
@@ -207,9 +231,39 @@ const ContagemPorcionados = () => {
     }
   };
 
+  // Obter o dia da semana de amanhã em português
+  const getTomorrowDayKey = (): keyof EstoqueIdeal => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayIndex = tomorrow.getDay(); // 0 = Domingo, 1 = Segunda, etc.
+    
+    const days: (keyof EstoqueIdeal)[] = [
+      'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'
+    ];
+    
+    return days[dayIndex];
+  };
+
   const getEditingValue = (lojaId: string, itemId: string, field: string, defaultValue: any) => {
     const key = `${lojaId}-${itemId}`;
-    return editingValues[key]?.[field] ?? defaultValue;
+    
+    // Se há valor editado manualmente, use-o
+    if (editingValues[key]?.[field] !== undefined) {
+      return editingValues[key][field];
+    }
+    
+    // Para ideal_amanha, buscar dos estoques ideais semanais
+    if (field === 'ideal_amanha') {
+      const estoqueKey = `${lojaId}-${itemId}`;
+      const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+      
+      if (estoqueSemanal) {
+        const tomorrowDay = getTomorrowDayKey();
+        return estoqueSemanal[tomorrowDay];
+      }
+    }
+    
+    return defaultValue;
   };
 
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
@@ -273,6 +327,7 @@ const ContagemPorcionados = () => {
 
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
+      loadData(); // Recarregar dados para atualizar os ideais
     } catch (error) {
       console.error('Erro ao salvar:', error);
       toast.error('Erro ao salvar estoques ideais');
