@@ -9,6 +9,12 @@ import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { useAuth } from '@/contexts/AuthContext';
 
+interface DetalheLojaProducao {
+  loja_id: string;
+  loja_nome: string;
+  quantidade: number;
+}
+
 interface ProducaoRegistro {
   id: string;
   item_id: string;
@@ -30,6 +36,7 @@ interface ProducaoRegistro {
   data_fim_porcionamento?: string | null;
   data_fim: string | null;
   usuario_nome: string;
+  detalhes_lojas?: DetalheLojaProducao[];
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -192,7 +199,15 @@ const ResumoDaProducao = () => {
           targetColumn = 'finalizado';
         }
         
-        organizedColumns[targetColumn].push(registro);
+        // Cast detalhes_lojas from Json to array
+        const registroTyped: ProducaoRegistro = {
+          ...registro,
+          detalhes_lojas: Array.isArray(registro.detalhes_lojas) 
+            ? (registro.detalhes_lojas as unknown as DetalheLojaProducao[])
+            : undefined
+        };
+        
+        organizedColumns[targetColumn].push(registroTyped);
       });
 
       setColumns(organizedColumns);
