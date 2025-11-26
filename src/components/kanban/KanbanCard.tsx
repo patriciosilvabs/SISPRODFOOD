@@ -115,7 +115,7 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
 
                 {registro.peso_programado_kg && (
                   <p className="text-muted-foreground">
-                    ⚖️ Peso prog.: <span className="font-medium">{registro.peso_programado_kg} kg</span>
+                    ⚖️ Insumo (estim.): <span className="font-medium">{registro.peso_programado_kg} kg</span>
                   </p>
                 )}
               </>
