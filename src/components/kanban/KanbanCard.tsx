@@ -5,6 +5,12 @@ import { Package, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+interface DetalheLojaProducao {
+  loja_id: string;
+  loja_nome: string;
+  quantidade: number;
+}
+
 interface ProducaoRegistro {
   id: string;
   item_nome: string;
@@ -20,6 +26,7 @@ interface ProducaoRegistro {
   data_inicio_porcionamento?: string | null;
   data_fim: string | null;
   usuario_nome: string;
+  detalhes_lojas?: DetalheLojaProducao[];
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -78,12 +85,26 @@ export function KanbanCard({ registro, columnId, onAction }: KanbanCardProps) {
               <>
                 {registro.unidades_programadas && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">📦 Programadas:</span>
+                    <span className="text-muted-foreground">📦 Total:</span>
                     <Badge variant="secondary" className="font-semibold">
                       {registro.unidades_programadas} un
                     </Badge>
                   </div>
                 )}
+                
+                {/* Detalhamento por Loja */}
+                {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
+                  <div className="mt-2 space-y-1 bg-muted/50 rounded p-2">
+                    <p className="text-xs font-medium text-muted-foreground">Por loja:</p>
+                    {registro.detalhes_lojas.map((loja) => (
+                      <div key={loja.loja_id} className="flex justify-between text-xs">
+                        <span className="text-foreground">{loja.loja_nome}:</span>
+                        <span className="font-medium text-foreground">{loja.quantidade} un</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {registro.peso_programado_kg && (
                   <p className="text-muted-foreground">
                     ⚖️ Peso prog.: <span className="font-medium">{registro.peso_programado_kg} kg</span>

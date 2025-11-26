@@ -242,52 +242,72 @@ const ContagemPorcionados = () => {
 
       if (error) throw error;
 
-      // Se há algo a produzir, criar/atualizar registro de produção
-      if (aProduzir > 0 && itemData) {
-        const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
-        const pesoProgramadoKg = aProduzir * pesoUnitarioKg;
+      // Atualizar registro de produção agregando TODAS as lojas
+      if (itemData) {
+        // 1. Buscar TODAS as contagens de TODAS as lojas para este item
+        const { data: todasContagens } = await supabase
+          .from('contagem_porcionados')
+          .select('loja_id, a_produzir, ideal_amanha, final_sobra')
+          .eq('item_porcionado_id', itemId)
+          .gt('a_produzir', 0);
 
-        // 1. Verificar se já existe registro "a_produzir" para este item
-        const { data: registroExistente } = await supabase
-          .from('producao_registros')
-          .select('id')
-          .eq('item_id', itemId)
-          .eq('status', 'a_produzir')
-          .maybeSingle();
+        if (todasContagens && todasContagens.length > 0) {
+          // 2. Buscar nomes das lojas
+          const lojasIds = todasContagens.map(c => c.loja_id);
+          const { data: lojasData } = await supabase
+            .from('lojas')
+            .select('id, nome')
+            .in('id', lojasIds);
 
-        if (registroExistente) {
-          // 2. Atualizar registro existente
-          const { error: updateError } = await supabase
+          // 3. Calcular TOTAL e construir detalhes
+          const detalhesLojas = todasContagens.map(c => ({
+            loja_id: c.loja_id,
+            loja_nome: lojasData?.find(l => l.id === c.loja_id)?.nome || 'Loja',
+            quantidade: c.a_produzir,
+          }));
+
+          const totalAProduzir = todasContagens.reduce((sum, c) => sum + c.a_produzir, 0);
+          const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
+          const pesoProgramadoTotal = totalAProduzir * pesoUnitarioKg;
+
+          // 4. Verificar se já existe registro "a_produzir" para este item
+          const { data: registroExistente } = await supabase
             .from('producao_registros')
-            .update({
-              unidades_programadas: aProduzir,
-              peso_programado_kg: pesoProgramadoKg,
-              usuario_id: user.id,
-              usuario_nome: profile?.nome || user.email || 'Usuário',
-            })
-            .eq('id', registroExistente.id);
+            .select('id')
+            .eq('item_id', itemId)
+            .eq('status', 'a_produzir')
+            .maybeSingle();
 
-          if (updateError) {
-            console.error('Erro ao atualizar registro de produção:', updateError);
-          }
-        } else {
-          // 3. Criar novo registro
           const producaoData = {
             item_id: itemId,
             item_nome: itemData.nome,
             status: 'a_produzir',
-            unidades_programadas: aProduzir,
-            peso_programado_kg: pesoProgramadoKg,
+            unidades_programadas: totalAProduzir,
+            peso_programado_kg: pesoProgramadoTotal,
+            detalhes_lojas: detalhesLojas,
             usuario_id: user.id,
             usuario_nome: profile?.nome || user.email || 'Usuário',
           };
 
-          const { error: insertError } = await supabase
-            .from('producao_registros')
-            .insert(producaoData);
+          if (registroExistente) {
+            // Atualizar registro existente
+            const { error: updateError } = await supabase
+              .from('producao_registros')
+              .update(producaoData)
+              .eq('id', registroExistente.id);
 
-          if (insertError) {
-            console.error('Erro ao criar registro de produção:', insertError);
+            if (updateError) {
+              console.error('Erro ao atualizar registro de produção:', updateError);
+            }
+          } else {
+            // Criar novo registro
+            const { error: insertError } = await supabase
+              .from('producao_registros')
+              .insert(producaoData);
+
+            if (insertError) {
+              console.error('Erro ao criar registro de produção:', insertError);
+            }
           }
         }
       }

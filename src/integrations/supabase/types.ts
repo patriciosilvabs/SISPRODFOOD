@@ -588,6 +588,7 @@ export type Database = {
           data_inicio: string | null
           data_inicio_porcionamento: string | null
           data_inicio_preparo: string | null
+          detalhes_lojas: Json | null
           id: string
           item_id: string
           item_nome: string
@@ -612,6 +613,7 @@ export type Database = {
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          detalhes_lojas?: Json | null
           id?: string
           item_id: string
           item_nome: string
@@ -636,6 +638,7 @@ export type Database = {
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          detalhes_lojas?: Json | null
           id?: string
           item_id?: string
           item_nome?: string
