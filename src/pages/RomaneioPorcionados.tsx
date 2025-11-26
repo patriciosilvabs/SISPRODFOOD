@@ -71,12 +71,14 @@ const RomaneioPorcionados = () => {
   const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastCreatedRomaneioId, setLastCreatedRomaneioId] = useState<string | null>(null);
+  const [romaneiosPendentes, setRomaneiosPendentes] = useState<Romaneio[]>([]);
 
   useEffect(() => {
     fetchLojas();
     fetchItensDisponiveis();
     checkUserRole();
     fetchUserLojas();
+    fetchRomaneiosPendentes();
   }, []);
 
   useEffect(() => {
@@ -125,6 +127,7 @@ const RomaneioPorcionados = () => {
   };
 
   const fetchItensDisponiveis = async () => {
+    // 1. Buscar registros de produção finalizados
     const { data, error } = await supabase
       .from('producao_registros')
       .select('id, item_id, item_nome, unidades_reais, data_fim')
@@ -136,7 +139,25 @@ const RomaneioPorcionados = () => {
       return;
     }
 
-    // Agrupar por item_id
+    // 2. Buscar itens já em romaneios (exceto cancelados se existir esse status)
+    const { data: romaneioItens } = await supabase
+      .from('romaneio_itens')
+      .select(`
+        item_porcionado_id,
+        quantidade,
+        romaneios!inner (status)
+      `);
+
+    // 3. Calcular total já em romaneios por item
+    const quantidadesEmRomaneio: Record<string, number> = {};
+    romaneioItens?.forEach(ri => {
+      if (!quantidadesEmRomaneio[ri.item_porcionado_id]) {
+        quantidadesEmRomaneio[ri.item_porcionado_id] = 0;
+      }
+      quantidadesEmRomaneio[ri.item_porcionado_id] += ri.quantidade;
+    });
+
+    // 4. Agrupar por item_id e calcular quantidade total produzida
     const agrupado = data.reduce((acc: Record<string, ItemDisponivel>, reg) => {
       if (!acc[reg.item_id]) {
         acc[reg.item_id] = {
@@ -152,7 +173,16 @@ const RomaneioPorcionados = () => {
       return acc;
     }, {});
 
-    setItensDisponiveis(Object.values(agrupado));
+    // 5. Subtrair quantidades já em romaneios
+    Object.keys(agrupado).forEach(itemId => {
+      const qtdEmRomaneio = quantidadesEmRomaneio[itemId] || 0;
+      agrupado[itemId].quantidade_disponivel -= qtdEmRomaneio;
+    });
+
+    // 6. Filtrar apenas itens com quantidade > 0
+    const itensComEstoque = Object.values(agrupado).filter(i => i.quantidade_disponivel > 0);
+
+    setItensDisponiveis(itensComEstoque);
   };
 
   const fetchRomaneiosEnviados = async () => {
@@ -222,6 +252,29 @@ const RomaneioPorcionados = () => {
     }
   };
 
+  const fetchRomaneiosPendentes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('romaneios')
+        .select(`
+          *,
+          romaneio_itens (
+            item_nome,
+            quantidade,
+            peso_total_kg
+          )
+        `)
+        .eq('status', 'pendente')
+        .order('data_criacao', { ascending: false });
+
+      if (error) throw error;
+
+      setRomaneiosPendentes(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar romaneios pendentes:', error);
+    }
+  };
+
   const handleConfirmarRecebimento = async (romaneioId: string) => {
     try {
       setLoading(true);
@@ -276,6 +329,8 @@ const RomaneioPorcionados = () => {
 
       setLastCreatedRomaneioId(null);
       setSelectedLoja('');
+      fetchRomaneiosEnviados();
+      fetchRomaneiosPendentes();
       fetchRomaneiosHistorico();
     } catch (error) {
       console.error('Erro ao enviar romaneio:', error);
@@ -381,6 +436,7 @@ const RomaneioPorcionados = () => {
       setItensSelecionados([]);
       setObservacao('');
       fetchItensDisponiveis();
+      fetchRomaneiosPendentes();
       fetchRomaneiosHistorico();
       
     } catch (error) {
@@ -426,6 +482,37 @@ const RomaneioPorcionados = () => {
           </TabsList>
 
           <TabsContent value="romaneio" className="space-y-6">
+            {/* Romaneios Pendentes de Envio */}
+            {romaneiosPendentes.length > 0 && (
+              <Card className="border-yellow-500/50 bg-yellow-500/5">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-yellow-700 dark:text-yellow-500">
+                    <Clock className="h-5 w-5" />
+                    Romaneios Pendentes de Envio
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {romaneiosPendentes.map((romaneio) => (
+                    <div key={romaneio.id} className="flex items-center justify-between p-4 border rounded-lg bg-background">
+                      <div className="space-y-1">
+                        <p className="font-semibold">{romaneio.loja_nome}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {romaneio.romaneio_itens.length} {romaneio.romaneio_itens.length === 1 ? 'item' : 'itens'} • Criado em {format(new Date(romaneio.data_criacao), 'dd/MM/yyyy HH:mm')}
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => handleEnviarRomaneio(romaneio.id)}
+                        disabled={loading}
+                      >
+                        <Send className="h-4 w-4 mr-2" />
+                        Enviar
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Stepper */}
             <Card>
               <CardContent className="pt-6">
@@ -786,16 +873,6 @@ const RomaneioPorcionados = () => {
                                 <span className="font-medium">{romaneio.recebido_por_nome}</span>
                               </div>
                             </>
-                          )}
-                          {lastCreatedRomaneioId === romaneio.id && romaneio.status === 'pendente' && (
-                            <Button
-                              onClick={() => handleEnviarRomaneio(romaneio.id)}
-                              disabled={loading}
-                              className="w-full mt-4"
-                            >
-                              <Send className="h-4 w-4 mr-2" />
-                              Enviar Romaneio
-                            </Button>
                           )}
                         </div>
                       </CardContent>
