@@ -656,6 +656,66 @@ export type Database = {
         }
         Relationships: []
       }
+      produtos_estoque_minimo_semanal: {
+        Row: {
+          created_at: string
+          domingo: number
+          id: string
+          loja_id: string
+          produto_id: string
+          quarta: number
+          quinta: number
+          sabado: number
+          segunda: number
+          sexta: number
+          terca: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          loja_id: string
+          produto_id: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          loja_id?: string
+          produto_id?: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "produtos_estoque_minimo_semanal_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produtos_estoque_minimo_semanal_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null

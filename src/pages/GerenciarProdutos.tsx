@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { ProdutoFormModal } from '@/components/modals/ProdutoFormModal';
 import { DeleteProdutoDialog } from '@/components/modals/DeleteProdutoDialog';
 import { ImportarProdutosIAModal } from '@/components/modals/ImportarProdutosIAModal';
+import { ConfigurarEstoqueMinimoModal } from '@/components/modals/ConfigurarEstoqueMinimoModal';
 
 interface Produto {
   id: string;
@@ -58,6 +59,7 @@ const GerenciarProdutos = () => {
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
   const [deletingProduto, setDeletingProduto] = useState<Produto | null>(null);
   const [importarIAOpen, setImportarIAOpen] = useState(false);
+  const [estoqueModalOpen, setEstoqueModalOpen] = useState(false);
 
   useEffect(() => {
     fetchProdutos();
@@ -144,6 +146,12 @@ const GerenciarProdutos = () => {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setEstoqueModalOpen(true)}
+            >
+              ⚙️ Configurar Estoque Mínimo Classe A
+            </Button>
             <Button
               variant="outline"
               onClick={() => setImportarIAOpen(true)}
@@ -280,6 +288,11 @@ const GerenciarProdutos = () => {
         open={importarIAOpen}
         onClose={() => setImportarIAOpen(false)}
         onSuccess={fetchProdutos}
+      />
+
+      <ConfigurarEstoqueMinimoModal
+        open={estoqueModalOpen}
+        onOpenChange={setEstoqueModalOpen}
       />
     </Layout>
   );
