@@ -189,7 +189,7 @@ const ContagemPorcionados = () => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
 
-    if (!values || !user) return;
+    if (!user) return;
 
     try {
       const { data: profile } = await supabase
@@ -205,15 +205,29 @@ const ContagemPorcionados = () => {
         .eq('id', itemId)
         .single();
 
-      const finalSobra = parseInt(values.final_sobra) || 0;
-      const idealAmanha = parseInt(values.ideal_amanha) || 0;
+      const finalSobra = parseInt(values?.final_sobra) || 0;
+      
+      // Se o usuário não editou ideal_amanha, buscar dos estoques ideais semanais
+      let idealAmanha = 0;
+      if (values?.ideal_amanha !== undefined) {
+        idealAmanha = parseInt(values.ideal_amanha) || 0;
+      } else {
+        // Buscar do mapa de estoques ideais
+        const estoqueKey = `${lojaId}-${itemId}`;
+        const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+        if (estoqueSemanal) {
+          const tomorrowDay = getTomorrowDayKey();
+          idealAmanha = estoqueSemanal[tomorrowDay] || 0;
+        }
+      }
+      
       const aProduzir = Math.max(0, idealAmanha - finalSobra);
 
       const dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
         final_sobra: finalSobra,
-        peso_total_g: values.peso_total_g ? parseFloat(values.peso_total_g) : null,
+        peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
@@ -287,14 +301,18 @@ const ContagemPorcionados = () => {
       return editingValues[key][field];
     }
     
-    // Para ideal_amanha, buscar dos estoques ideais semanais
+    // Para ideal_amanha, SEMPRE buscar dos estoques ideais semanais primeiro
     if (field === 'ideal_amanha') {
       const estoqueKey = `${lojaId}-${itemId}`;
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
       
       if (estoqueSemanal) {
         const tomorrowDay = getTomorrowDayKey();
-        return estoqueSemanal[tomorrowDay];
+        const idealValue = estoqueSemanal[tomorrowDay];
+        // Se o valor do estoque ideal é válido (> 0), use-o
+        if (idealValue > 0) {
+          return idealValue;
+        }
       }
     }
     
@@ -441,7 +459,8 @@ const ContagemPorcionados = () => {
                       const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
                       const finalSobra = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra || 0);
                       const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g || '');
-                      const idealAmanha = getEditingValue(loja.id, item.id, 'ideal_amanha', contagem?.ideal_amanha || 0);
+                      // Buscar ideal_amanha dos estoques ideais semanais, não da contagem salva
+                      const idealAmanha = getEditingValue(loja.id, item.id, 'ideal_amanha', 0);
                       const aProduzir = Math.max(0, Number(idealAmanha) - Number(finalSobra));
 
                       return (
