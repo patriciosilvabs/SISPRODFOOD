@@ -79,30 +79,52 @@ const EstoqueDiario = () => {
       if (!user) return;
 
       try {
-        // Buscar lojas_acesso do usuário
-        const { data: lojasAcesso, error: acessoError } = await supabase
-          .from('lojas_acesso')
-          .select('loja_id')
+        // Verificar se é Admin
+        const { data: userRoles } = await supabase
+          .from('user_roles')
+          .select('role')
           .eq('user_id', user.id);
 
-        if (acessoError) throw acessoError;
+        const isAdmin = userRoles?.some(r => r.role === 'Admin');
 
-        if (!lojasAcesso || lojasAcesso.length === 0) {
-          setLojas([]);
-          return;
+        let lojasData: Loja[] = [];
+
+        if (isAdmin) {
+          // Admin vê todas as lojas
+          const { data: todasLojas, error: lojasError } = await supabase
+            .from('lojas')
+            .select('id, nome')
+            .order('nome');
+
+          if (lojasError) throw lojasError;
+          lojasData = todasLojas || [];
+        } else {
+          // Usuário comum só vê lojas de lojas_acesso
+          const { data: lojasAcesso, error: acessoError } = await supabase
+            .from('lojas_acesso')
+            .select('loja_id')
+            .eq('user_id', user.id);
+
+          if (acessoError) throw acessoError;
+
+          if (!lojasAcesso || lojasAcesso.length === 0) {
+            setLojas([]);
+            return;
+          }
+
+          // Buscar detalhes das lojas
+          const lojasIds = lojasAcesso.map(la => la.loja_id);
+          const { data: lojasDados, error: lojasError } = await supabase
+            .from('lojas')
+            .select('id, nome')
+            .in('id', lojasIds);
+
+          if (lojasError) throw lojasError;
+          lojasData = lojasDados || [];
         }
 
-        // Buscar detalhes das lojas
-        const lojasIds = lojasAcesso.map(la => la.loja_id);
-        const { data: lojasData, error: lojasError } = await supabase
-          .from('lojas')
-          .select('id, nome')
-          .in('id', lojasIds);
-
-        if (lojasError) throw lojasError;
-
-        setLojas(lojasData || []);
-        if (lojasData && lojasData.length > 0) {
+        setLojas(lojasData);
+        if (lojasData.length > 0 && !lojaSelecionada) {
           setLojaSelecionada(lojasData[0].id);
         }
       } catch (error) {
