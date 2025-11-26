@@ -322,10 +322,26 @@ const RomaneioPorcionados = () => {
       // Buscar itens do romaneio
       const { data: romaneioItens, error: itensError } = await supabase
         .from('romaneio_itens')
-        .select('item_porcionado_id, quantidade')
+        .select('item_porcionado_id, quantidade, item_nome')
         .eq('romaneio_id', romaneioId);
 
       if (itensError) throw itensError;
+
+      // VALIDAR ESTOQUE ANTES DE ENVIAR
+      for (const item of romaneioItens || []) {
+        const { data: estoque } = await supabase
+          .from('estoque_cpd')
+          .select('quantidade')
+          .eq('item_porcionado_id', item.item_porcionado_id)
+          .single();
+        
+        const estoqueAtual = estoque?.quantidade || 0;
+        
+        if (estoqueAtual < item.quantidade) {
+          toast.error(`Estoque insuficiente para ${item.item_nome}. Disponível: ${estoqueAtual} un, Solicitado: ${item.quantidade} un`);
+          return; // Impede o envio
+        }
+      }
 
       // Decrementar estoque CPD para cada item do romaneio
       for (const item of romaneioItens || []) {
@@ -376,6 +392,11 @@ const RomaneioPorcionados = () => {
       return;
     }
 
+    if (item.quantidade_disponivel <= 0) {
+      toast.error('Este item não possui estoque disponível');
+      return;
+    }
+
     setItensSelecionados([
       ...itensSelecionados,
       {
@@ -393,6 +414,19 @@ const RomaneioPorcionados = () => {
   };
 
   const updateQuantidade = (item_id: string, quantidade: number) => {
+    const itemDisponivel = itensDisponiveis.find(i => i.item_id === item_id);
+    const maxQuantidade = itemDisponivel?.quantidade_disponivel || 0;
+
+    if (quantidade > maxQuantidade) {
+      toast.error(`Quantidade máxima disponível: ${maxQuantidade} un`);
+      return;
+    }
+
+    if (quantidade < 1) {
+      toast.error('Quantidade mínima: 1 unidade');
+      return;
+    }
+
     setItensSelecionados(
       itensSelecionados.map(i =>
         i.item_id === item_id ? { ...i, quantidade } : i
@@ -616,16 +650,18 @@ const RomaneioPorcionados = () => {
                             <div className="flex items-center justify-between">
                               <div className="space-y-1">
                                 <p className="font-semibold">{item.item_nome}</p>
-                                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                                  <span>Disponível: {item.quantidade_disponivel} un</span>
-                                  <span>•</span>
-                                  <span>Produzido: {format(new Date(item.data_producao), 'dd/MM/yyyy')}</span>
+                                <div className="flex items-center gap-3 text-sm">
+                                  <span className={item.quantidade_disponivel > 0 ? 'text-green-600 dark:text-green-400 font-semibold' : 'text-red-600 dark:text-red-400'}>
+                                    Disponível: {item.quantidade_disponivel} un
+                                  </span>
+                                  <span className="text-muted-foreground">•</span>
+                                  <span className="text-muted-foreground">Produzido: {format(new Date(item.data_producao), 'dd/MM/yyyy')}</span>
                                 </div>
                               </div>
                               <Button
                                 onClick={() => addItem(item)}
                                 size="sm"
-                                disabled={itensSelecionados.some(i => i.item_id === item.item_id)}
+                                disabled={itensSelecionados.some(i => i.item_id === item.item_id) || item.quantidade_disponivel <= 0}
                               >
                                 <Plus className="h-4 w-4 mr-1" />
                                 Adicionar
@@ -654,21 +690,36 @@ const RomaneioPorcionados = () => {
                           Nenhum item selecionado
                         </p>
                       ) : (
-                        itensSelecionados.map(item => (
-                          <div key={item.item_id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{item.item_nome}</p>
-                              <p className="text-xs text-muted-foreground">{item.quantidade} unidades</p>
+                        itensSelecionados.map(item => {
+                          const itemDisponivel = itensDisponiveis.find(i => i.item_id === item.item_id);
+                          const maxQuantidade = itemDisponivel?.quantidade_disponivel || 0;
+                          
+                          return (
+                            <div key={item.item_id} className="space-y-2 p-3 border rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.item_nome}</p>
+                                  <p className="text-xs text-muted-foreground">Máx: {maxQuantidade} un</p>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeItem(item.item_id)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={maxQuantidade}
+                                value={item.quantidade}
+                                onChange={(e) => updateQuantidade(item.item_id, parseInt(e.target.value) || 0)}
+                                className="h-8"
+                              />
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeItem(item.item_id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </CardContent>
                   </Card>
