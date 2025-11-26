@@ -351,14 +351,22 @@ const ResumoDaProducao = () => {
         toast.success('Produção finalizada com sucesso!');
       }
 
-      // Resetar a_produzir das contagens relacionadas para não incluir em futuras agregações
-      const { error: resetError } = await supabase
+      // Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
+      // (a_produzir é coluna gerada, não pode ser atualizada diretamente)
+      const { data: contagensAtuais, error: fetchError } = await supabase
         .from('contagem_porcionados')
-        .update({ a_produzir: 0 })
+        .select('id, final_sobra')
         .eq('item_porcionado_id', selectedRegistro.item_id);
 
-      if (resetError) {
-        console.error('Erro ao resetar contagens:', resetError);
+      if (fetchError) {
+        console.error('Erro ao buscar contagens para reset:', fetchError);
+      } else if (contagensAtuais) {
+        for (const contagem of contagensAtuais) {
+          await supabase
+            .from('contagem_porcionados')
+            .update({ ideal_amanha: contagem.final_sobra })
+            .eq('id', contagem.id);
+        }
       }
       
       loadProducaoRegistros();
