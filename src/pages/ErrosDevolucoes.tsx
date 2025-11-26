@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Camera } from 'lucide-react';
+import { Camera, X } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,12 +35,22 @@ const ErrosDevolucoes = () => {
   const [selectedLoja, setSelectedLoja] = useState('');
   const [descricao, setDescricao] = useState('');
   const [foto, setFoto] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cameraAtiva, setCameraAtiva] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     loadLojas();
     loadOcorrencias();
+
+    // Cleanup: fechar câmera quando componente desmontar
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
   }, []);
 
   const loadLojas = async () => {
@@ -71,10 +81,70 @@ const ErrosDevolucoes = () => {
     setOcorrencias(data || []);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFoto(e.target.files[0]);
+  const abrirCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment', // Câmera traseira no mobile
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+      }
+      
+      setCameraAtiva(true);
+    } catch (error) {
+      console.error('Erro ao acessar câmera:', error);
+      toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
     }
+  };
+
+  const fecharCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setCameraAtiva(false);
+  };
+
+  const tirarFoto = () => {
+    if (!videoRef.current) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `foto_${Date.now()}.jpg`, { type: 'image/jpeg' });
+          setFoto(file);
+          setFotoPreview(URL.createObjectURL(blob));
+          fecharCamera();
+          toast.success('Foto capturada com sucesso');
+        }
+      }, 'image/jpeg', 0.85);
+    }
+  };
+
+  const removerFoto = () => {
+    if (fotoPreview) {
+      URL.revokeObjectURL(fotoPreview);
+    }
+    setFoto(null);
+    setFotoPreview(null);
   };
 
   const uploadFoto = async (file: File): Promise<string | null> => {
@@ -163,10 +233,7 @@ const ErrosDevolucoes = () => {
       // Limpar formulário
       setSelectedLoja('');
       setDescricao('');
-      setFoto(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      removerFoto();
 
       // Recarregar ocorrências
       loadOcorrencias();
@@ -220,32 +287,75 @@ const ErrosDevolucoes = () => {
                   />
                 </div>
 
-                  <div className="space-y-2">
+                <div className="space-y-2">
                   <Label>Foto do Produto</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleFileChange}
-                      className="hidden"
-                      id="foto-input"
-                    />
+                  
+                  {!cameraAtiva && !foto && (
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={abrirCamera}
+                      className="w-full"
                     >
                       <Camera className="mr-2 h-4 w-4" />
-                      Tirar Foto
+                      📷 Tirar Foto
                     </Button>
-                    {foto && (
-                      <span className="text-sm text-muted-foreground self-center">
-                        {foto.name}
-                      </span>
-                    )}
-                  </div>
+                  )}
+
+                  {cameraAtiva && (
+                    <div className="space-y-2">
+                      <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          onClick={tirarFoto}
+                          className="flex-1"
+                        >
+                          <Camera className="mr-2 h-4 w-4" />
+                          Capturar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={fecharCamera}
+                        >
+                          <X className="h-4 w-4" />
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {foto && fotoPreview && (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <img
+                          src={fotoPreview}
+                          alt="Foto capturada"
+                          className="rounded-lg w-full h-auto max-h-64 object-cover border-2 border-border"
+                        />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={removerFoto}
+                          className="absolute top-2 right-2"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Foto capturada: {foto.name}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <Button
