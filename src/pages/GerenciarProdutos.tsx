@@ -70,17 +70,22 @@ const GerenciarProdutos = () => {
   }, [produtos, categoriaFilter, searchQuery]);
 
   const fetchProdutos = async () => {
+    console.log('🔍 fetchProdutos chamado');
     try {
       setLoading(true);
+      console.log('📡 Buscando produtos do banco...');
       const { data, error } = await supabase
         .from('produtos')
         .select('*')
         .order('nome', { ascending: true });
 
+      console.log('📦 Resposta do banco:', { data, error });
+      
       if (error) throw error;
       setProdutos(data || []);
+      console.log('✅ Produtos carregados:', data?.length || 0);
     } catch (error) {
-      console.error('Erro ao carregar produtos:', error);
+      console.error('❌ Erro ao carregar produtos:', error);
       toast.error('Erro ao carregar produtos');
     } finally {
       setLoading(false);
