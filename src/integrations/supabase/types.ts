@@ -567,6 +567,56 @@ export type Database = {
           },
         ]
       }
+      itens_reserva_diaria: {
+        Row: {
+          created_at: string
+          domingo: number
+          id: string
+          item_porcionado_id: string
+          quarta: number
+          quinta: number
+          sabado: number
+          segunda: number
+          sexta: number
+          terca: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          item_porcionado_id: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          item_porcionado_id?: string
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "itens_reserva_diaria_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: true
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lojas: {
         Row: {
           created_at: string | null
@@ -679,6 +729,7 @@ export type Database = {
           data_inicio: string | null
           data_inicio_porcionamento: string | null
           data_inicio_preparo: string | null
+          demanda_lojas: number | null
           detalhes_lojas: Json | null
           id: string
           item_id: string
@@ -689,8 +740,10 @@ export type Database = {
           peso_preparo_kg: number | null
           peso_programado_kg: number | null
           producao_lote_id: string | null
+          reserva_configurada: number | null
           sobra_kg: number | null
           sobra_preparo_kg: number | null
+          sobra_reserva: number | null
           status: string | null
           unidades_programadas: number | null
           unidades_reais: number | null
@@ -704,6 +757,7 @@ export type Database = {
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           id?: string
           item_id: string
@@ -714,8 +768,10 @@ export type Database = {
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
+          reserva_configurada?: number | null
           sobra_kg?: number | null
           sobra_preparo_kg?: number | null
+          sobra_reserva?: number | null
           status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
@@ -729,6 +785,7 @@ export type Database = {
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           id?: string
           item_id?: string
@@ -739,8 +796,10 @@ export type Database = {
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
+          reserva_configurada?: number | null
           sobra_kg?: number | null
           sobra_preparo_kg?: number | null
+          sobra_reserva?: number | null
           status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null

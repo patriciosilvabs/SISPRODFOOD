@@ -50,6 +50,9 @@ interface ProducaoRegistro {
   insumo_principal_nome?: string;
   insumo_principal_estoque_kg?: number;
   insumosExtras?: InsumoExtraComEstoque[];
+  demanda_lojas?: number | null;
+  reserva_configurada?: number | null;
+  sobra_reserva?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';

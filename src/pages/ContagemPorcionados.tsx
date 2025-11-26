@@ -256,35 +256,60 @@ const ContagemPorcionados = () => {
           .lte('updated_at', `${hoje}T23:59:59`);
 
         if (todasContagens && todasContagens.length > 0) {
-          // 2. Buscar nomes das lojas
+          // 2. Calcular demanda total das lojas
+          const demandaLojas = todasContagens.reduce((sum, c) => {
+            const aProduzir = Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0));
+            return sum + aProduzir;
+          }, 0);
+
+          // 3. Buscar reserva configurada para o dia
+          const diaAtual = getTomorrowDayKey();
+          const { data: reservaData } = await supabase
+            .from('itens_reserva_diaria')
+            .select('*')
+            .eq('item_porcionado_id', itemId)
+            .maybeSingle();
+
+          const reservaDia = reservaData?.[diaAtual] || 0;
+
+          // 4. Calcular necessidade total (demanda + reserva)
+          const necessidadeTotal = demandaLojas + reservaDia;
+
+          // 5. Buscar nomes das lojas
           const lojasIds = todasContagens.map(c => c.loja_id);
           const { data: lojasData } = await supabase
             .from('lojas')
             .select('id, nome')
             .in('id', lojasIds);
 
-          // 3. Calcular TOTAL e construir detalhes
-          const detalhesLojas = todasContagens.map(c => ({
-            loja_id: c.loja_id,
-            loja_nome: lojasData?.find(l => l.id === c.loja_id)?.nome || 'Loja',
-            quantidade: c.a_produzir,
-          }));
+          // 6. Construir detalhes por loja (apenas demanda real das lojas)
+          const detalhesLojas = todasContagens.map(c => {
+            const aProduzir = Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0));
+            return {
+              loja_id: c.loja_id,
+              loja_nome: lojasData?.find(l => l.id === c.loja_id)?.nome || 'Loja',
+              quantidade: aProduzir,
+            };
+          });
 
-          const totalAProduzir = todasContagens.reduce((sum, c) => sum + c.a_produzir, 0);
-          
-          // Calcular peso programado baseado no tipo de unidade
+          // 7. Calcular unidades_programadas com arredondamento para traços
+          let unidadesProgramadas = necessidadeTotal;
           let pesoProgramadoTotal = 0;
+          let sobraReserva = 0;
+
           if (itemData.unidade_medida === 'traco' && itemData.equivalencia_traco && itemData.consumo_por_traco_g) {
-            // Para itens em traço: calcular baseado no consumo de insumo por traço
-            const tracos = Math.ceil(totalAProduzir / itemData.equivalencia_traco);
-            pesoProgramadoTotal = (tracos * itemData.consumo_por_traco_g) / 1000; // converter g para kg
+            // Para itens em traço: arredondar para traços inteiros
+            const tracos = Math.ceil(necessidadeTotal / itemData.equivalencia_traco);
+            unidadesProgramadas = tracos * itemData.equivalencia_traco;
+            sobraReserva = unidadesProgramadas - necessidadeTotal;
+            pesoProgramadoTotal = (tracos * itemData.consumo_por_traco_g) / 1000; // g para kg
           } else {
             // Para itens normais: usar peso unitário
             const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
-            pesoProgramadoTotal = totalAProduzir * pesoUnitarioKg;
+            pesoProgramadoTotal = unidadesProgramadas * pesoUnitarioKg;
           }
 
-          // 4. Verificar se já existe registro "a_produzir" para este item
+          // 8. Verificar se já existe registro "a_produzir" para este item
           const { data: registroExistente } = await supabase
             .from('producao_registros')
             .select('id')
@@ -296,8 +321,11 @@ const ContagemPorcionados = () => {
             item_id: itemId,
             item_nome: itemData.nome,
             status: 'a_produzir',
-            unidades_programadas: totalAProduzir,
+            unidades_programadas: unidadesProgramadas,
             peso_programado_kg: pesoProgramadoTotal,
+            demanda_lojas: demandaLojas,
+            reserva_configurada: reservaDia,
+            sobra_reserva: sobraReserva,
             detalhes_lojas: detalhesLojas,
             usuario_id: user.id,
             usuario_nome: profile?.nome || user.email || 'Usuário',
