@@ -94,10 +94,11 @@ const ContagemPorcionados = () => {
       
       if (lojasError) throw lojasError;
 
-      // Carregar itens porcionados
+      // Carregar itens porcionados (apenas ativos)
       const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
         .select('id, nome, peso_unitario_g')
+        .eq('ativo', true)
         .order('nome');
       
       if (itensError) throw itensError;

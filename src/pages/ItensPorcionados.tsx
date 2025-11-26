@@ -73,6 +73,7 @@ const ItensPorcionados = () => {
       const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
         .select('*')
+        .eq('ativo', true)
         .order('nome');
 
       if (itensError) throw itensError;
@@ -132,20 +133,67 @@ const ItensPorcionados = () => {
     }
   };
 
+  const verificarRegistrosRelacionados = async (itemId: string) => {
+    const counts = { producao: 0, romaneios: 0, contagens: 0 };
+    
+    try {
+      const { count: producaoCount } = await supabase
+        .from('producao_registros')
+        .select('*', { count: 'exact', head: true })
+        .eq('item_id', itemId);
+      
+      const { count: romaneiosCount } = await supabase
+        .from('romaneio_itens')
+        .select('*', { count: 'exact', head: true })
+        .eq('item_porcionado_id', itemId);
+      
+      const { count: contagensCount } = await supabase
+        .from('contagem_porcionados')
+        .select('*', { count: 'exact', head: true })
+        .eq('item_porcionado_id', itemId);
+      
+      counts.producao = producaoCount || 0;
+      counts.romaneios = romaneiosCount || 0;
+      counts.contagens = contagensCount || 0;
+    } catch (error) {
+      console.error('Erro ao verificar registros relacionados:', error);
+    }
+    
+    return counts;
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este item?')) return;
+    if (!confirm('Tem certeza que deseja desativar este item?')) return;
 
     try {
+      // Verificar se há registros relacionados
+      const counts = await verificarRegistrosRelacionados(id);
+      const totalRegistros = counts.producao + counts.romaneios + counts.contagens;
+      
+      if (totalRegistros > 0) {
+        toast.error(
+          `Este item possui registros relacionados e será desativado (não excluído):\n\n` +
+          `• ${counts.producao} registro(s) de produção\n` +
+          `• ${counts.romaneios} item(ns) em romaneios\n` +
+          `• ${counts.contagens} contagem(ns)\n\n` +
+          `O item não aparecerá mais nas operações diárias.`,
+          { duration: 8000 }
+        );
+      }
+
+      // Soft delete: marcar como inativo
       const { error } = await supabase
         .from('itens_porcionados')
-        .delete()
+        .update({ ativo: false })
         .eq('id', id);
 
       if (error) throw error;
-      toast.success('Item excluído com sucesso!');
+      
+      toast.success('Item desativado com sucesso!');
       fetchData();
     } catch (error: any) {
-      toast.error(error.message);
+      console.error('Erro ao desativar item:', error);
+      toast.error('Erro ao desativar item: ' + error.message);
     }
   };
 
