@@ -3,11 +3,10 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { GripVertical, Package } from 'lucide-react';
+import { KanbanCard } from '@/components/kanban/KanbanCard';
+import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
+import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 
 interface ProducaoRegistro {
   id: string;
@@ -17,7 +16,16 @@ interface ProducaoRegistro {
   unidades_reais: number | null;
   peso_programado_kg: number | null;
   peso_final_kg: number | null;
+  peso_preparo_kg?: number | null;
+  sobra_preparo_kg?: number | null;
+  sobra_kg?: number | null;
+  observacao_preparo?: string | null;
+  observacao_porcionamento?: string | null;
   data_inicio: string | null;
+  data_inicio_preparo?: string | null;
+  data_fim_preparo?: string | null;
+  data_inicio_porcionamento?: string | null;
+  data_fim_porcionamento?: string | null;
   data_fim: string | null;
   usuario_nome: string;
 }
@@ -46,6 +54,9 @@ const ResumoDaProducao = () => {
     finalizado: [],
   });
   const [loading, setLoading] = useState(true);
+  const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
+  const [modalPreparo, setModalPreparo] = useState(false);
+  const [modalFinalizar, setModalFinalizar] = useState(false);
 
   useEffect(() => {
     loadProducaoRegistros();
@@ -116,48 +127,104 @@ const ResumoDaProducao = () => {
     }
   };
 
-  const onDragEnd = async (result: DropResult) => {
-    const { source, destination, draggableId } = result;
+  const handleCardAction = async (registro: ProducaoRegistro, columnId: StatusColumn) => {
+    setSelectedRegistro(registro);
 
-    // Se não há destino ou se o item foi solto no mesmo lugar
-    if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) {
-      return;
+    if (columnId === 'a_produzir') {
+      // Transição direta para EM PREPARO
+      await transitionToPreparo(registro.id);
+    } else if (columnId === 'em_preparo') {
+      // Abrir modal de preparo
+      setModalPreparo(true);
+    } else if (columnId === 'em_porcionamento') {
+      // Abrir modal de finalização
+      setModalFinalizar(true);
     }
+  };
 
-    const sourceColumn = source.droppableId as StatusColumn;
-    const destColumn = destination.droppableId as StatusColumn;
-
-    // Criar cópias das colunas
-    const newColumns = { ...columns };
-    const sourceItems = [...newColumns[sourceColumn]];
-    const destItems = sourceColumn === destColumn ? sourceItems : [...newColumns[destColumn]];
-
-    // Remover do source
-    const [movedItem] = sourceItems.splice(source.index, 1);
-
-    // Adicionar ao destination
-    destItems.splice(destination.index, 0, movedItem);
-
-    // Atualizar estado local
-    newColumns[sourceColumn] = sourceItems;
-    newColumns[destColumn] = destItems;
-    setColumns(newColumns);
-
-    // Atualizar no banco de dados
+  const transitionToPreparo = async (registroId: string) => {
     try {
       const { error } = await supabase
         .from('producao_registros')
-        .update({ status: destColumn })
-        .eq('id', draggableId);
+        .update({
+          status: 'em_preparo',
+          data_inicio_preparo: new Date().toISOString(),
+        })
+        .eq('id', registroId);
 
       if (error) throw error;
 
-      toast.success('Status atualizado com sucesso');
+      toast.success('Item movido para Em Preparo');
+      loadProducaoRegistros();
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast.error('Erro ao atualizar status');
-      // Reverter mudança em caso de erro
+    }
+  };
+
+  const handleConcluirPreparo = async (data: {
+    peso_preparo_kg: number;
+    sobra_preparo_kg: number;
+    observacao_preparo: string;
+  }) => {
+    if (!selectedRegistro) return;
+
+    try {
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({
+          status: 'em_porcionamento',
+          peso_preparo_kg: data.peso_preparo_kg,
+          sobra_preparo_kg: data.sobra_preparo_kg,
+          observacao_preparo: data.observacao_preparo,
+          data_fim_preparo: new Date().toISOString(),
+          data_inicio_porcionamento: new Date().toISOString(),
+        })
+        .eq('id', selectedRegistro.id);
+
+      if (error) throw error;
+
+      toast.success('Etapa de preparo concluída');
       loadProducaoRegistros();
+      setModalPreparo(false);
+      setSelectedRegistro(null);
+    } catch (error) {
+      console.error('Erro ao concluir preparo:', error);
+      toast.error('Erro ao concluir preparo');
+    }
+  };
+
+  const handleFinalizarProducao = async (data: {
+    unidades_reais: number;
+    peso_final_kg: number;
+    sobra_kg: number;
+    observacao_porcionamento: string;
+  }) => {
+    if (!selectedRegistro) return;
+
+    try {
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({
+          status: 'finalizado',
+          unidades_reais: data.unidades_reais,
+          peso_final_kg: data.peso_final_kg,
+          sobra_kg: data.sobra_kg,
+          observacao_porcionamento: data.observacao_porcionamento,
+          data_fim_porcionamento: new Date().toISOString(),
+          data_fim: new Date().toISOString(),
+        })
+        .eq('id', selectedRegistro.id);
+
+      if (error) throw error;
+
+      toast.success('Produção finalizada com sucesso!');
+      loadProducaoRegistros();
+      setModalFinalizar(false);
+      setSelectedRegistro(null);
+    } catch (error) {
+      console.error('Erro ao finalizar produção:', error);
+      toast.error('Erro ao finalizar produção');
     }
   };
 
@@ -184,102 +251,59 @@ const ResumoDaProducao = () => {
           </p>
         </div>
 
-        <DragDropContext onDragEnd={onDragEnd}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (
-              <div key={columnId} className="flex flex-col">
-                <Card className={`${columnConfig[columnId].color} border-2`}>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                      <span>{columnConfig[columnId].title}</span>
-                      <Badge variant="secondary" className="ml-2">
-                        {columns[columnId].length}
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <Droppable droppableId={columnId}>
-                    {(provided, snapshot) => (
-                      <CardContent
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`space-y-2 min-h-[500px] ${
-                          snapshot.isDraggingOver ? 'bg-accent/50' : ''
-                        }`}
-                      >
-                        {columns[columnId].map((registro, index) => (
-                          <Draggable
-                            key={registro.id}
-                            draggableId={registro.id}
-                            index={index}
-                          >
-                            {(provided, snapshot) => (
-                              <Card
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={`cursor-move hover:shadow-md transition-shadow ${
-                                  snapshot.isDragging ? 'shadow-lg opacity-90' : ''
-                                }`}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start gap-2">
-                                    <GripVertical className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <Package className="h-4 w-4 text-primary flex-shrink-0" />
-                                        <h4 className="font-semibold text-sm truncate">
-                                          {registro.item_nome}
-                                        </h4>
-                                      </div>
-                                      
-                                      <div className="space-y-1 text-xs text-muted-foreground">
-                                        {registro.unidades_programadas && (
-                                          <p>
-                                            📦 Programadas: {registro.unidades_programadas} un
-                                          </p>
-                                        )}
-                                        {registro.unidades_reais && (
-                                          <p>
-                                            ✅ Reais: {registro.unidades_reais} un
-                                          </p>
-                                        )}
-                                        {registro.peso_programado_kg && (
-                                          <p>
-                                            ⚖️ Peso prog.: {registro.peso_programado_kg} kg
-                                          </p>
-                                        )}
-                                        {registro.data_inicio && (
-                                          <p className="mt-2 pt-2 border-t">
-                                            🕐 {format(new Date(registro.data_inicio), 'dd/MM HH:mm', { locale: ptBR })}
-                                          </p>
-                                        )}
-                                        <p className="text-xs font-medium">
-                                          👤 {registro.usuario_nome}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                        
-                        {columns[columnId].length === 0 && (
-                          <div className="text-center py-8 text-muted-foreground text-sm">
-                            Nenhum item nesta coluna
-                          </div>
-                        )}
-                      </CardContent>
-                    )}
-                  </Droppable>
-                </Card>
-              </div>
-            ))}
-          </div>
-        </DragDropContext>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (
+            <div key={columnId} className="flex flex-col">
+              <Card className={`${columnConfig[columnId].color} border-2`}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center justify-between">
+                    <span>{columnConfig[columnId].title}</span>
+                    <Badge variant="secondary" className="ml-2">
+                      {columns[columnId].length}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 min-h-[500px]">
+                  {columns[columnId].map((registro) => (
+                    <KanbanCard
+                      key={registro.id}
+                      registro={registro}
+                      columnId={columnId}
+                      onAction={() => handleCardAction(registro, columnId)}
+                    />
+                  ))}
+                  
+                  {columns[columnId].length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      Nenhum item nesta coluna
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* Modais */}
+      {selectedRegistro && (
+        <>
+          <ConcluirPreparoModal
+            open={modalPreparo}
+            onOpenChange={setModalPreparo}
+            itemNome={selectedRegistro.item_nome}
+            onConfirm={handleConcluirPreparo}
+          />
+          
+          <FinalizarProducaoModal
+            open={modalFinalizar}
+            onOpenChange={setModalFinalizar}
+            itemNome={selectedRegistro.item_nome}
+            unidadesProgramadas={selectedRegistro.unidades_programadas}
+            onConfirm={handleFinalizarProducao}
+          />
+        </>
+      )}
     </Layout>
   );
 };

@@ -529,14 +529,22 @@ export type Database = {
       producao_registros: {
         Row: {
           data_fim: string | null
+          data_fim_porcionamento: string | null
+          data_fim_preparo: string | null
           data_inicio: string | null
+          data_inicio_porcionamento: string | null
+          data_inicio_preparo: string | null
           id: string
           item_id: string
           item_nome: string
+          observacao_porcionamento: string | null
+          observacao_preparo: string | null
           peso_final_kg: number | null
+          peso_preparo_kg: number | null
           peso_programado_kg: number | null
           producao_lote_id: string | null
           sobra_kg: number | null
+          sobra_preparo_kg: number | null
           status: string | null
           unidades_programadas: number | null
           unidades_reais: number | null
@@ -545,14 +553,22 @@ export type Database = {
         }
         Insert: {
           data_fim?: string | null
+          data_fim_porcionamento?: string | null
+          data_fim_preparo?: string | null
           data_inicio?: string | null
+          data_inicio_porcionamento?: string | null
+          data_inicio_preparo?: string | null
           id?: string
           item_id: string
           item_nome: string
+          observacao_porcionamento?: string | null
+          observacao_preparo?: string | null
           peso_final_kg?: number | null
+          peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
           sobra_kg?: number | null
+          sobra_preparo_kg?: number | null
           status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
@@ -561,14 +577,22 @@ export type Database = {
         }
         Update: {
           data_fim?: string | null
+          data_fim_porcionamento?: string | null
+          data_fim_preparo?: string | null
           data_inicio?: string | null
+          data_inicio_porcionamento?: string | null
+          data_inicio_preparo?: string | null
           id?: string
           item_id?: string
           item_nome?: string
+          observacao_porcionamento?: string | null
+          observacao_preparo?: string | null
           peso_final_kg?: number | null
+          peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
           sobra_kg?: number | null
+          sobra_preparo_kg?: number | null
           status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
