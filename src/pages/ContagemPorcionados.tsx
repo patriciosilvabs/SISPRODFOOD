@@ -9,6 +9,7 @@ import { Sparkles, Eye, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { numberToWords } from '@/lib/numberToWords';
 import {
   Collapsible,
   CollapsibleContent,
@@ -482,6 +483,11 @@ const ContagemPorcionados = () => {
                                   />
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">unidade</span>
                                 </div>
+                                {finalSobra > 0 && (
+                                  <p className="text-xs text-muted-foreground italic">
+                                    {numberToWords(finalSobra, 'unidade')}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
@@ -496,6 +502,11 @@ const ContagemPorcionados = () => {
                                   placeholder="em gramas"
                                   className="text-center"
                                 />
+                                {pesoTotal > 0 && (
+                                  <p className="text-xs text-muted-foreground italic">
+                                    {numberToWords(pesoTotal, 'g')}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
@@ -508,6 +519,11 @@ const ContagemPorcionados = () => {
                                   onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
                                   className="text-center font-medium"
                                 />
+                                {idealAmanha > 0 && (
+                                  <p className="text-xs text-muted-foreground italic">
+                                    {numberToWords(idealAmanha, 'unidade')}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
