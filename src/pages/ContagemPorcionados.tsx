@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Sparkles, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, Eye, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -14,6 +14,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Loja {
   id: string;
@@ -40,6 +48,16 @@ interface Contagem {
   item_nome?: string;
 }
 
+interface EstoqueIdeal {
+  segunda: number;
+  terca: number;
+  quarta: number;
+  quinta: number;
+  sexta: number;
+  sabado: number;
+  domingo: number;
+}
+
 const ContagemPorcionados = () => {
   const { user } = useAuth();
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -48,6 +66,17 @@ const ContagemPorcionados = () => {
   const [openLojas, setOpenLojas] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [editingValues, setEditingValues] = useState<Record<string, any>>({});
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<{ lojaId: string; itemId: string; itemNome: string } | null>(null);
+  const [estoquesIdeais, setEstoquesIdeais] = useState<EstoqueIdeal>({
+    segunda: 200,
+    terca: 200,
+    quarta: 200,
+    quinta: 200,
+    sexta: 200,
+    sabado: 200,
+    domingo: 200,
+  });
 
   useEffect(() => {
     loadData();
@@ -183,6 +212,73 @@ const ContagemPorcionados = () => {
     return editingValues[key]?.[field] ?? defaultValue;
   };
 
+  const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
+    setSelectedItem({ lojaId, itemId, itemNome });
+    
+    // Carregar estoques ideais existentes
+    const { data, error } = await supabase
+      .from('estoques_ideais_semanais')
+      .select('*')
+      .eq('loja_id', lojaId)
+      .eq('item_porcionado_id', itemId)
+      .maybeSingle();
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error('Erro ao carregar estoques ideais:', error);
+      toast.error('Erro ao carregar estoques ideais');
+      return;
+    }
+    
+    if (data) {
+      setEstoquesIdeais({
+        segunda: data.segunda,
+        terca: data.terca,
+        quarta: data.quarta,
+        quinta: data.quinta,
+        sexta: data.sexta,
+        sabado: data.sabado,
+        domingo: data.domingo,
+      });
+    } else {
+      // Valores padrão
+      setEstoquesIdeais({
+        segunda: 200,
+        terca: 200,
+        quarta: 200,
+        quinta: 200,
+        sexta: 200,
+        sabado: 200,
+        domingo: 200,
+      });
+    }
+    
+    setDialogOpen(true);
+  };
+
+  const handleSaveEstoquesIdeais = async () => {
+    if (!selectedItem) return;
+
+    try {
+      const { error } = await supabase
+        .from('estoques_ideais_semanais')
+        .upsert({
+          loja_id: selectedItem.lojaId,
+          item_porcionado_id: selectedItem.itemId,
+          ...estoquesIdeais,
+        }, {
+          onConflict: 'loja_id,item_porcionado_id',
+        });
+
+      if (error) throw error;
+
+      toast.success('Estoques ideais salvos com sucesso');
+      setDialogOpen(false);
+    } catch (error) {
+      console.error('Erro ao salvar:', error);
+      toast.error('Erro ao salvar estoques ideais');
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -316,7 +412,11 @@ const ContagemPorcionados = () => {
                             </div>
 
                             <div className="col-span-2 flex gap-2 justify-center">
-                              <Button variant="ghost" size="icon">
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                              >
                                 <Eye className="h-4 w-4" />
                               </Button>
                               <Button
@@ -344,6 +444,104 @@ const ContagemPorcionados = () => {
             );
           })}
         </div>
+
+        {/* Dialog de Estoques Ideais */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                Definir Estoques Ideais para {selectedItem?.itemNome}
+              </DialogTitle>
+              <DialogDescription>
+                Defina a meta de estoque para o início de cada dia da semana.
+                (Unidade: unidade)
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="segunda">Segunda</Label>
+                  <Input
+                    id="segunda"
+                    type="number"
+                    value={estoquesIdeais.segunda}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, segunda: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="terca">Terça</Label>
+                  <Input
+                    id="terca"
+                    type="number"
+                    value={estoquesIdeais.terca}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, terca: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quarta">Quarta</Label>
+                  <Input
+                    id="quarta"
+                    type="number"
+                    value={estoquesIdeais.quarta}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, quarta: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quinta">Quinta</Label>
+                  <Input
+                    id="quinta"
+                    type="number"
+                    value={estoquesIdeais.quinta}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, quinta: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sexta">Sexta</Label>
+                  <Input
+                    id="sexta"
+                    type="number"
+                    value={estoquesIdeais.sexta}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, sexta: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sabado">Sábado</Label>
+                  <Input
+                    id="sabado"
+                    type="number"
+                    value={estoquesIdeais.sabado}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, sabado: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="domingo">Domingo</Label>
+                  <Input
+                    id="domingo"
+                    type="number"
+                    value={estoquesIdeais.domingo}
+                    onChange={(e) => setEstoquesIdeais({ ...estoquesIdeais, domingo: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveEstoquesIdeais}>
+                Salvar Estoques Ideais
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
