@@ -23,6 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ProdutoFormModal } from '@/components/modals/ProdutoFormModal';
 import { DeleteProdutoDialog } from '@/components/modals/DeleteProdutoDialog';
+import { ImportarProdutosIAModal } from '@/components/modals/ImportarProdutosIAModal';
 
 interface Produto {
   id: string;
@@ -56,6 +57,7 @@ const GerenciarProdutos = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
   const [deletingProduto, setDeletingProduto] = useState<Produto | null>(null);
+  const [importarIAOpen, setImportarIAOpen] = useState(false);
 
   useEffect(() => {
     fetchProdutos();
@@ -144,7 +146,7 @@ const GerenciarProdutos = () => {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => toast.info('Funcionalidade em desenvolvimento')}
+              onClick={() => setImportarIAOpen(true)}
             >
               <Sparkles className="h-4 w-4 mr-2" />
               Adicionar em Lote com IA
@@ -272,6 +274,12 @@ const GerenciarProdutos = () => {
       <DeleteProdutoDialog
         produto={deletingProduto}
         onClose={handleDeleteClose}
+      />
+
+      <ImportarProdutosIAModal
+        open={importarIAOpen}
+        onClose={() => setImportarIAOpen(false)}
+        onSuccess={fetchProdutos}
       />
     </Layout>
   );

@@ -1,1 +1,4 @@
 project_id = "cltytxckwretwrqfxdqf"
+
+[functions.processar-produtos-ia]
+verify_jwt = false
