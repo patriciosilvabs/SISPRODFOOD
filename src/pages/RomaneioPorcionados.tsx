@@ -79,6 +79,27 @@ const RomaneioPorcionados = () => {
     checkUserRole();
     fetchUserLojas();
     fetchRomaneiosPendentes();
+
+    // Listener realtime para estoque_cpd - atualiza quando produção finaliza itens
+    const channel = supabase
+      .channel('estoque-cpd-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'estoque_cpd'
+        },
+        (payload) => {
+          console.log('Estoque CPD atualizado:', payload);
+          fetchItensDisponiveis();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -469,7 +490,11 @@ const RomaneioPorcionados = () => {
           </p>
         </div>
 
-        <Tabs defaultValue="romaneio" className="w-full">
+        <Tabs defaultValue="romaneio" className="w-full" onValueChange={(value) => {
+          if (value === 'romaneio') {
+            fetchItensDisponiveis();
+          }
+        }}>
           <TabsList>
             <TabsTrigger value="romaneio" className="flex items-center gap-2">
               <Truck className="h-4 w-4" />
