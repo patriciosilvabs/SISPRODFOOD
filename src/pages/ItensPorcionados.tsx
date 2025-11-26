@@ -41,6 +41,7 @@ interface ItemPorcionado {
   insumo_vinculado_id: string | null;
   unidade_medida: UnidadeMedida;
   equivalencia_traco: number | null;
+  consumo_por_traco_g: number | null;
   perda_percentual_adicional: number;
 }
 
@@ -61,6 +62,7 @@ const ItensPorcionados = () => {
     insumo_vinculado_id: '',
     unidade_medida: 'unidade' as UnidadeMedida,
     equivalencia_traco: '',
+    consumo_por_traco_g: '0',
     perda_percentual_adicional: '0',
   });
 
@@ -105,6 +107,7 @@ const ItensPorcionados = () => {
         insumo_vinculado_id: formData.insumo_vinculado_id === 'none' ? null : formData.insumo_vinculado_id || null,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
+        consumo_por_traco_g: formData.consumo_por_traco_g ? parseFloat(formData.consumo_por_traco_g) : 0,
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
       };
 
@@ -205,6 +208,7 @@ const ItensPorcionados = () => {
       insumo_vinculado_id: item.insumo_vinculado_id || 'none',
       unidade_medida: item.unidade_medida,
       equivalencia_traco: item.equivalencia_traco?.toString() || '',
+      consumo_por_traco_g: item.consumo_por_traco_g?.toString() || '0',
       perda_percentual_adicional: item.perda_percentual_adicional.toString(),
     });
     setDialogOpen(true);
@@ -218,6 +222,7 @@ const ItensPorcionados = () => {
       insumo_vinculado_id: 'none',
       unidade_medida: 'unidade',
       equivalencia_traco: '',
+      consumo_por_traco_g: '0',
       perda_percentual_adicional: '0',
     });
   };
@@ -340,20 +345,40 @@ const ItensPorcionados = () => {
 
                   <div className="grid grid-cols-2 gap-4">
                     {formData.unidade_medida === 'traco' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="equivalencia">Equivalência Traço</Label>
-                        <Input
-                          id="equivalencia"
-                          type="number"
-                          value={formData.equivalencia_traco}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              equivalencia_traco: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="equivalencia">Equivalência por Traço</Label>
+                          <Input
+                            id="equivalencia"
+                            type="number"
+                            value={formData.equivalencia_traco}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                equivalencia_traco: e.target.value,
+                              })
+                            }
+                            placeholder="0"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="consumo_traco">Consumo por Traço (Principal)</Label>
+                          <Input
+                            id="consumo_traco"
+                            type="number"
+                            step="0.01"
+                            value={formData.consumo_por_traco_g}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                consumo_por_traco_g: e.target.value,
+                              })
+                            }
+                            placeholder="Em gramas (ex: 1)"
+                          />
+                        </div>
+                      </>
                     )}
 
                     <div className="space-y-2">
