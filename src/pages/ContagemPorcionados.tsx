@@ -230,7 +230,6 @@ const ContagemPorcionados = () => {
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
-        a_produzir: aProduzir,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
       };
