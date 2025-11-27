@@ -41,18 +41,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let isMounted = true;
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
         
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          try {
-            await fetchProfile(session.user.id);
-          } finally {
-            if (isMounted) setLoading(false);
-          }
+          // Defer fetchProfile to prevent deadlock
+          setTimeout(() => {
+            fetchProfile(session.user.id).finally(() => {
+              if (isMounted) setLoading(false);
+            });
+          }, 0);
         } else {
           setProfile(null);
           setRoles([]);
