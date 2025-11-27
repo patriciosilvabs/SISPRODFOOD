@@ -701,6 +701,69 @@ export type Database = {
           },
         ]
       }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          nome: string
+          slug: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome: string
+          slug: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          nome?: string
+          slug?: string
+        }
+        Relationships: []
+      }
       producao_lotes: {
         Row: {
           data_fim: string | null
@@ -1130,6 +1193,7 @@ export type Database = {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
       }
+      get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
