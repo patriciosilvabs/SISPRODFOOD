@@ -127,7 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     toast.success('Conta criada com sucesso!');
-    navigate('/');
+    // Removido navigate('/') - deixar ProtectedRoute redirecionar baseado em needsOnboarding
   };
 
   const signOut = async () => {
