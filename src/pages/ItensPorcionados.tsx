@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, ShoppingBag, Timer } from 'lucide-react';
 import { toast } from 'sonner';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -63,6 +64,7 @@ interface InsumoExtra {
 }
 
 const ItensPorcionados = () => {
+  const { organizationId } = useOrganization();
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [insumosExtras, setInsumosExtras] = useState<InsumoExtra[]>([]);
@@ -122,6 +124,11 @@ const ItensPorcionados = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     try {
       const data = {
         nome: formData.nome,
@@ -133,6 +140,7 @@ const ItensPorcionados = () => {
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
         timer_ativo: formData.timer_ativo,
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
+        organization_id: organizationId,
       };
 
       if (editingItem) {
@@ -245,6 +253,11 @@ const ItensPorcionados = () => {
       return;
     }
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     try {
       const insumoSelecionado = insumos.find(i => i.id === novoInsumoExtra.insumo_id);
       if (!insumoSelecionado) return;
@@ -257,6 +270,7 @@ const ItensPorcionados = () => {
           nome: insumoSelecionado.nome,
           quantidade: parseFloat(novoInsumoExtra.quantidade),
           unidade: novoInsumoExtra.unidade,
+          organization_id: organizationId,
         });
 
       if (error) throw error;

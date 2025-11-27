@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
@@ -78,6 +79,7 @@ const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
 
 const ResumoDaProducao = () => {
   const { user, profile } = useAuth();
+  const { organizationId } = useOrganization();
   const { playAlarm, stopAlarm } = useAlarmSound();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
@@ -172,6 +174,7 @@ const ResumoDaProducao = () => {
           tipo: tipo,
           usuario_id: user?.id || '',
           usuario_nome: profile?.nome || 'Sistema',
+          organization_id: organizationId,
         });
 
       if (logError) throw logError;
@@ -499,7 +502,8 @@ const ResumoDaProducao = () => {
               consumo_real: quantidadeKg,
               unidade: extra.unidade,
               usuario_id: user?.id || '',
-              usuario_nome: profile?.nome || 'Sistema'
+              usuario_nome: profile?.nome || 'Sistema',
+              organization_id: organizationId,
             });
           } catch (error) {
             console.error(`Erro ao debitar insumo extra ${extra.nome}:`, error);
@@ -531,7 +535,8 @@ const ResumoDaProducao = () => {
           consumo_real: consumoReal,
           unidade: 'kg',
           usuario_id: user?.id || '',
-          usuario_nome: profile?.nome || 'Sistema'
+          usuario_nome: profile?.nome || 'Sistema',
+          organization_id: organizationId,
         });
       }
 

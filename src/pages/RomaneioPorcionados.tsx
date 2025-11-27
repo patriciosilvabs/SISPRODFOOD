@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { StepIndicator } from '@/components/romaneio/StepIndicator';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -60,6 +61,7 @@ interface Romaneio {
 
 const RomaneioPorcionados = () => {
   const { user, profile } = useAuth();
+  const { organizationId } = useOrganization();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedLoja, setSelectedLoja] = useState<string>('');
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -612,6 +614,11 @@ const RomaneioPorcionados = () => {
       return;
     }
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -626,7 +633,8 @@ const RomaneioPorcionados = () => {
           usuario_id: user.id,
           usuario_nome: profile.nome,
           observacao: observacao || null,
-          status: 'pendente'
+          status: 'pendente',
+          organization_id: organizationId,
         })
         .select()
         .single();
@@ -639,7 +647,8 @@ const RomaneioPorcionados = () => {
         item_porcionado_id: item.item_id,
         item_nome: item.item_nome,
         quantidade: item.quantidade,
-        producao_registro_id: item.producao_registro_ids[0]
+        producao_registro_id: item.producao_registro_ids[0],
+        organization_id: organizationId,
       }));
 
       const { error: itensError } = await supabase

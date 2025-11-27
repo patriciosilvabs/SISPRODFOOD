@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Store } from 'lucide-react';
 import { toast } from 'sonner';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ interface Loja {
 }
 
 const Lojas = () => {
+  const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -65,11 +67,21 @@ const Lojas = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     try {
+      const dataToSave = {
+        ...formData,
+        organization_id: organizationId,
+      };
+
       if (editingLoja) {
         const { error } = await supabase
           .from('lojas')
-          .update(formData)
+          .update(dataToSave)
           .eq('id', editingLoja.id);
 
         if (error) throw error;
@@ -77,7 +89,7 @@ const Lojas = () => {
       } else {
         const { error } = await supabase
           .from('lojas')
-          .insert([formData]);
+          .insert([dataToSave]);
 
         if (error) throw error;
         toast.success('Loja criada com sucesso!');

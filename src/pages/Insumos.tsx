@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Package } from 'lucide-react';
 import { toast } from 'sonner';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { numberToWords } from '@/lib/numberToWords';
@@ -48,6 +49,7 @@ interface Insumo {
 }
 
 const Insumos = () => {
+  const { organizationId } = useOrganization();
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,6 +86,11 @@ const Insumos = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     try {
       const data = {
         nome: formData.nome,
@@ -91,6 +98,7 @@ const Insumos = () => {
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         estoque_minimo: parseFloat(formData.estoque_minimo),
         perda_percentual: parseFloat(formData.perda_percentual),
+        organization_id: organizationId,
       };
 
       if (editingInsumo) {
