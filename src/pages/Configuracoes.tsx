@@ -186,7 +186,7 @@ const Configuracoes = () => {
       description: 'Cadastre novos usuários e defina suas permissões.',
       icon: Users,
       color: 'bg-blue-100 text-blue-600',
-      onClick: () => toast.info('Funcionalidade em desenvolvimento'),
+      onClick: () => navigate('/gerenciar-usuarios'),
     },
   ];
 

@@ -13,6 +13,7 @@ import Producao from "./pages/Producao";
 import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
 import GerenciarProdutos from "./pages/GerenciarProdutos";
+import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
 import PainelKanban from "./pages/PainelKanban";
 import EstoqueDiario from "./pages/EstoqueDiario";
@@ -152,6 +153,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
                   <Lojas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/gerenciar-usuarios"
+              element={
+                <ProtectedRoute requiredRoles={['Admin']}>
+                  <GerenciarUsuarios />
                 </ProtectedRoute>
               }
             />
