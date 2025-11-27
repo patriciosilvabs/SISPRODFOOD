@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { toast } from "sonner";
 import { Settings, Loader2 } from "lucide-react";
 
@@ -36,6 +37,7 @@ interface ConfigurarEstoqueMinimoModalProps {
 }
 
 export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarEstoqueMinimoModalProps) {
+  const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [lojaSelecionada, setLojaSelecionada] = useState<string>("");
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -190,7 +192,8 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
         quinta: config.quinta,
         sexta: config.sexta,
         sabado: config.sabado,
-        domingo: config.domingo
+        domingo: config.domingo,
+        organization_id: organizationId
       }));
 
       const { error } = await supabase
