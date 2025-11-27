@@ -9,10 +9,12 @@ import { toast } from 'sonner';
 import { ConfigurarReservaDiariaModal } from '@/components/modals/ConfigurarReservaDiariaModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
 const Configuracoes = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { organizationId } = useOrganization();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -85,8 +87,9 @@ const Configuracoes = () => {
           chave: 'alarm_sound_url',
           valor: publicUrl,
           updated_at: new Date().toISOString(),
+          organization_id: organizationId,
         }, {
-          onConflict: 'chave'
+          onConflict: 'chave,organization_id'
         });
 
       if (configError) throw configError;

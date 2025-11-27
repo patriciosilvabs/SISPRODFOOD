@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck, PackageCheck } from 'lucide-react';
@@ -57,6 +58,7 @@ const DIAS_SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta',
 
 const EstoqueDiario = () => {
   const { user } = useAuth();
+  const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [lojaSelecionada, setLojaSelecionada] = useState<string>('');
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -386,7 +388,8 @@ const EstoqueDiario = () => {
           usuario_id: user.id,
           usuario_nome: usuarioNome,
           data_ultima_atualizacao: new Date().toISOString(),
-          data_ultimo_envio: new Date().toISOString() // Marca como enviado
+          data_ultimo_envio: new Date().toISOString(), // Marca como enviado
+          organization_id: organizationId
         };
       });
 
@@ -452,7 +455,8 @@ const EstoqueDiario = () => {
         usuario_id: user.id,
         usuario_nome: usuarioNome,
         data_ultima_atualizacao: new Date().toISOString(),
-        data_ultima_contagem: new Date().toISOString() // Marca nova contagem
+        data_ultima_contagem: new Date().toISOString(), // Marca nova contagem
+        organization_id: organizationId
       }));
 
       // Fazer upsert (insert or update)
@@ -543,7 +547,8 @@ const EstoqueDiario = () => {
           data_confirmacao_recebimento: new Date().toISOString(),
           usuario_id: user.id,
           usuario_nome: usuarioNome,
-          data_ultima_atualizacao: new Date().toISOString()
+          data_ultima_atualizacao: new Date().toISOString(),
+          organization_id: organizationId
         };
       });
 

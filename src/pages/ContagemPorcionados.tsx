@@ -235,6 +235,7 @@ const ContagemPorcionados = () => {
         ideal_amanha: idealAmanha,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
+        organization_id: organizationId,
       };
 
       const { error } = await supabase

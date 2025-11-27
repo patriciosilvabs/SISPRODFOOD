@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 import { Loader2, Calendar } from 'lucide-react';
 
@@ -41,6 +42,7 @@ const diasSemana = [
 ];
 
 export function ConfigurarReservaDiariaModal({ open, onOpenChange }: ConfigurarReservaDiariaModalProps) {
+  const { organizationId } = useOrganization();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
@@ -133,7 +135,8 @@ export function ConfigurarReservaDiariaModal({ open, onOpenChange }: ConfigurarR
         quinta: reserva.quinta,
         sexta: reserva.sexta,
         sabado: reserva.sabado,
-        domingo: reserva.domingo
+        domingo: reserva.domingo,
+        organization_id: organizationId
       };
 
       const { error } = await supabase
