@@ -18,12 +18,62 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    const fetchUserOrganization = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!isMounted) return;
+        
+        if (!user) {
+          setOrganizationId(null);
+          setOrganizationName(null);
+          setNeedsOnboarding(false);
+          setLoading(false);
+          return;
+        }
+
+        // Buscar organização do usuário via organization_members
+        const { data: memberData, error: memberError } = await supabase
+          .from('organization_members')
+          .select('organization_id, organizations(nome)')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (memberError || !memberData) {
+          console.error('Erro ao buscar organização do usuário:', memberError);
+          setOrganizationId(null);
+          setOrganizationName(null);
+          setNeedsOnboarding(true);
+        } else {
+          setOrganizationId(memberData.organization_id);
+          setOrganizationName((memberData.organizations as any)?.nome || null);
+          setNeedsOnboarding(false);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar organização:', error);
+        if (isMounted) {
+          setOrganizationId(null);
+          setOrganizationName(null);
+          setNeedsOnboarding(true);
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
     // Escutar mudanças de auth para re-verificar organização
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session?.user) {
+        if (!isMounted) return;
+        
+        // Só recarregar se for um evento relevante
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           await fetchUserOrganization();
-        } else {
+        } else if (event === 'SIGNED_OUT') {
           setOrganizationId(null);
           setOrganizationName(null);
           setNeedsOnboarding(false);
@@ -32,54 +82,47 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    // Verificação inicial
-    fetchUserOrganization();
-
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const fetchUserOrganization = async () => {
+  const refreshOrganization = async () => {
+    setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
         setOrganizationId(null);
         setOrganizationName(null);
-        setLoading(false);
+        setNeedsOnboarding(false);
         return;
       }
 
-      // Buscar organização do usuário via organization_members
       const { data: memberData, error: memberError } = await supabase
         .from('organization_members')
         .select('organization_id, organizations(nome)')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (memberError) {
-        console.error('Erro ao buscar organização do usuário:', memberError);
+      if (memberError || !memberData) {
         setOrganizationId(null);
         setOrganizationName(null);
-        setNeedsOnboarding(true); // Usuário precisa de onboarding
-        setLoading(false);
-        return;
+        setNeedsOnboarding(true);
+      } else {
+        setOrganizationId(memberData.organization_id);
+        setOrganizationName((memberData.organizations as any)?.nome || null);
+        setNeedsOnboarding(false);
       }
-
-      setOrganizationId(memberData.organization_id);
-      setOrganizationName((memberData.organizations as any)?.nome || null);
-      setNeedsOnboarding(false);
     } catch (error) {
-      console.error('Erro ao carregar organização:', error);
+      console.error('Erro ao recarregar organização:', error);
       setOrganizationId(null);
       setOrganizationName(null);
       setNeedsOnboarding(true);
     } finally {
       setLoading(false);
     }
-  };
-
-  const refreshOrganization = async () => {
-    await fetchUserOrganization();
   };
 
   return (
