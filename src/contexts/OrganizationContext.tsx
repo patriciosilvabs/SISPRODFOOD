@@ -5,6 +5,8 @@ interface OrganizationContextType {
   organizationId: string | null;
   organizationName: string | null;
   loading: boolean;
+  needsOnboarding: boolean;
+  refreshOrganization: () => Promise<void>;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -13,6 +15,7 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationName, setOrganizationName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     fetchUserOrganization();
@@ -40,23 +43,30 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         console.error('Erro ao buscar organização do usuário:', memberError);
         setOrganizationId(null);
         setOrganizationName(null);
+        setNeedsOnboarding(true); // Usuário precisa de onboarding
         setLoading(false);
         return;
       }
 
       setOrganizationId(memberData.organization_id);
       setOrganizationName((memberData.organizations as any)?.nome || null);
+      setNeedsOnboarding(false);
     } catch (error) {
       console.error('Erro ao carregar organização:', error);
       setOrganizationId(null);
       setOrganizationName(null);
+      setNeedsOnboarding(true);
     } finally {
       setLoading(false);
     }
   };
 
+  const refreshOrganization = async () => {
+    await fetchUserOrganization();
+  };
+
   return (
-    <OrganizationContext.Provider value={{ organizationId, organizationName, loading }}>
+    <OrganizationContext.Provider value={{ organizationId, organizationName, loading, needsOnboarding, refreshOrganization }}>
       {children}
     </OrganizationContext.Provider>
   );
