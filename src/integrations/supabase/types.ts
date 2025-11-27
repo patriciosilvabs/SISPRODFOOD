@@ -18,22 +18,33 @@ export type Database = {
         Row: {
           chave: string
           id: string
+          organization_id: string | null
           updated_at: string | null
           valor: string | null
         }
         Insert: {
           chave: string
           id?: string
+          organization_id?: string | null
           updated_at?: string | null
           valor?: string | null
         }
         Update: {
           chave?: string
           id?: string
+          organization_id?: string | null
           updated_at?: string | null
           valor?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "configuracoes_sistema_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       consumo_historico: {
         Row: {
@@ -46,6 +57,7 @@ export type Database = {
           insumo_nome: string
           item_id: string
           item_nome: string
+          organization_id: string | null
           producao_registro_id: string | null
           tipo_insumo: string
           unidade: string
@@ -64,6 +76,7 @@ export type Database = {
           insumo_nome: string
           item_id: string
           item_nome: string
+          organization_id?: string | null
           producao_registro_id?: string | null
           tipo_insumo?: string
           unidade?: string
@@ -82,6 +95,7 @@ export type Database = {
           insumo_nome?: string
           item_id?: string
           item_nome?: string
+          organization_id?: string | null
           producao_registro_id?: string | null
           tipo_insumo?: string
           unidade?: string
@@ -106,6 +120,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "consumo_historico_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "consumo_historico_producao_registro_id_fkey"
             columns: ["producao_registro_id"]
             isOneToOne: false
@@ -123,6 +144,7 @@ export type Database = {
           ideal_amanha: number
           item_porcionado_id: string
           loja_id: string
+          organization_id: string | null
           peso_total_g: number | null
           updated_at: string
           usuario_id: string
@@ -136,6 +158,7 @@ export type Database = {
           ideal_amanha?: number
           item_porcionado_id: string
           loja_id: string
+          organization_id?: string | null
           peso_total_g?: number | null
           updated_at?: string
           usuario_id: string
@@ -149,6 +172,7 @@ export type Database = {
           ideal_amanha?: number
           item_porcionado_id?: string
           loja_id?: string
+          organization_id?: string | null
           peso_total_g?: number | null
           updated_at?: string
           usuario_id?: string
@@ -169,6 +193,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "contagem_porcionados_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       erros_devolucoes: {
@@ -179,6 +210,7 @@ export type Database = {
           id: string
           loja_id: string
           loja_nome: string
+          organization_id: string | null
           usuario_id: string
           usuario_nome: string
         }
@@ -189,6 +221,7 @@ export type Database = {
           id?: string
           loja_id: string
           loja_nome: string
+          organization_id?: string | null
           usuario_id: string
           usuario_nome: string
         }
@@ -199,6 +232,7 @@ export type Database = {
           id?: string
           loja_id?: string
           loja_nome?: string
+          organization_id?: string | null
           usuario_id?: string
           usuario_nome?: string
         }
@@ -210,6 +244,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "erros_devolucoes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       estoque_cpd: {
@@ -217,18 +258,21 @@ export type Database = {
           data_ultima_movimentacao: string | null
           id: string
           item_porcionado_id: string
+          organization_id: string | null
           quantidade: number | null
         }
         Insert: {
           data_ultima_movimentacao?: string | null
           id?: string
           item_porcionado_id: string
+          organization_id?: string | null
           quantidade?: number | null
         }
         Update: {
           data_ultima_movimentacao?: string | null
           id?: string
           item_porcionado_id?: string
+          organization_id?: string | null
           quantidade?: number | null
         }
         Relationships: [
@@ -237,6 +281,13 @@ export type Database = {
             columns: ["item_porcionado_id"]
             isOneToOne: true
             referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoque_cpd_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -248,6 +299,7 @@ export type Database = {
           id: string
           item_porcionado_id: string
           loja_id: string
+          organization_id: string | null
           quantidade: number | null
         }
         Insert: {
@@ -256,6 +308,7 @@ export type Database = {
           id?: string
           item_porcionado_id: string
           loja_id: string
+          organization_id?: string | null
           quantidade?: number | null
         }
         Update: {
@@ -264,6 +317,7 @@ export type Database = {
           id?: string
           item_porcionado_id?: string
           loja_id?: string
+          organization_id?: string | null
           quantidade?: number | null
         }
         Relationships: [
@@ -281,6 +335,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "estoque_loja_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       estoque_loja_produtos: {
@@ -292,6 +353,7 @@ export type Database = {
           data_ultimo_envio: string | null
           id: string
           loja_id: string
+          organization_id: string | null
           produto_id: string
           quantidade: number
           quantidade_ultimo_envio: number | null
@@ -306,6 +368,7 @@ export type Database = {
           data_ultimo_envio?: string | null
           id?: string
           loja_id: string
+          organization_id?: string | null
           produto_id: string
           quantidade?: number
           quantidade_ultimo_envio?: number | null
@@ -320,6 +383,7 @@ export type Database = {
           data_ultimo_envio?: string | null
           id?: string
           loja_id?: string
+          organization_id?: string | null
           produto_id?: string
           quantidade?: number
           quantidade_ultimo_envio?: number | null
@@ -332,6 +396,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoque_loja_produtos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -350,6 +421,7 @@ export type Database = {
           id: string
           item_porcionado_id: string
           loja_id: string
+          organization_id: string | null
           quarta: number
           quinta: number
           sabado: number
@@ -364,6 +436,7 @@ export type Database = {
           id?: string
           item_porcionado_id: string
           loja_id: string
+          organization_id?: string | null
           quarta?: number
           quinta?: number
           sabado?: number
@@ -378,6 +451,7 @@ export type Database = {
           id?: string
           item_porcionado_id?: string
           loja_id?: string
+          organization_id?: string | null
           quarta?: number
           quinta?: number
           sabado?: number
@@ -401,6 +475,13 @@ export type Database = {
             referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "estoques_ideais_semanais_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       insumos: {
@@ -412,6 +493,7 @@ export type Database = {
           id: string
           lead_time_real_dias: number | null
           nome: string
+          organization_id: string | null
           perda_percentual: number | null
           quantidade_em_estoque: number | null
           unidade_medida: Database["public"]["Enums"]["unidade_medida"]
@@ -425,6 +507,7 @@ export type Database = {
           id?: string
           lead_time_real_dias?: number | null
           nome: string
+          organization_id?: string | null
           perda_percentual?: number | null
           quantidade_em_estoque?: number | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
@@ -438,12 +521,21 @@ export type Database = {
           id?: string
           lead_time_real_dias?: number | null
           nome?: string
+          organization_id?: string | null
           perda_percentual?: number | null
           quantidade_em_estoque?: number | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "insumos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       insumos_extras: {
         Row: {
@@ -451,6 +543,7 @@ export type Database = {
           insumo_id: string
           item_porcionado_id: string
           nome: string
+          organization_id: string | null
           quantidade: number
           unidade: Database["public"]["Enums"]["unidade_medida"]
         }
@@ -459,6 +552,7 @@ export type Database = {
           insumo_id: string
           item_porcionado_id: string
           nome: string
+          organization_id?: string | null
           quantidade: number
           unidade: Database["public"]["Enums"]["unidade_medida"]
         }
@@ -467,6 +561,7 @@ export type Database = {
           insumo_id?: string
           item_porcionado_id?: string
           nome?: string
+          organization_id?: string | null
           quantidade?: number
           unidade?: Database["public"]["Enums"]["unidade_medida"]
         }
@@ -485,6 +580,13 @@ export type Database = {
             referencedRelation: "itens_porcionados"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "insumos_extras_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       insumos_log: {
@@ -493,6 +595,7 @@ export type Database = {
           id: string
           insumo_id: string
           insumo_nome: string
+          organization_id: string | null
           quantidade: number
           tipo: Database["public"]["Enums"]["tipo_movimento"]
           usuario_id: string
@@ -503,6 +606,7 @@ export type Database = {
           id?: string
           insumo_id: string
           insumo_nome: string
+          organization_id?: string | null
           quantidade: number
           tipo: Database["public"]["Enums"]["tipo_movimento"]
           usuario_id: string
@@ -513,6 +617,7 @@ export type Database = {
           id?: string
           insumo_id?: string
           insumo_nome?: string
+          organization_id?: string | null
           quantidade?: number
           tipo?: Database["public"]["Enums"]["tipo_movimento"]
           usuario_id?: string
@@ -524,6 +629,13 @@ export type Database = {
             columns: ["insumo_id"]
             isOneToOne: false
             referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insumos_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -545,6 +657,7 @@ export type Database = {
           id: string
           insumo_vinculado_id: string | null
           nome: string
+          organization_id: string | null
           perda_percentual_adicional: number | null
           peso_unitario_g: number
           tempo_timer_minutos: number | null
@@ -561,6 +674,7 @@ export type Database = {
           id?: string
           insumo_vinculado_id?: string | null
           nome: string
+          organization_id?: string | null
           perda_percentual_adicional?: number | null
           peso_unitario_g: number
           tempo_timer_minutos?: number | null
@@ -577,6 +691,7 @@ export type Database = {
           id?: string
           insumo_vinculado_id?: string | null
           nome?: string
+          organization_id?: string | null
           perda_percentual_adicional?: number | null
           peso_unitario_g?: number
           tempo_timer_minutos?: number | null
@@ -592,6 +707,13 @@ export type Database = {
             referencedRelation: "insumos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "itens_porcionados_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       itens_reserva_diaria: {
@@ -600,6 +722,7 @@ export type Database = {
           domingo: number
           id: string
           item_porcionado_id: string
+          organization_id: string | null
           quarta: number
           quinta: number
           sabado: number
@@ -613,6 +736,7 @@ export type Database = {
           domingo?: number
           id?: string
           item_porcionado_id: string
+          organization_id?: string | null
           quarta?: number
           quinta?: number
           sabado?: number
@@ -626,6 +750,7 @@ export type Database = {
           domingo?: number
           id?: string
           item_porcionado_id?: string
+          organization_id?: string | null
           quarta?: number
           quinta?: number
           sabado?: number
@@ -642,6 +767,13 @@ export type Database = {
             referencedRelation: "itens_porcionados"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "itens_reserva_diaria_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       lojas: {
@@ -649,39 +781,53 @@ export type Database = {
           created_at: string | null
           id: string
           nome: string
+          organization_id: string | null
           responsavel: string
         }
         Insert: {
           created_at?: string | null
           id?: string
           nome: string
+          organization_id?: string | null
           responsavel: string
         }
         Update: {
           created_at?: string | null
           id?: string
           nome?: string
+          organization_id?: string | null
           responsavel?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lojas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lojas_acesso: {
         Row: {
           created_at: string | null
           id: string
           loja_id: string
+          organization_id: string | null
           user_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
           loja_id: string
+          organization_id?: string | null
           user_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
           loja_id?: string
+          organization_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -690,6 +836,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lojas_acesso_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -771,6 +924,7 @@ export type Database = {
           id: string
           item_id: string
           item_nome: string
+          organization_id: string | null
           peso_total_programado_kg: number | null
           status: string | null
           unidades_programadas: number | null
@@ -783,6 +937,7 @@ export type Database = {
           id?: string
           item_id: string
           item_nome: string
+          organization_id?: string | null
           peso_total_programado_kg?: number | null
           status?: string | null
           unidades_programadas?: number | null
@@ -795,6 +950,7 @@ export type Database = {
           id?: string
           item_id?: string
           item_nome?: string
+          organization_id?: string | null
           peso_total_programado_kg?: number | null
           status?: string | null
           unidades_programadas?: number | null
@@ -807,6 +963,13 @@ export type Database = {
             columns: ["item_id"]
             isOneToOne: false
             referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "producao_lotes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -833,6 +996,7 @@ export type Database = {
           item_nome: string
           observacao_porcionamento: string | null
           observacao_preparo: string | null
+          organization_id: string | null
           peso_final_kg: number | null
           peso_preparo_kg: number | null
           peso_programado_kg: number | null
@@ -861,6 +1025,7 @@ export type Database = {
           item_nome: string
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
+          organization_id?: string | null
           peso_final_kg?: number | null
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
@@ -889,6 +1054,7 @@ export type Database = {
           item_nome?: string
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
+          organization_id?: string | null
           peso_final_kg?: number | null
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
@@ -909,6 +1075,13 @@ export type Database = {
             columns: ["item_id"]
             isOneToOne: false
             referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "producao_registros_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -935,6 +1108,7 @@ export type Database = {
           created_at: string | null
           id: string
           nome: string
+          organization_id: string | null
           unidade_consumo: string | null
           updated_at: string | null
         }
@@ -945,6 +1119,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           nome: string
+          organization_id?: string | null
           unidade_consumo?: string | null
           updated_at?: string | null
         }
@@ -955,10 +1130,19 @@ export type Database = {
           created_at?: string | null
           id?: string
           nome?: string
+          organization_id?: string | null
           unidade_consumo?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "produtos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       produtos_estoque_minimo_semanal: {
         Row: {
@@ -966,6 +1150,7 @@ export type Database = {
           domingo: number
           id: string
           loja_id: string
+          organization_id: string | null
           produto_id: string
           quarta: number
           quinta: number
@@ -980,6 +1165,7 @@ export type Database = {
           domingo?: number
           id?: string
           loja_id: string
+          organization_id?: string | null
           produto_id: string
           quarta?: number
           quinta?: number
@@ -994,6 +1180,7 @@ export type Database = {
           domingo?: number
           id?: string
           loja_id?: string
+          organization_id?: string | null
           produto_id?: string
           quarta?: number
           quinta?: number
@@ -1009,6 +1196,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "produtos_estoque_minimo_semanal_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -1047,6 +1241,7 @@ export type Database = {
           id: string
           item_nome: string
           item_porcionado_id: string | null
+          organization_id: string | null
           peso_recebido_kg: number | null
           peso_total_kg: number | null
           producao_registro_id: string | null
@@ -1059,6 +1254,7 @@ export type Database = {
           id?: string
           item_nome: string
           item_porcionado_id?: string | null
+          organization_id?: string | null
           peso_recebido_kg?: number | null
           peso_total_kg?: number | null
           producao_registro_id?: string | null
@@ -1071,6 +1267,7 @@ export type Database = {
           id?: string
           item_nome?: string
           item_porcionado_id?: string | null
+          organization_id?: string | null
           peso_recebido_kg?: number | null
           peso_total_kg?: number | null
           producao_registro_id?: string | null
@@ -1084,6 +1281,13 @@ export type Database = {
             columns: ["item_porcionado_id"]
             isOneToOne: false
             referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneio_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -1112,6 +1316,7 @@ export type Database = {
           loja_id: string
           loja_nome: string
           observacao: string | null
+          organization_id: string | null
           recebido_por_id: string | null
           recebido_por_nome: string | null
           status: string | null
@@ -1127,6 +1332,7 @@ export type Database = {
           loja_id: string
           loja_nome: string
           observacao?: string | null
+          organization_id?: string | null
           recebido_por_id?: string | null
           recebido_por_nome?: string | null
           status?: string | null
@@ -1142,6 +1348,7 @@ export type Database = {
           loja_id?: string
           loja_nome?: string
           observacao?: string | null
+          organization_id?: string | null
           recebido_por_id?: string | null
           recebido_por_nome?: string | null
           status?: string | null
@@ -1154,6 +1361,13 @@ export type Database = {
             columns: ["loja_id"]
             isOneToOne: false
             referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
