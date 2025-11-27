@@ -686,6 +686,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "lojas_acesso_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "lojas_acesso_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false

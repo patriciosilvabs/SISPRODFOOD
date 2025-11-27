@@ -52,9 +52,6 @@ interface UserRole {
 interface LojaAcesso {
   user_id: string;
   loja_id: string;
-  lojas: {
-    nome: string;
-  };
 }
 
 interface Loja {
@@ -133,7 +130,7 @@ const GerenciarUsuarios = () => {
       // Buscar acessos às lojas
       const { data: lojasAcesso, error: lojasAcessoError } = await supabase
         .from('lojas_acesso')
-        .select('user_id, loja_id, lojas(nome)');
+        .select('user_id, loja_id');
 
       if (lojasAcessoError) throw lojasAcessoError;
 
@@ -145,10 +142,13 @@ const GerenciarUsuarios = () => {
 
         const userLojas = (lojasAcesso || [])
           .filter(la => la.user_id === profile.id)
-          .map(la => ({
-            id: la.loja_id,
-            nome: (la.lojas as any)?.nome || 'Loja Desconhecida'
-          }));
+          .map(la => {
+            const loja = lojasData?.find(l => l.id === la.loja_id);
+            return {
+              id: la.loja_id,
+              nome: loja?.nome || 'Loja Desconhecida'
+            };
+          });
 
         return {
           ...profile,
