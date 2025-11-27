@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,22 +10,33 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
   const { user, roles, loading } = useAuth();
+  const { needsOnboarding, loading: orgLoading } = useOrganization();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
+    // Redirecionar para auth se não estiver logado
     if (!loading && !user) {
       navigate('/auth');
+      return;
     }
 
-    if (!loading && user && requiredRoles && requiredRoles.length > 0) {
+    // Redirecionar para onboarding se precisar (exceto se já estiver lá)
+    if (!loading && !orgLoading && user && needsOnboarding && location.pathname !== '/onboarding') {
+      navigate('/onboarding');
+      return;
+    }
+
+    // Verificar roles após onboarding
+    if (!loading && !orgLoading && user && !needsOnboarding && requiredRoles && requiredRoles.length > 0) {
       const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
       if (!hasRequiredRole) {
         navigate('/');
       }
     }
-  }, [user, loading, roles, requiredRoles, navigate]);
+  }, [user, loading, orgLoading, needsOnboarding, roles, requiredRoles, navigate, location.pathname]);
 
-  if (loading) {
+  if (loading || orgLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">

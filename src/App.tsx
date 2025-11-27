@@ -8,6 +8,7 @@ import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
+import Onboarding from "./pages/Onboarding";
 import Insumos from "./pages/Insumos";
 import ItensPorcionados from "./pages/ItensPorcionados";
 import Producao from "./pages/Producao";
@@ -44,8 +45,9 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <OrganizationProvider>
-            <Routes>
+          <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/onboarding" element={<Onboarding />} />
             <Route
               path="/"
               element={
