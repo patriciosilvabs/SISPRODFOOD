@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { Sparkles, Eye, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -61,6 +62,7 @@ interface EstoqueIdeal {
 
 const ContagemPorcionados = () => {
   const { user } = useAuth();
+  const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [contagens, setContagens] = useState<Record<string, Contagem[]>>({});
@@ -329,6 +331,7 @@ const ContagemPorcionados = () => {
             detalhes_lojas: detalhesLojas,
             usuario_id: user.id,
             usuario_nome: profile?.nome || user.email || 'Usuário',
+            organization_id: organizationId,
           };
 
           if (registroExistente) {
@@ -454,6 +457,11 @@ const ContagemPorcionados = () => {
   const handleSaveEstoquesIdeais = async () => {
     if (!selectedItem) return;
 
+    if (!organizationId) {
+      toast.error('Organização não identificada. Faça login novamente.');
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('estoques_ideais_semanais')
@@ -461,6 +469,7 @@ const ContagemPorcionados = () => {
           loja_id: selectedItem.lojaId,
           item_porcionado_id: selectedItem.itemId,
           ...estoquesIdeais,
+          organization_id: organizationId,
         }, {
           onConflict: 'loja_id,item_porcionado_id',
         });

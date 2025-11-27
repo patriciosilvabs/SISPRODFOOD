@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
 interface Produto {
   id: string;
@@ -65,6 +66,7 @@ const classificacaoOptions = [
 ];
 
 export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalProps) {
+  const { organizationId } = useOrganization();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     nome: '',
@@ -115,12 +117,18 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
     try {
       setLoading(true);
 
+      if (!organizationId) {
+        toast.error('Organização não identificada. Faça login novamente.');
+        return;
+      }
+
       const dataToSave = {
         nome: formData.nome.trim(),
         codigo: formData.codigo.trim(),
         categoria: formData.categoria as any,
         unidade_consumo: formData.unidade_consumo.trim() || null,
         classificacao: formData.classificacao || null,
+        organization_id: organizationId,
       };
 
       if (produto) {

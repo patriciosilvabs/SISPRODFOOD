@@ -9,6 +9,7 @@ import { Camera, X } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -30,6 +31,7 @@ interface Ocorrencia {
 
 const ErrosDevolucoes = () => {
   const { user } = useAuth();
+  const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [selectedLoja, setSelectedLoja] = useState('');
@@ -214,6 +216,12 @@ const ErrosDevolucoes = () => {
         .eq('id', user.id)
         .single();
 
+      if (!organizationId) {
+        toast.error('Organização não identificada. Faça login novamente.');
+        setLoading(false);
+        return;
+      }
+
       // Inserir ocorrência
       const { error } = await supabase
         .from('erros_devolucoes')
@@ -224,6 +232,7 @@ const ErrosDevolucoes = () => {
           foto_url: fotoUrl,
           usuario_id: user.id,
           usuario_nome: profile?.nome || user.email || 'Usuário',
+          organization_id: organizationId,
         });
 
       if (error) throw error;

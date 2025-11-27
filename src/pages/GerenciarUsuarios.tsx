@@ -35,6 +35,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
 
 interface Profile {
@@ -84,6 +85,7 @@ const roleLabels: Record<string, { label: string; color: string; description: st
 
 const GerenciarUsuarios = () => {
   const { user: currentUser } = useAuth();
+  const { organizationId } = useOrganization();
   const [usuarios, setUsuarios] = useState<UsuarioCompleto[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,9 +233,15 @@ const GerenciarUsuarios = () => {
         .eq('user_id', editingUser.id);
 
       if (selectedLojas.length > 0) {
+        if (!organizationId) {
+          toast.error('Organização não identificada. Faça login novamente.');
+          return;
+        }
+
         const lojasData = selectedLojas.map(lojaId => ({
           user_id: editingUser.id,
-          loja_id: lojaId
+          loja_id: lojaId,
+          organization_id: organizationId,
         }));
         const { error: lojasError } = await supabase
           .from('lojas_acesso')

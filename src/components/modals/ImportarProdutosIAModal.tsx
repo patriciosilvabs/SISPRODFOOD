@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { Loader2, Sparkles, CheckCircle2, Pencil, ArrowLeft } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -39,6 +40,7 @@ const categoriaLabels: Record<string, string> = {
 };
 
 export function ImportarProdutosIAModal({ open, onClose, onSuccess }: ImportarProdutosIAModalProps) {
+  const { organizationId } = useOrganization();
   const [etapa, setEtapa] = useState<1 | 2 | 3>(1);
   const [texto, setTexto] = useState("");
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -118,12 +120,22 @@ export function ImportarProdutosIAModal({ open, onClose, onSuccess }: ImportarPr
 
     setSalvando(true);
     try {
+      if (!organizationId) {
+        toast({
+          title: "Erro",
+          description: "Organização não identificada. Faça login novamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const produtosParaInserir = produtosSelecionados.map(p => ({
         nome: p.nome,
         codigo: p.codigo,
         categoria: p.categoria as any,
         unidade_consumo: p.unidade_consumo,
         classificacao: p.classificacao,
+        organization_id: organizationId,
       }));
 
       const { error } = await supabase
