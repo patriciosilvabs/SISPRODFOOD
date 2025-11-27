@@ -57,7 +57,18 @@ const ResetPassword = () => {
         password: password,
       });
 
-      if (error) throw error;
+      if (error) {
+        // Tratar erro específico de senha igual à anterior
+        if (error.message.toLowerCase().includes('same password') || (error as any).code === 'same_password') {
+          toast({
+            title: "Senha inválida",
+            description: "A nova senha deve ser diferente da senha atual.",
+            variant: "destructive",
+          });
+          return;
+        }
+        throw error;
+      }
 
       toast({
         title: "Senha redefinida!",
