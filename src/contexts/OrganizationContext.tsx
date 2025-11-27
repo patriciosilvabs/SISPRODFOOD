@@ -18,7 +18,24 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
+    // Escutar mudanças de auth para re-verificar organização
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          await fetchUserOrganization();
+        } else {
+          setOrganizationId(null);
+          setOrganizationName(null);
+          setNeedsOnboarding(false);
+          setLoading(false);
+        }
+      }
+    );
+
+    // Verificação inicial
     fetchUserOrganization();
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const fetchUserOrganization = async () => {
