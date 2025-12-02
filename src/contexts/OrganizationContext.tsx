@@ -67,12 +67,15 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
 
     // Escutar mudanças de auth para re-verificar organização
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
         
         // Só recarregar se for um evento relevante
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          await fetchUserOrganization();
+          // Defer fetchUserOrganization to prevent deadlock
+          setTimeout(() => {
+            fetchUserOrganization();
+          }, 0);
         } else if (event === 'SIGNED_OUT') {
           setOrganizationId(null);
           setOrganizationName(null);
@@ -81,6 +84,21 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     );
+
+    // Chamada inicial para garantir que loading seja false
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (!isMounted) return;
+        if (session?.user) {
+          return fetchUserOrganization();
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        console.error('Erro ao obter sessão:', error);
+        if (isMounted) setLoading(false);
+      });
 
     return () => {
       isMounted = false;
