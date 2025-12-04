@@ -205,7 +205,7 @@ const ContagemPorcionados = () => {
       // Buscar informações do item
       const { data: itemData } = await supabase
         .from('itens_porcionados')
-        .select('nome, peso_unitario_g, unidade_medida, equivalencia_traco, consumo_por_traco_g')
+        .select('nome, peso_unitario_g, unidade_medida, equivalencia_traco, consumo_por_traco_g, usa_traco_massa')
         .eq('id', itemId)
         .single();
 
@@ -312,47 +312,102 @@ const ContagemPorcionados = () => {
             pesoProgramadoTotal = unidadesProgramadas * pesoUnitarioKg;
           }
 
-          // 8. Verificar se já existe registro "a_produzir" para este item
-          const { data: registroExistente } = await supabase
-            .from('producao_registros')
-            .select('id')
-            .eq('item_id', itemId)
-            .eq('status', 'a_produzir')
-            .maybeSingle();
-
-          const producaoData = {
-            item_id: itemId,
-            item_nome: itemData.nome,
-            status: 'a_produzir',
-            unidades_programadas: unidadesProgramadas,
-            peso_programado_kg: pesoProgramadoTotal,
-            demanda_lojas: demandaLojas,
-            reserva_configurada: reservaDia,
-            sobra_reserva: sobraReserva,
-            detalhes_lojas: detalhesLojas,
-            usuario_id: user.id,
-            usuario_nome: profile?.nome || user.email || 'Usuário',
-            organization_id: organizationId,
-          };
-
-          if (registroExistente) {
-            // Atualizar registro existente
-            const { error: updateError } = await supabase
+          // 8. Verificar se já existe registro "a_produzir" para este item (SEM lote_producao_id)
+          // Se usa_traco_massa, deletar registros antigos e recriar
+          // Se não usa_traco_massa, usar lógica de upsert existente
+          const usaTracoMassa = itemData.usa_traco_massa && itemData.unidade_medida === 'traco';
+          
+          if (usaTracoMassa && itemData.equivalencia_traco && itemData.consumo_por_traco_g) {
+            // FILA DE TRAÇOS: Criar N registros separados
+            const tracosNecessarios = Math.ceil(necessidadeTotal / itemData.equivalencia_traco);
+            const loteId = crypto.randomUUID();
+            const dataReferencia = new Date().toISOString().split('T')[0];
+            
+            // Deletar registros existentes "a_produzir" deste item (lote antigo)
+            await supabase
               .from('producao_registros')
-              .update(producaoData)
-              .eq('id', registroExistente.id);
-
-            if (updateError) {
-              console.error('Erro ao atualizar registro de produção:', updateError);
+              .delete()
+              .eq('item_id', itemId)
+              .eq('status', 'a_produzir');
+            
+            // Criar N registros (um por traço)
+            for (let seq = 1; seq <= tracosNecessarios; seq++) {
+              const unidadesPorTraco = itemData.equivalencia_traco;
+              const pesoPorTraco = itemData.consumo_por_traco_g / 1000; // g para kg
+              
+              const producaoTracoData = {
+                item_id: itemId,
+                item_nome: itemData.nome,
+                status: 'a_produzir',
+                unidades_programadas: unidadesPorTraco,
+                peso_programado_kg: pesoPorTraco,
+                demanda_lojas: seq === 1 ? demandaLojas : null, // Só no primeiro
+                reserva_configurada: seq === 1 ? reservaDia : null, // Só no primeiro
+                sobra_reserva: seq === tracosNecessarios ? sobraReserva : 0, // Só no último
+                detalhes_lojas: seq === 1 ? detalhesLojas : [], // Só no primeiro
+                usuario_id: user.id,
+                usuario_nome: profile?.nome || user.email || 'Usuário',
+                organization_id: organizationId,
+                // Campos da fila de traços
+                sequencia_traco: seq,
+                lote_producao_id: loteId,
+                bloqueado_por_traco_anterior: seq > 1, // Primeiro desbloqueado, demais bloqueados
+                timer_status: 'aguardando',
+                data_referencia: dataReferencia,
+              };
+              
+              const { error: insertError } = await supabase
+                .from('producao_registros')
+                .insert(producaoTracoData);
+              
+              if (insertError) {
+                console.error(`Erro ao criar traço ${seq}:`, insertError);
+              }
             }
           } else {
-            // Criar novo registro
-            const { error: insertError } = await supabase
+            // LÓGICA ORIGINAL: Um único registro de produção
+            const { data: registroExistente } = await supabase
               .from('producao_registros')
-              .insert(producaoData);
+              .select('id')
+              .eq('item_id', itemId)
+              .eq('status', 'a_produzir')
+              .is('lote_producao_id', null)
+              .maybeSingle();
 
-            if (insertError) {
-              console.error('Erro ao criar registro de produção:', insertError);
+            const producaoData = {
+              item_id: itemId,
+              item_nome: itemData.nome,
+              status: 'a_produzir',
+              unidades_programadas: unidadesProgramadas,
+              peso_programado_kg: pesoProgramadoTotal,
+              demanda_lojas: demandaLojas,
+              reserva_configurada: reservaDia,
+              sobra_reserva: sobraReserva,
+              detalhes_lojas: detalhesLojas,
+              usuario_id: user.id,
+              usuario_nome: profile?.nome || user.email || 'Usuário',
+              organization_id: organizationId,
+            };
+
+            if (registroExistente) {
+              // Atualizar registro existente
+              const { error: updateError } = await supabase
+                .from('producao_registros')
+                .update(producaoData)
+                .eq('id', registroExistente.id);
+
+              if (updateError) {
+                console.error('Erro ao atualizar registro de produção:', updateError);
+              }
+            } else {
+              // Criar novo registro
+              const { error: insertError } = await supabase
+                .from('producao_registros')
+                .insert(producaoData);
+
+              if (insertError) {
+                console.error('Erro ao criar registro de produção:', insertError);
+              }
             }
           }
         }

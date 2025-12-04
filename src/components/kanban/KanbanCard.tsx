@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
@@ -49,6 +49,12 @@ interface ProducaoRegistro {
   sobra_reserva?: number | null;
   timer_ativo?: boolean;
   tempo_timer_minutos?: number | null;
+  // Campos da fila de traços
+  sequencia_traco?: number;
+  lote_producao_id?: string;
+  bloqueado_por_traco_anterior?: boolean;
+  timer_status?: string;
+  total_tracos_lote?: number;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -113,10 +119,15 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
   const temInsumosExtrasInsuficientes = columnId === 'a_produzir' &&
     registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
+  // Verificar se está bloqueado (fila de traços)
+  const estaBloqueado = registro.bloqueado_por_traco_anterior === true;
+  const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
+  const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
+
   return (
     <Card className={`hover:shadow-md transition-shadow ${
       columnId === 'em_preparo' && timerState.isFinished ? 'ring-4 ring-red-500 animate-pulse' : ''
-    }`}>
+    } ${estaBloqueado ? 'opacity-60' : ''}`}>
       <CardContent className="p-4">
         <div className="space-y-3">
           {/* Header */}
@@ -125,7 +136,24 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
             <h4 className="font-semibold text-sm leading-tight flex-1">
               {registro.item_nome}
             </h4>
+            {/* Badge de sequência do traço */}
+            {temSequenciaTraco && temLote && (
+              <Badge variant="outline" className="text-xs shrink-0">
+                Traço {registro.sequencia_traco}
+                {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
+              </Badge>
+            )}
           </div>
+
+          {/* Indicador de bloqueio */}
+          {estaBloqueado && columnId === 'a_produzir' && (
+            <div className="flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <Lock className="h-4 w-4 text-slate-500" />
+              <span className="text-xs text-slate-600 dark:text-slate-400">
+                Aguardando traço {(registro.sequencia_traco || 1) - 1} finalizar
+              </span>
+            </div>
+          )}
 
           {/* Informações por coluna */}
           <div className="space-y-1.5 text-xs">
@@ -346,11 +374,21 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
             <Button 
               onClick={onAction}
               className="w-full mt-2"
-              variant={buttonConfig.variant}
+              variant={estaBloqueado ? 'secondary' : buttonConfig.variant}
               size="sm"
+              disabled={estaBloqueado}
             >
-              {ButtonIcon && <ButtonIcon className="h-4 w-4 mr-2" />}
-              {buttonConfig.label}
+              {estaBloqueado ? (
+                <>
+                  <Lock className="h-4 w-4 mr-2" />
+                  Bloqueado
+                </>
+              ) : (
+                <>
+                  {ButtonIcon && <ButtonIcon className="h-4 w-4 mr-2" />}
+                  {buttonConfig.label}
+                </>
+              )}
             </Button>
           )}
         </div>
