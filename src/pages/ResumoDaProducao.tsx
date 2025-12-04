@@ -59,6 +59,13 @@ interface ProducaoRegistro {
   sobra_reserva?: number | null;
   timer_ativo?: boolean;
   tempo_timer_minutos?: number | null;
+  // Campos da fila de traços
+  sequencia_traco?: number;
+  lote_producao_id?: string;
+  bloqueado_por_traco_anterior?: boolean;
+  timer_status?: string;
+  data_referencia?: string;
+  total_tracos_lote?: number;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -100,7 +107,7 @@ const ResumoDaProducao = () => {
   };
 
   // Função para notificar quando timer acabar
-  const handleTimerFinished = (registroId: string) => {
+  const handleTimerFinished = async (registroId: string) => {
     setFinishedTimers(prev => {
       const newSet = new Set(prev);
       if (!newSet.has(registroId)) {
@@ -113,6 +120,40 @@ const ResumoDaProducao = () => {
       }
       return newSet;
     });
+
+    // Atualizar timer_status do registro atual e desbloquear próximo traço
+    try {
+      // Buscar dados do registro atual
+      const { data: registro } = await supabase
+        .from('producao_registros')
+        .select('lote_producao_id, sequencia_traco')
+        .eq('id', registroId)
+        .maybeSingle();
+
+      // Atualizar timer_status para concluido
+      await supabase
+        .from('producao_registros')
+        .update({ timer_status: 'concluido' })
+        .eq('id', registroId);
+
+      // Desbloquear próximo traço na sequência (se houver)
+      if (registro?.lote_producao_id && registro.sequencia_traco) {
+        const { error: unblockError } = await supabase
+          .from('producao_registros')
+          .update({ bloqueado_por_traco_anterior: false })
+          .eq('lote_producao_id', registro.lote_producao_id)
+          .eq('sequencia_traco', registro.sequencia_traco + 1);
+
+        if (unblockError) {
+          console.error('Erro ao desbloquear próximo traço:', unblockError);
+        }
+      }
+
+      // Recarregar para refletir mudanças
+      loadProducaoRegistros();
+    } catch (error) {
+      console.error('Erro ao processar timer finalizado:', error);
+    }
   };
 
   // Função para buscar dados do item e insumo vinculado
@@ -301,6 +342,13 @@ const ResumoDaProducao = () => {
           });
         }
         
+        // Calcular total de traços no lote (se aplicável)
+        let totalTracosLote: number | undefined;
+        if (registro.lote_producao_id) {
+          const tracosDoLote = data?.filter(r => r.lote_producao_id === registro.lote_producao_id) || [];
+          totalTracosLote = tracosDoLote.length;
+        }
+        
         // Cast detalhes_lojas from Json to array e adicionar dados do item
         const registroTyped: ProducaoRegistro = {
           ...registro,
@@ -314,6 +362,7 @@ const ResumoDaProducao = () => {
           insumosExtras: insumosExtras,
           timer_ativo: itemInfo?.timer_ativo,
           tempo_timer_minutos: itemInfo?.tempo_timer_minutos,
+          total_tracos_lote: totalTracosLote,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -332,6 +381,28 @@ const ResumoDaProducao = () => {
     setSelectedRegistro(registro);
 
     if (columnId === 'a_produzir') {
+      // Verificar se está bloqueado por fila de traços
+      if (registro.bloqueado_por_traco_anterior) {
+        toast.error('⏳ Aguarde o traço anterior finalizar o timer');
+        return;
+      }
+
+      // Verificar se há outro traço do mesmo item/dia com timer rodando
+      if (registro.lote_producao_id) {
+        const { data: tracoEmPreparo } = await supabase
+          .from('producao_registros')
+          .select('id')
+          .eq('lote_producao_id', registro.lote_producao_id)
+          .eq('timer_status', 'rodando')
+          .neq('id', registro.id)
+          .maybeSingle();
+          
+        if (tracoEmPreparo) {
+          toast.error('🔒 Já existe um traço deste lote em preparo com timer ativo');
+          return;
+        }
+      }
+
       // Transição direta para EM PREPARO (com registro completo)
       await transitionToPreparo(registro.id, registro);
     } else if (columnId === 'em_preparo') {
@@ -369,11 +440,15 @@ const ResumoDaProducao = () => {
         );
       }
 
+      // Determinar timer_status baseado se o item tem timer ativo
+      const timerStatus = registro.timer_ativo ? 'rodando' : 'concluido';
+
       const { error } = await supabase
         .from('producao_registros')
         .update({
           status: 'em_preparo',
           data_inicio_preparo: new Date().toISOString(),
+          timer_status: timerStatus,
         })
         .eq('id', registroId);
 

@@ -47,6 +47,7 @@ interface ItemPorcionado {
   perda_percentual_adicional: number;
   timer_ativo: boolean;
   tempo_timer_minutos: number;
+  usa_traco_massa: boolean;
 }
 
 interface Insumo {
@@ -88,6 +89,7 @@ const ItensPorcionados = () => {
     perda_percentual_adicional: '0',
     timer_ativo: false,
     tempo_timer_minutos: '10',
+    usa_traco_massa: false,
   });
 
   useEffect(() => {
@@ -140,6 +142,7 @@ const ItensPorcionados = () => {
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
         timer_ativo: formData.timer_ativo,
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
+        usa_traco_massa: formData.usa_traco_massa,
         organization_id: organizationId,
       };
 
@@ -315,6 +318,7 @@ const ItensPorcionados = () => {
       perda_percentual_adicional: item.perda_percentual_adicional.toString(),
       timer_ativo: item.timer_ativo || false,
       tempo_timer_minutos: item.tempo_timer_minutos?.toString() || '10',
+      usa_traco_massa: item.usa_traco_massa || false,
     });
     await loadInsumosExtras(item.id);
     setDialogOpen(true);
@@ -333,6 +337,7 @@ const ItensPorcionados = () => {
       perda_percentual_adicional: '0',
       timer_ativo: false,
       tempo_timer_minutos: '10',
+      usa_traco_massa: false,
     });
   };
 
@@ -546,6 +551,28 @@ const ItensPorcionados = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* Produção por Lote (Fila de Traços) */}
+                  {formData.unidade_medida === 'traco' && (
+                    <div className="flex items-start space-x-3 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <Checkbox
+                        id="usa_traco_massa"
+                        checked={formData.usa_traco_massa}
+                        onCheckedChange={(checked) => 
+                          setFormData({ ...formData, usa_traco_massa: checked as boolean })
+                        }
+                      />
+                      <div className="space-y-1 flex-1">
+                        <Label htmlFor="usa_traco_massa" className="font-medium cursor-pointer flex items-center gap-2">
+                          📋 Produção por lote (fila de traços)
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Quando ativo, cada traço será produzido sequencialmente. 
+                          O próximo traço só pode iniciar quando o timer do anterior terminar.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Seção de Insumos Adicionais */}
                   {editingItem && (

@@ -664,6 +664,7 @@ export type Database = {
           timer_ativo: boolean | null
           unidade_medida: Database["public"]["Enums"]["unidade_medida"]
           updated_at: string | null
+          usa_traco_massa: boolean | null
         }
         Insert: {
           ativo?: boolean
@@ -681,6 +682,7 @@ export type Database = {
           timer_ativo?: boolean | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
+          usa_traco_massa?: boolean | null
         }
         Update: {
           ativo?: boolean
@@ -698,6 +700,7 @@ export type Database = {
           timer_ativo?: boolean | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
+          usa_traco_massa?: boolean | null
         }
         Relationships: [
           {
@@ -983,17 +986,20 @@ export type Database = {
       }
       producao_registros: {
         Row: {
+          bloqueado_por_traco_anterior: boolean | null
           data_fim: string | null
           data_fim_porcionamento: string | null
           data_fim_preparo: string | null
           data_inicio: string | null
           data_inicio_porcionamento: string | null
           data_inicio_preparo: string | null
+          data_referencia: string | null
           demanda_lojas: number | null
           detalhes_lojas: Json | null
           id: string
           item_id: string
           item_nome: string
+          lote_producao_id: string | null
           observacao_porcionamento: string | null
           observacao_preparo: string | null
           organization_id: string | null
@@ -1002,27 +1008,32 @@ export type Database = {
           peso_programado_kg: number | null
           producao_lote_id: string | null
           reserva_configurada: number | null
+          sequencia_traco: number | null
           sobra_kg: number | null
           sobra_preparo_kg: number | null
           sobra_reserva: number | null
           status: string | null
+          timer_status: string | null
           unidades_programadas: number | null
           unidades_reais: number | null
           usuario_id: string
           usuario_nome: string
         }
         Insert: {
+          bloqueado_por_traco_anterior?: boolean | null
           data_fim?: string | null
           data_fim_porcionamento?: string | null
           data_fim_preparo?: string | null
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          data_referencia?: string | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           id?: string
           item_id: string
           item_nome: string
+          lote_producao_id?: string | null
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
           organization_id?: string | null
@@ -1031,27 +1042,32 @@ export type Database = {
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
           reserva_configurada?: number | null
+          sequencia_traco?: number | null
           sobra_kg?: number | null
           sobra_preparo_kg?: number | null
           sobra_reserva?: number | null
           status?: string | null
+          timer_status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
           usuario_id: string
           usuario_nome: string
         }
         Update: {
+          bloqueado_por_traco_anterior?: boolean | null
           data_fim?: string | null
           data_fim_porcionamento?: string | null
           data_fim_preparo?: string | null
           data_inicio?: string | null
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
+          data_referencia?: string | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           id?: string
           item_id?: string
           item_nome?: string
+          lote_producao_id?: string | null
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
           organization_id?: string | null
@@ -1060,10 +1076,12 @@ export type Database = {
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
           reserva_configurada?: number | null
+          sequencia_traco?: number | null
           sobra_kg?: number | null
           sobra_preparo_kg?: number | null
           sobra_reserva?: number | null
           status?: string | null
+          timer_status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
           usuario_id?: string
