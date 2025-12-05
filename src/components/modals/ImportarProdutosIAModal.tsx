@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -199,6 +199,9 @@ export function ImportarProdutosIAModal({ open, onClose, onSuccess }: ImportarPr
             <Sparkles className="h-5 w-5 text-primary" />
             Adicionar Produtos em Lote com IA
           </DialogTitle>
+          <DialogDescription>
+            Cole ou digite uma lista de produtos e a IA irá processá-los automaticamente
+          </DialogDescription>
         </DialogHeader>
 
         {/* ETAPA 1: ENTRADA DE TEXTO */}

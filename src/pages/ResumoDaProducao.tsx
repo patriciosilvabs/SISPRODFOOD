@@ -234,7 +234,10 @@ const ResumoDaProducao = () => {
   useEffect(() => {
     loadProducaoRegistros();
 
-    // Configurar realtime para atualizações automáticas
+    // Debounce timeout ref
+    let reloadTimeout: NodeJS.Timeout | null = null;
+
+    // Configurar realtime para atualizações automáticas com debounce
     const channel = supabase
       .channel('producao-registros-changes')
       .on(
@@ -245,12 +248,17 @@ const ResumoDaProducao = () => {
           table: 'producao_registros'
         },
         () => {
-          loadProducaoRegistros();
+          // Debounce de 500ms para evitar múltiplas chamadas
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            loadProducaoRegistros();
+          }, 500);
         }
       )
       .subscribe();
 
     return () => {
+      if (reloadTimeout) clearTimeout(reloadTimeout);
       supabase.removeChannel(channel);
     };
   }, []);
