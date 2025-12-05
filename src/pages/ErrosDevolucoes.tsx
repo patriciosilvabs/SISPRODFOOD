@@ -30,7 +30,7 @@ interface Ocorrencia {
 }
 
 const ErrosDevolucoes = () => {
-  const { user } = useAuth();
+  const { user, roles, isAdmin, hasRole } = useAuth();
   const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
@@ -43,9 +43,14 @@ const ErrosDevolucoes = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Verificar se usuário é apenas Loja (sem Admin ou Produção)
+  const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
+
   useEffect(() => {
-    loadLojas();
-    loadOcorrencias();
+    if (user) {
+      loadLojas();
+      loadOcorrencias();
+    }
 
     // Cleanup: fechar câmera quando componente desmontar
     return () => {
@@ -53,20 +58,49 @@ const ErrosDevolucoes = () => {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [user]);
 
   const loadLojas = async () => {
-    const { data, error } = await supabase
-      .from('lojas')
-      .select('id, nome')
-      .order('nome');
-    
-    if (error) {
+    try {
+      let lojasData: Loja[] = [];
+
+      if (isLojaUser && user) {
+        // Usuário Loja: buscar apenas lojas vinculadas via lojas_acesso
+        const { data: lojasAcesso, error: acessoError } = await supabase
+          .from('lojas_acesso')
+          .select('loja_id')
+          .eq('user_id', user.id);
+
+        if (acessoError) throw acessoError;
+
+        const lojasIds = lojasAcesso?.map(la => la.loja_id) || [];
+
+        if (lojasIds.length > 0) {
+          const { data, error } = await supabase
+            .from('lojas')
+            .select('id, nome')
+            .in('id', lojasIds)
+            .order('nome');
+
+          if (error) throw error;
+          lojasData = data || [];
+        }
+      } else {
+        // Admin/Produção: ver todas as lojas
+        const { data, error } = await supabase
+          .from('lojas')
+          .select('id, nome')
+          .order('nome');
+
+        if (error) throw error;
+        lojasData = data || [];
+      }
+
+      setLojas(lojasData);
+    } catch (error) {
+      console.error('Erro ao carregar lojas:', error);
       toast.error('Erro ao carregar lojas');
-      return;
     }
-    
-    setLojas(data || []);
   };
 
   const loadOcorrencias = async () => {
