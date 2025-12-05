@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
+import { useUserLoja } from '@/hooks/useUserLoja';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -16,13 +17,15 @@ import {
   ArrowLeft,
   Factory,
   ClipboardList,
-  Boxes
+  Boxes,
+  MapPin
 } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { Badge } from '@/components/ui/badge';
 
 interface LayoutProps {
   children: ReactNode;
@@ -31,11 +34,15 @@ interface LayoutProps {
 export const Layout = ({ children }: LayoutProps) => {
   const { profile, signOut, isAdmin, hasRole } = useAuth();
   const { subscriptionStatus, daysRemaining, isTrialExpired } = useSubscription();
+  const { primaryLoja } = useUserLoja();
   const location = useLocation();
   const navigate = useNavigate();
 
   const isActive = (path: string) => location.pathname === path;
   const showBackButton = location.pathname !== '/';
+  
+  // Mostrar loja vinculada para usuários com role Loja (não Admin/Produção)
+  const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
 
   const NavLink = ({ to, icon: Icon, children }: { to: string; icon: any; children: ReactNode }) => (
     <Link to={to}>
@@ -165,6 +172,14 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Badge da Loja Vinculada */}
+            {isLojaUser && primaryLoja && (
+              <Badge variant="secondary" className="hidden sm:flex items-center gap-1 bg-primary/10 text-primary border-primary/20">
+                <MapPin className="h-3 w-3" />
+                {primaryLoja.loja_nome}
+              </Badge>
+            )}
+            
             <div className="hidden sm:flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Olá,</span>
               <span className="font-medium">{profile?.nome}</span>
@@ -174,6 +189,14 @@ export const Layout = ({ children }: LayoutProps) => {
             </Button>
           </div>
         </div>
+        
+        {/* Badge da Loja para Mobile */}
+        {isLojaUser && primaryLoja && (
+          <div className="sm:hidden border-t bg-primary/5 px-4 py-1.5 flex items-center justify-center gap-1 text-xs text-primary">
+            <MapPin className="h-3 w-3" />
+            <span className="font-medium">{primaryLoja.loja_nome}</span>
+          </div>
+        )}
       </header>
 
       <div className="flex">

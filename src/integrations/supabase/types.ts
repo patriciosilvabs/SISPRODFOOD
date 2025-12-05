@@ -1512,6 +1512,146 @@ export type Database = {
           },
         ]
       }
+      romaneios_avulsos: {
+        Row: {
+          created_at: string | null
+          data_criacao: string | null
+          data_envio: string | null
+          data_recebimento: string | null
+          id: string
+          loja_destino_id: string
+          loja_destino_nome: string
+          loja_origem_id: string
+          loja_origem_nome: string
+          observacao: string | null
+          organization_id: string | null
+          recebido_por_id: string | null
+          recebido_por_nome: string | null
+          status: string
+          usuario_criacao_id: string
+          usuario_criacao_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          data_recebimento?: string | null
+          id?: string
+          loja_destino_id: string
+          loja_destino_nome: string
+          loja_origem_id: string
+          loja_origem_nome: string
+          observacao?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          usuario_criacao_id: string
+          usuario_criacao_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          data_recebimento?: string | null
+          id?: string
+          loja_destino_id?: string
+          loja_destino_nome?: string
+          loja_origem_id?: string
+          loja_origem_nome?: string
+          observacao?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          usuario_criacao_id?: string
+          usuario_criacao_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneios_avulsos_loja_destino_id_fkey"
+            columns: ["loja_destino_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_avulsos_loja_origem_id_fkey"
+            columns: ["loja_origem_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_avulsos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      romaneios_avulsos_itens: {
+        Row: {
+          created_at: string | null
+          id: string
+          item_nome: string
+          item_porcionado_id: string | null
+          organization_id: string | null
+          peso_kg: number | null
+          peso_recebido_kg: number | null
+          quantidade: number
+          quantidade_recebida: number | null
+          romaneio_avulso_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          item_nome: string
+          item_porcionado_id?: string | null
+          organization_id?: string | null
+          peso_kg?: number | null
+          peso_recebido_kg?: number | null
+          quantidade: number
+          quantidade_recebida?: number | null
+          romaneio_avulso_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          item_nome?: string
+          item_porcionado_id?: string | null
+          organization_id?: string | null
+          peso_kg?: number | null
+          peso_recebido_kg?: number | null
+          quantidade?: number
+          quantidade_recebida?: number | null
+          romaneio_avulso_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneios_avulsos_itens_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_avulsos_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_avulsos_itens_romaneio_avulso_id_fkey"
+            columns: ["romaneio_avulso_id"]
+            isOneToOne: false
+            referencedRelation: "romaneios_avulsos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_history: {
         Row: {
           amount_cents: number | null
