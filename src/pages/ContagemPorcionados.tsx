@@ -611,11 +611,13 @@ const ContagemPorcionados = () => {
                     {/* Linhas de itens */}
                     {itens.map((item) => {
                       const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
-                      const finalSobra = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra || 0);
-                      const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g || '');
+                      const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
+                      const finalSobra = finalSobraRaw === '' ? '' : finalSobraRaw;
+                      const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
                       // Buscar ideal_amanha dos estoques ideais semanais, não da contagem salva
-                      const idealAmanha = getEditingValue(loja.id, item.id, 'ideal_amanha', 0);
-                      const aProduzir = Math.max(0, Number(idealAmanha) - Number(finalSobra));
+                      const idealAmanhaRaw = getEditingValue(loja.id, item.id, 'ideal_amanha', '');
+                      const idealAmanha = idealAmanhaRaw === '' ? '' : idealAmanhaRaw;
+                      const aProduzir = Math.max(0, Number(idealAmanha || 0) - Number(finalSobra || 0));
 
                       return (
                         <div key={item.id} className="mb-6">
@@ -633,12 +635,13 @@ const ContagemPorcionados = () => {
                                     value={finalSobra}
                                     onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
                                     className="text-center"
+                                    placeholder="0"
                                   />
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">unidade</span>
                                 </div>
-                                {finalSobra > 0 && (
+                                {Number(finalSobra) > 0 && (
                                   <p className="text-xs text-muted-foreground italic">
-                                    {numberToWords(finalSobra, 'unidade')}
+                                    {numberToWords(Number(finalSobra), 'unidade')}
                                   </p>
                                 )}
                               </div>
@@ -665,16 +668,17 @@ const ContagemPorcionados = () => {
 
                             <div className="col-span-2">
                               <div className="space-y-1">
-                                <Label className="text-xs">Ideal p/ Quarta</Label>
+                                <Label className="text-xs">Ideal p/ Amanhã</Label>
                                 <Input
                                   type="number"
                                   value={idealAmanha}
                                   onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
                                   className="text-center font-medium"
+                                  placeholder="0"
                                 />
-                                {idealAmanha > 0 && (
+                                {Number(idealAmanha) > 0 && (
                                   <p className="text-xs text-muted-foreground italic">
-                                    {numberToWords(idealAmanha, 'unidade')}
+                                    {numberToWords(Number(idealAmanha), 'unidade')}
                                   </p>
                                 )}
                               </div>

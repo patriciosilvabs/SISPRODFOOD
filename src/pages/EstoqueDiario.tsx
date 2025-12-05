@@ -737,9 +737,10 @@ const EstoqueDiario = () => {
                             type="number"
                             min="0"
                             step="0.01"
-                            value={produto.estoque_atual}
+                            value={produto.estoque_atual || ''}
                             onChange={(e) => handleEstoqueChange(produto.id, e.target.value)}
                             className="w-24 mx-auto text-center"
+                            placeholder="0"
                           />
                         </td>
                         <td className="p-3 text-center">
@@ -878,9 +879,10 @@ const EstoqueDiario = () => {
                               type="number"
                               min="0"
                               step="0.01"
-                              value={quantidadesEnvio[produto.id] || 0}
+                              value={quantidadesEnvio[produto.id] || ''}
                               onChange={(e) => handleQuantidadeEnvioChange(produto.id, e.target.value)}
                               className="w-24 mx-auto text-center"
+                              placeholder="0"
                             />
                           </td>
                         </tr>
@@ -1029,9 +1031,10 @@ const EstoqueDiario = () => {
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                value={quantidadeRecebida}
+                                value={quantidadesRecebidas[produto.id] ?? ''}
                                 onChange={(e) => handleQuantidadeRecebidaChange(produto.id, e.target.value)}
                                 className="w-28 mx-auto text-center"
+                                placeholder={quantidadeEnviada.toFixed(2)}
                               />
                             </td>
                             <td className="p-3 text-center">
