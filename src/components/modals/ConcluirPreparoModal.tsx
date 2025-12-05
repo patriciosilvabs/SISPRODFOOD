@@ -98,8 +98,7 @@ export function ConcluirPreparoModal({
           <WeightInput
             value={sobraPreparo}
             onChange={setSobraPreparo}
-            label="SOBRA/PERDA"
-            required
+            label="SOBRA/PERDA (opcional)"
             placeholder="Ex: 100 (gramas)"
             helperText="Pedaços não aproveitados, estragados, etc"
           />
