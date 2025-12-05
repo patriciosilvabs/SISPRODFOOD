@@ -6,6 +6,10 @@ interface OrganizationContextType {
   organizationName: string | null;
   loading: boolean;
   needsOnboarding: boolean;
+  subscriptionStatus: string | null;
+  trialEndDate: string | null;
+  subscriptionExpiresAt: string | null;
+  subscriptionPlan: string | null;
   refreshOrganization: () => Promise<void>;
 }
 
@@ -14,8 +18,22 @@ const OrganizationContext = createContext<OrganizationContextType | undefined>(u
 export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationName, setOrganizationName] = useState<string | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [trialEndDate, setTrialEndDate] = useState<string | null>(null);
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  const clearState = () => {
+    setOrganizationId(null);
+    setOrganizationName(null);
+    setSubscriptionStatus(null);
+    setTrialEndDate(null);
+    setSubscriptionExpiresAt(null);
+    setSubscriptionPlan(null);
+    setNeedsOnboarding(false);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -27,17 +45,15 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         if (!isMounted) return;
         
         if (!user) {
-          setOrganizationId(null);
-          setOrganizationName(null);
-          setNeedsOnboarding(false);
+          clearState();
           setLoading(false);
           return;
         }
 
-        // Buscar organização do usuário via organization_members
+        // Buscar organização do usuário via organization_members com campos de assinatura
         const { data: memberData, error: memberError } = await supabase
           .from('organization_members')
-          .select('organization_id, organizations(nome)')
+          .select('organization_id, organizations(nome, subscription_status, trial_end_date, subscription_expires_at, subscription_plan)')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -45,19 +61,22 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
 
         if (memberError || !memberData) {
           console.error('Erro ao buscar organização do usuário:', memberError);
-          setOrganizationId(null);
-          setOrganizationName(null);
+          clearState();
           setNeedsOnboarding(true);
         } else {
+          const org = memberData.organizations as any;
           setOrganizationId(memberData.organization_id);
-          setOrganizationName((memberData.organizations as any)?.nome || null);
+          setOrganizationName(org?.nome || null);
+          setSubscriptionStatus(org?.subscription_status || 'trial');
+          setTrialEndDate(org?.trial_end_date || null);
+          setSubscriptionExpiresAt(org?.subscription_expires_at || null);
+          setSubscriptionPlan(org?.subscription_plan || null);
           setNeedsOnboarding(false);
         }
       } catch (error) {
         console.error('Erro ao carregar organização:', error);
         if (isMounted) {
-          setOrganizationId(null);
-          setOrganizationName(null);
+          clearState();
           setNeedsOnboarding(true);
         }
       } finally {
@@ -70,22 +89,18 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
       (event, session) => {
         if (!isMounted) return;
         
-        // Só recarregar se for um evento relevante
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          // Defer fetchUserOrganization to prevent deadlock
           setTimeout(() => {
             fetchUserOrganization();
           }, 0);
         } else if (event === 'SIGNED_OUT') {
-          setOrganizationId(null);
-          setOrganizationName(null);
-          setNeedsOnboarding(false);
+          clearState();
           setLoading(false);
         }
       }
     );
 
-    // Chamada inicial para garantir que loading seja false
+    // Chamada inicial
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         if (!isMounted) return;
@@ -112,31 +127,32 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        setOrganizationId(null);
-        setOrganizationName(null);
-        setNeedsOnboarding(false);
+        clearState();
         return;
       }
 
       const { data: memberData, error: memberError } = await supabase
         .from('organization_members')
-        .select('organization_id, organizations(nome)')
+        .select('organization_id, organizations(nome, subscription_status, trial_end_date, subscription_expires_at, subscription_plan)')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (memberError || !memberData) {
-        setOrganizationId(null);
-        setOrganizationName(null);
+        clearState();
         setNeedsOnboarding(true);
       } else {
+        const org = memberData.organizations as any;
         setOrganizationId(memberData.organization_id);
-        setOrganizationName((memberData.organizations as any)?.nome || null);
+        setOrganizationName(org?.nome || null);
+        setSubscriptionStatus(org?.subscription_status || 'trial');
+        setTrialEndDate(org?.trial_end_date || null);
+        setSubscriptionExpiresAt(org?.subscription_expires_at || null);
+        setSubscriptionPlan(org?.subscription_plan || null);
         setNeedsOnboarding(false);
       }
     } catch (error) {
       console.error('Erro ao recarregar organização:', error);
-      setOrganizationId(null);
-      setOrganizationName(null);
+      clearState();
       setNeedsOnboarding(true);
     } finally {
       setLoading(false);
@@ -144,7 +160,17 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <OrganizationContext.Provider value={{ organizationId, organizationName, loading, needsOnboarding, refreshOrganization }}>
+    <OrganizationContext.Provider value={{ 
+      organizationId, 
+      organizationName, 
+      loading, 
+      needsOnboarding,
+      subscriptionStatus,
+      trialEndDate,
+      subscriptionExpiresAt,
+      subscriptionPlan,
+      refreshOrganization 
+    }}>
       {children}
     </OrganizationContext.Provider>
   );

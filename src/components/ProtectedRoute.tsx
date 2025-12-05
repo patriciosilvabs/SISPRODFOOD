@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ interface ProtectedRouteProps {
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
   const { user, roles, loading } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
+  const { canAccess, isTrialExpired } = useSubscription();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -27,14 +29,20 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       return;
     }
 
-    // Verificar roles após onboarding
-    if (!loading && !orgLoading && user && !needsOnboarding && requiredRoles && requiredRoles.length > 0) {
+    // Redirecionar para assinatura se trial expirou e não está na página de assinatura
+    if (!loading && !orgLoading && user && !needsOnboarding && !canAccess && location.pathname !== '/assinatura') {
+      navigate('/assinatura');
+      return;
+    }
+
+    // Verificar roles após onboarding e assinatura
+    if (!loading && !orgLoading && user && !needsOnboarding && canAccess && requiredRoles && requiredRoles.length > 0) {
       const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
       if (!hasRequiredRole) {
         navigate('/');
       }
     }
-  }, [user, loading, orgLoading, needsOnboarding, roles, requiredRoles, navigate, location.pathname]);
+  }, [user, loading, orgLoading, needsOnboarding, canAccess, isTrialExpired, roles, requiredRoles, navigate, location.pathname]);
 
   if (loading || orgLoading) {
     return (

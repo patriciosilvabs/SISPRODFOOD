@@ -5,11 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { OrganizationProvider } from "@/contexts/OrganizationContext";
+import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import Onboarding from "./pages/Onboarding";
+import Assinatura from "./pages/Assinatura";
 import Insumos from "./pages/Insumos";
 import ItensPorcionados from "./pages/ItensPorcionados";
 import Producao from "./pages/Producao";
@@ -46,212 +48,222 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <OrganizationProvider>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/onboarding" element={<Onboarding />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/resumo-da-producao"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ResumoDaProducao />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/painel-kanban"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <PainelKanban />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/estoque-diario"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <EstoqueDiario />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/atender-pedidos-diarios"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <AtenderPedidosDiarios />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/insumos"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <Insumos />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/contagem-porcionados"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ContagemPorcionados />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/romaneio-porcionados"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <RomaneioPorcionados />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/receber-porcionados"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ReceberPorcionados />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/erros-devolucoes"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ErrosDevolucoes />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/lista-de-compras-ia"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ListaDeComprasIA />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/itens-porcionados"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <ItensPorcionados />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/producao"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
-                  <Producao />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/lojas"
-              element={
-                <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
-                  <Lojas />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/gerenciar-usuarios"
-              element={
-                <ProtectedRoute requiredRoles={['Admin']}>
-                  <GerenciarUsuarios />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/central-de-relatorios"
-              element={
-                <ProtectedRoute>
-                  <CentralDeRelatorios />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/configuracoes"
-              element={
-                <ProtectedRoute requiredRoles={['Admin']}>
-                  <Configuracoes />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/gerenciar-produtos"
-              element={
-                <ProtectedRoute requiredRoles={['Admin']}>
-                  <GerenciarProdutos />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/monitoramento-consumo"
-              element={
-                <ProtectedRoute>
-                  <MonitoramentoConsumo />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/producao"
-              element={
-                <ProtectedRoute>
-                  <RelatorioProducao />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/romaneios"
-              element={
-                <ProtectedRoute>
-                  <RelatorioRomaneios />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/estoque-produtos"
-              element={
-                <ProtectedRoute>
-                  <RelatorioEstoqueProdutos />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/insumos"
-              element={
-                <ProtectedRoute>
-                  <RelatorioInsumos />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/diagnostico-estoque"
-              element={
-                <ProtectedRoute>
-                  <DiagnosticoEstoque />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/relatorios/consumo-historico"
-              element={
-                <ProtectedRoute>
-                  <RelatorioConsumoHistorico />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+            <SubscriptionProvider>
+              <Routes>
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/onboarding" element={<Onboarding />} />
+                <Route
+                  path="/assinatura"
+                  element={
+                    <ProtectedRoute>
+                      <Assinatura />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/resumo-da-producao"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ResumoDaProducao />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/painel-kanban"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <PainelKanban />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/estoque-diario"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <EstoqueDiario />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/atender-pedidos-diarios"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <AtenderPedidosDiarios />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/insumos"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <Insumos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/contagem-porcionados"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ContagemPorcionados />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/romaneio-porcionados"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <RomaneioPorcionados />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/receber-porcionados"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ReceberPorcionados />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/erros-devolucoes"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ErrosDevolucoes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/lista-de-compras-ia"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ListaDeComprasIA />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/itens-porcionados"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ItensPorcionados />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/producao"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <Producao />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/lojas"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
+                      <Lojas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/gerenciar-usuarios"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <GerenciarUsuarios />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/central-de-relatorios"
+                  element={
+                    <ProtectedRoute>
+                      <CentralDeRelatorios />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/configuracoes"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <Configuracoes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/gerenciar-produtos"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <GerenciarProdutos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/monitoramento-consumo"
+                  element={
+                    <ProtectedRoute>
+                      <MonitoramentoConsumo />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/producao"
+                  element={
+                    <ProtectedRoute>
+                      <RelatorioProducao />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/romaneios"
+                  element={
+                    <ProtectedRoute>
+                      <RelatorioRomaneios />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/estoque-produtos"
+                  element={
+                    <ProtectedRoute>
+                      <RelatorioEstoqueProdutos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/insumos"
+                  element={
+                    <ProtectedRoute>
+                      <RelatorioInsumos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/diagnostico-estoque"
+                  element={
+                    <ProtectedRoute>
+                      <DiagnosticoEstoque />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/consumo-historico"
+                  element={
+                    <ProtectedRoute>
+                      <RelatorioConsumoHistorico />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </SubscriptionProvider>
           </OrganizationProvider>
         </AuthProvider>
       </BrowserRouter>
