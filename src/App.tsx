@@ -62,14 +62,14 @@ const App = () => (
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/onboarding" element={<Onboarding />} />
                 <Route path="/aceitar-convite" element={<AceitarConvite />} />
-                <Route
-                  path="/assinatura"
-                  element={
-                    <ProtectedRoute>
-                      <Assinatura />
-                    </ProtectedRoute>
-                  }
-                />
+          <Route
+            path="/assinatura"
+            element={
+              <ProtectedRoute requiredRoles={['Admin']}>
+                <Assinatura />
+              </ProtectedRoute>
+            }
+          />
                 <Route
                   path="/"
                   element={

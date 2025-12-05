@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,68 +12,113 @@ interface ConviteRequest {
   lojas_ids?: string[];
 }
 
-// Send invitation email via Resend
+// Send invitation email via Resend with SimChef branded template
 async function sendInviteEmail(
-  resend: any,
   email: string,
   inviterName: string,
   orgName: string,
   acceptUrl: string
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  
+  if (!resendApiKey) {
+    console.error("RESEND_API_KEY not configured");
+    return { success: false, error: "RESEND_API_KEY não configurada" };
+  }
+
   try {
-    const { error } = await resend.emails.send({
-      from: "SimChef <noreply@simchef.app>",
-      to: [email],
-      subject: `Você foi convidado para ${orgName}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">SimChef</h1>
-          </div>
-          <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-            <h2 style="color: #1f2937; margin-top: 0;">Você foi convidado!</h2>
-            <p style="color: #4b5563; font-size: 16px;">
-              <strong>${inviterName}</strong> convidou você para fazer parte da organização <strong>${orgName}</strong> no SimChef.
-            </p>
-            <p style="color: #4b5563; font-size: 16px;">
-              Clique no botão abaixo para aceitar o convite e acessar o sistema:
-            </p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${acceptUrl}" 
-                 style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
-                Aceitar Convite
-              </a>
-            </div>
-            <p style="color: #6b7280; font-size: 14px;">
-              Ou copie e cole este link no seu navegador:<br>
-              <a href="${acceptUrl}" style="color: #3b82f6; word-break: break-all;">${acceptUrl}</a>
-            </p>
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-            <p style="color: #9ca3af; font-size: 12px; text-align: center;">
-              Este convite expira em 7 dias. Se você não solicitou este convite, pode ignorar este email.
-            </p>
-          </div>
-        </body>
-        </html>
-      `,
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "SimChef <noreply@simchef.app>",
+        to: [email],
+        subject: `Convite para ${orgName} - SimChef`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f5;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+              <tr>
+                <td align="center">
+                  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <!-- Header -->
+                    <tr>
+                      <td style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 32px; border-radius: 12px 12px 0 0; text-align: center;">
+                        <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">🍳 SimChef</h1>
+                        <p style="margin: 8px 0 0 0; color: rgba(255, 255, 255, 0.9); font-size: 14px;">Sistema de Gestão de Produção</p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                      <td style="padding: 40px 32px;">
+                        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 22px; font-weight: 600;">Você foi convidado!</h2>
+                        
+                        <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                          <strong style="color: #18181b;">${inviterName}</strong> convidou você para fazer parte da equipe <strong style="color: #f97316;">${orgName}</strong> no SimChef.
+                        </p>
+                        
+                        <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 16px; margin: 24px 0; border-radius: 0 8px 8px 0;">
+                          <p style="margin: 0; color: #9a3412; font-size: 14px;">
+                            📋 Ao aceitar, você terá acesso ao sistema de gestão de produção da sua organização.
+                          </p>
+                        </div>
+                        
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td align="center" style="padding: 24px 0;">
+                              <a href="${acceptUrl}" style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; padding: 16px 48px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 14px rgba(249, 115, 22, 0.4);">
+                                ✓ Aceitar Convite
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                        
+                        <p style="margin: 24px 0 0 0; color: #a1a1aa; font-size: 13px; text-align: center;">
+                          Se o botão não funcionar, copie e cole este link no seu navegador:<br>
+                          <a href="${acceptUrl}" style="color: #f97316; word-break: break-all;">${acceptUrl}</a>
+                        </p>
+                      </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                      <td style="background-color: #fafafa; padding: 24px 32px; border-radius: 0 0 12px 12px; border-top: 1px solid #e4e4e7;">
+                        <p style="margin: 0; color: #a1a1aa; font-size: 12px; text-align: center;">
+                          Este convite expira em 7 dias.<br>
+                          Se você não esperava este email, pode ignorá-lo com segurança.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+          </html>
+        `,
+      }),
     });
 
-    if (error) {
-      console.error("Error sending email via Resend:", error);
-      return false;
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error("Error sending email via Resend:", errorData);
+      return { success: false, error: errorData };
     }
-    
+
     console.log("Email sent successfully via Resend to:", email);
-    return true;
-  } catch (error) {
+    return { success: true };
+  } catch (error: any) {
     console.error("Error in sendInviteEmail:", error);
-    return false;
+    return { success: false, error: error?.message || "Erro desconhecido" };
   }
 }
 
@@ -95,14 +139,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    
-    if (!resendApiKey) {
-      console.error("RESEND_API_KEY not configured");
-      throw new Error("Serviço de email não configurado");
-    }
-    
-    const resend = new Resend(resendApiKey);
     
     const supabaseUser = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
@@ -210,8 +246,6 @@ serve(async (req) => {
     const siteUrl = req.headers.get("origin") || "https://simchef.app";
     const acceptUrl = `${siteUrl}/aceitar-convite?token=${token}`;
 
-    let emailSent = false;
-
     // Check if user already exists in auth
     const { data: authUsers } = await supabase.auth.admin.listUsers();
     const existingAuthUser = authUsers?.users?.find(
@@ -221,34 +255,45 @@ serve(async (req) => {
     if (existingAuthUser) {
       // User already exists - send custom email via Resend
       console.log("User already exists in auth, sending custom invite email");
-      emailSent = await sendInviteEmail(resend, normalizedEmail, inviterName, orgName, acceptUrl);
-    } else {
-      // New user - try inviteUserByEmail first
-      console.log("Inviting new user by email:", normalizedEmail);
+      const emailResult = await sendInviteEmail(normalizedEmail, inviterName, orgName, acceptUrl);
       
-      const { data: inviteData, error: inviteAuthError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
-        data: {
+      if (!emailResult.success) {
+        throw new Error("Erro ao enviar email de convite: " + (emailResult.error || "Erro desconhecido"));
+      }
+    } else {
+      // New user - create user first, then send custom email
+      console.log("Creating new user and sending custom invite email:", normalizedEmail);
+      
+      // Generate a temporary password (user will need to reset it)
+      const tempPassword = crypto.randomUUID() + "Aa1!";
+      
+      const { data: newUser, error: createUserError } = await supabase.auth.admin.createUser({
+        email: normalizedEmail,
+        password: tempPassword,
+        email_confirm: true, // Auto-confirm email so they can login
+        user_metadata: {
           nome: normalizedEmail.split('@')[0],
           invite_token: token,
           organization_id: orgMember.organization_id,
           invited_roles: roles,
           invited_lojas_ids: lojas_ids,
         },
-        redirectTo: acceptUrl,
       });
 
-      if (inviteAuthError) {
-        console.error("Error with inviteUserByEmail:", inviteAuthError);
-        // Fallback to Resend if inviteUserByEmail fails
-        emailSent = await sendInviteEmail(resend, normalizedEmail, inviterName, orgName, acceptUrl);
-      } else {
-        console.log("User invited successfully via Supabase Auth");
-        emailSent = true;
+      if (createUserError) {
+        console.error("Error creating user:", createUserError);
+        throw new Error("Erro ao criar usuário: " + createUserError.message);
       }
-    }
 
-    if (!emailSent) {
-      throw new Error("Erro ao enviar email de convite. Verifique se o email está correto.");
+      console.log("User created successfully:", newUser.user?.id);
+      
+      // Send custom invite email via Resend (same template for all users)
+      const emailResult = await sendInviteEmail(normalizedEmail, inviterName, orgName, acceptUrl);
+      
+      if (!emailResult.success) {
+        console.error("Failed to send email, but user was created:", emailResult.error);
+        // Don't throw here - user was created, just email failed
+      }
     }
 
     // Create invite record in database
@@ -278,7 +323,6 @@ serve(async (req) => {
         success: true, 
         message: "Convite enviado com sucesso! O funcionário receberá um email para aceitar o convite.",
         invite_id: invite.id,
-        email_sent: emailSent,
       }),
       {
         status: 200,
