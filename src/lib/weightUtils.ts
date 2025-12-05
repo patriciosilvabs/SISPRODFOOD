@@ -40,13 +40,19 @@ export function parsePesoProgressivo(value: string | number): PesoInterpretado {
   } else {
     // 4+ dígitos = quilogramas
     const kg = num / 1000;
-    const kgFormatado = kg % 1 === 0 ? kg.toFixed(0) : kg.toFixed(1).replace('.', ',');
+    // Preserva até 3 casas decimais (precisão em gramas), remove zeros à direita
+    let kgFormatado: string;
+    if (kg % 1 === 0) {
+      kgFormatado = kg.toFixed(0);
+    } else {
+      kgFormatado = kg.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+    }
     return {
       valorRaw: num,
       valorGramas: num,
       valorKg: kg,
       unidadeExibicao: 'kg',
-      formatado: `${num} g = ${kgFormatado} kg`
+      formatado: `${kgFormatado} kg`
     };
   }
 }
@@ -73,7 +79,13 @@ export function formatPesoParaInput(value: string | number): string {
     return `${num} g`;
   } else {
     const kg = num / 1000;
-    const kgFormatado = kg % 1 === 0 ? kg.toFixed(0) : kg.toFixed(1).replace('.', ',');
+    // Preserva até 3 casas decimais (precisão em gramas), remove zeros à direita
+    let kgFormatado: string;
+    if (kg % 1 === 0) {
+      kgFormatado = kg.toFixed(0);
+    } else {
+      kgFormatado = kg.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+    }
     return `${kgFormatado} kg`;
   }
 }
