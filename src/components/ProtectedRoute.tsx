@@ -10,16 +10,37 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, roles, loading } = useAuth();
+  const { user, roles, loading, isSuperAdmin } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
-  const { canAccess, isTrialExpired } = useSubscription();
+  const { canAccess } = useSubscription();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Check if current route is a super admin route
+  const isSuperAdminRoute = location.pathname.startsWith('/super-admin');
 
   useEffect(() => {
     // Redirecionar para auth se não estiver logado
     if (!loading && !user) {
       navigate('/auth');
+      return;
+    }
+
+    // Super Admin tem acesso total - redireciona para painel super admin se logado
+    if (!loading && user && isSuperAdmin()) {
+      // Se Super Admin está em rota normal, deixar acessar (para debug)
+      // Se está tentando acessar onboarding ou assinatura, redirecionar para painel
+      if (location.pathname === '/onboarding' || location.pathname === '/assinatura') {
+        navigate('/super-admin');
+        return;
+      }
+      // Super Admin pode acessar qualquer rota
+      return;
+    }
+
+    // Se é rota de super admin mas usuário não é super admin
+    if (!loading && user && isSuperAdminRoute && !isSuperAdmin()) {
+      navigate('/');
       return;
     }
 
@@ -37,12 +58,15 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
 
     // Verificar roles após onboarding e assinatura
     if (!loading && !orgLoading && user && !needsOnboarding && canAccess && requiredRoles && requiredRoles.length > 0) {
+      // Super Admin passa em qualquer verificação de role
+      if (isSuperAdmin()) return;
+      
       const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
       if (!hasRequiredRole) {
         navigate('/');
       }
     }
-  }, [user, loading, orgLoading, needsOnboarding, canAccess, isTrialExpired, roles, requiredRoles, navigate, location.pathname]);
+  }, [user, loading, orgLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isSuperAdminRoute]);
 
   if (loading || orgLoading) {
     return (

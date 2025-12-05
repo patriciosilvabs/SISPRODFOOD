@@ -941,6 +941,54 @@ export type Database = {
         }
         Relationships: []
       }
+      planos_assinatura: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          descricao: string | null
+          destaque: boolean | null
+          id: string
+          intervalo: string | null
+          max_lojas: number | null
+          max_usuarios: number | null
+          nome: string
+          preco_centavos: number
+          recursos: Json | null
+          slug: string
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          descricao?: string | null
+          destaque?: boolean | null
+          id?: string
+          intervalo?: string | null
+          max_lojas?: number | null
+          max_usuarios?: number | null
+          nome: string
+          preco_centavos?: number
+          recursos?: Json | null
+          slug: string
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          descricao?: string | null
+          destaque?: boolean | null
+          id?: string
+          intervalo?: string | null
+          max_lojas?: number | null
+          max_usuarios?: number | null
+          nome?: string
+          preco_centavos?: number
+          recursos?: Json | null
+          slug?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       producao_lotes: {
         Row: {
           data_fim: string | null
@@ -1503,6 +1551,7 @@ export type Database = {
         Returns: undefined
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_super_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "Admin" | "Produção" | "Loja" | "SuperAdmin"

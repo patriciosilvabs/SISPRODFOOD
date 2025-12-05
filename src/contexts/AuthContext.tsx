@@ -11,7 +11,7 @@ interface Profile {
 }
 
 interface UserRole {
-  role: 'Admin' | 'Produção' | 'Loja';
+  role: 'Admin' | 'Produção' | 'Loja' | 'SuperAdmin';
 }
 
 interface AuthContextType {
@@ -24,6 +24,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, nome: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAdmin: () => boolean;
+  isSuperAdmin: () => boolean;
   hasRole: (role: string) => boolean;
 }
 
@@ -144,7 +145,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     toast.success('Conta criada com sucesso!');
-    // Removido navigate('/') - deixar ProtectedRoute redirecionar baseado em needsOnboarding
   };
 
   const signOut = async () => {
@@ -162,6 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const isAdmin = () => roles.includes('Admin');
+  const isSuperAdmin = () => roles.includes('SuperAdmin');
   const hasRole = (role: string) => roles.includes(role);
 
   return (
@@ -176,6 +177,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         signUp,
         signOut,
         isAdmin,
+        isSuperAdmin,
         hasRole,
       }}
     >
