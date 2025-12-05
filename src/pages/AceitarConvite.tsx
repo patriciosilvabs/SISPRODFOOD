@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -10,6 +11,7 @@ export default function AceitarConvite() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
+  const { refreshOrganization } = useOrganization();
   
   const [status, setStatus] = useState<'loading' | 'checking' | 'accepting' | 'success' | 'error' | 'need-auth'>('loading');
   const [message, setMessage] = useState('');
@@ -79,6 +81,12 @@ export default function AceitarConvite() {
       setStatus('success');
       setMessage(data.message || 'Convite aceito com sucesso!');
       toast.success(data.message || 'Convite aceito com sucesso!');
+
+      // Limpar token pendente do localStorage
+      localStorage.removeItem('pendingInviteToken');
+
+      // Atualizar contexto da organização ANTES de redirecionar
+      await refreshOrganization();
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {

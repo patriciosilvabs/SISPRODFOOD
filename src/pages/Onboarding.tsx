@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,15 @@ export default function Onboarding() {
   const [nomeOrganizacao, setNomeOrganizacao] = useState('');
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const { refreshOrganization } = useOrganization();
+  const { organizationId, refreshOrganization } = useOrganization();
   const navigate = useNavigate();
+
+  // Se já tem organização, não deveria estar aqui - redirecionar
+  useEffect(() => {
+    if (organizationId) {
+      navigate('/');
+    }
+  }, [organizationId, navigate]);
 
   const handleCriarOrganizacao = async () => {
     if (!user) {
