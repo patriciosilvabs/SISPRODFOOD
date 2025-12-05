@@ -1,7 +1,7 @@
 project_id = "cltytxckwretwrqfxdqf"
 
 [functions.processar-produtos-ia]
-verify_jwt = false
+verify_jwt = true
 
 [functions.criar-organizacao]
 verify_jwt = true
