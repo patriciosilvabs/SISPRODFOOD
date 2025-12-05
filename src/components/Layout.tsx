@@ -18,7 +18,8 @@ import {
   Factory,
   ClipboardList,
   Boxes,
-  MapPin
+  MapPin,
+  Shield
 } from 'lucide-react';
 import {
   Sheet,
@@ -32,7 +33,7 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children }: LayoutProps) => {
-  const { profile, signOut, isAdmin, hasRole } = useAuth();
+  const { profile, signOut, isAdmin, hasRole, isSuperAdmin } = useAuth();
   const { subscriptionStatus, daysRemaining, isTrialExpired } = useSubscription();
   const { primaryLoja } = useUserLoja();
   const location = useLocation();
@@ -108,6 +109,14 @@ export const Layout = ({ children }: LayoutProps) => {
           <SectionLabel>Administração</SectionLabel>
           <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
           <NavLink to="/configuracoes" icon={Settings}>Configurações</NavLink>
+        </>
+      )}
+
+      {/* SUPER ADMIN */}
+      {isSuperAdmin() && (
+        <>
+          <SectionLabel>Super Admin</SectionLabel>
+          <NavLink to="/super-admin" icon={Shield}>Painel Super Admin</NavLink>
         </>
       )}
     </nav>
