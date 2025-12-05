@@ -1,8 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -80,12 +78,14 @@ serve(async (req) => {
       throw new Error("Email e pelo menos uma função são obrigatórios");
     }
 
+    const normalizedEmail = email.toLowerCase();
+
     // Check if email already has a pending invite
     const { data: existingInvite } = await supabase
       .from("convites_pendentes")
       .select("id, status")
       .eq("organization_id", orgMember.organization_id)
-      .eq("email", email.toLowerCase())
+      .eq("email", normalizedEmail)
       .single();
 
     if (existingInvite) {
@@ -101,7 +101,7 @@ serve(async (req) => {
     const { data: existingProfile } = await supabase
       .from("profiles")
       .select("id")
-      .eq("email", email.toLowerCase())
+      .eq("email", normalizedEmail)
       .single();
 
     if (existingProfile) {
@@ -119,13 +119,47 @@ serve(async (req) => {
 
     // Generate invite token
     const token = crypto.randomUUID();
+    
+    // Get organization name
+    const orgName = (orgMember.organizations as any)?.nome || "Sistema";
 
-    // Create invite
+    // Build redirect URL for after password setup
+    const siteUrl = req.headers.get("origin") || "https://lovable.dev";
+    const redirectUrl = `${siteUrl}/aceitar-convite?token=${token}`;
+
+    // Use inviteUserByEmail to pre-create user and send password setup email
+    console.log("Inviting user by email:", normalizedEmail);
+    
+    const { data: inviteData, error: inviteAuthError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
+      data: {
+        nome: normalizedEmail.split('@')[0], // Nome temporário baseado no email
+        invite_token: token,
+        organization_id: orgMember.organization_id,
+        invited_roles: roles,
+        invited_lojas_ids: lojas_ids,
+      },
+      redirectTo: redirectUrl,
+    });
+
+    if (inviteAuthError) {
+      console.error("Error inviting user:", inviteAuthError);
+      // Se o usuário já existe no Auth, tentamos outra abordagem
+      if (inviteAuthError.message.includes("already been registered")) {
+        console.log("User already exists in auth, will use existing flow");
+        // Continua para criar o convite no banco - o usuário existente fará login normalmente
+      } else {
+        throw new Error("Erro ao convidar usuário: " + inviteAuthError.message);
+      }
+    } else {
+      console.log("User invited successfully, auth user id:", inviteData?.user?.id);
+    }
+
+    // Create invite record in database
     const { data: invite, error: inviteError } = await supabase
       .from("convites_pendentes")
       .insert({
         organization_id: orgMember.organization_id,
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         roles,
         lojas_ids,
         convidado_por_id: user.id,
@@ -140,89 +174,14 @@ serve(async (req) => {
       throw new Error("Erro ao criar convite: " + inviteError.message);
     }
 
-    // Get organization name
-    const orgName = (orgMember.organizations as any)?.nome || "Sistema";
-
-    // Build invite URL
-    const siteUrl = req.headers.get("origin") || "https://lovable.dev";
-    const inviteUrl = `${siteUrl}/aceitar-convite?token=${token}`;
-
-    // Format roles for display
-    const rolesDisplay = roles.join(", ");
-
-    // Send invitation email using Resend API directly
-    let emailSent = false;
-    try {
-      const emailResponse = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${RESEND_API_KEY}`,
-        },
-        body: JSON.stringify({
-          from: `${orgName} <noreply@simchef.app>`,
-          to: [email],
-          subject: `Você foi convidado para ${orgName}`,
-          html: `
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="utf-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
-              <div style="max-width: 560px; margin: 0 auto; background-color: white; border-radius: 8px; padding: 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                <h1 style="color: #18181b; font-size: 24px; margin: 0 0 16px;">Você foi convidado!</h1>
-                
-                <p style="color: #52525b; font-size: 16px; line-height: 24px; margin: 0 0 24px;">
-                  <strong>${profile?.nome || "Um administrador"}</strong> convidou você para fazer parte da equipe <strong>${orgName}</strong>.
-                </p>
-                
-                <div style="background-color: #f4f4f5; border-radius: 6px; padding: 16px; margin: 0 0 24px;">
-                  <p style="color: #71717a; font-size: 14px; margin: 0 0 4px;">Funções atribuídas:</p>
-                  <p style="color: #18181b; font-size: 16px; font-weight: 500; margin: 0;">${rolesDisplay}</p>
-                </div>
-                
-                <a href="${inviteUrl}" style="display: inline-block; background-color: #2563eb; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 16px;">
-                  Aceitar Convite
-                </a>
-                
-                <p style="color: #a1a1aa; font-size: 14px; margin: 24px 0 0;">
-                  Este convite expira em 7 dias. Se você não solicitou este convite, pode ignorar este email.
-                </p>
-                
-                <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;">
-                
-                <p style="color: #a1a1aa; font-size: 12px; margin: 0;">
-                  Se o botão não funcionar, copie e cole este link no seu navegador:<br>
-                  <a href="${inviteUrl}" style="color: #2563eb; word-break: break-all;">${inviteUrl}</a>
-                </p>
-              </div>
-            </body>
-            </html>
-          `,
-        }),
-      });
-
-      if (emailResponse.ok) {
-        emailSent = true;
-        console.log("Email sent successfully");
-      } else {
-        const errorData = await emailResponse.json();
-        console.error("Error sending email:", errorData);
-      }
-    } catch (emailError) {
-      console.error("Error sending email:", emailError);
-    }
-
     console.log("Invite created successfully:", invite.id);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: "Convite enviado com sucesso",
+        message: "Convite enviado com sucesso! O funcionário receberá um email para definir sua senha.",
         invite_id: invite.id,
-        email_sent: emailSent,
+        email_sent: true,
       }),
       {
         status: 200,

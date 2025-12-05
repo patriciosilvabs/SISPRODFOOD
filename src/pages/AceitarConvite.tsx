@@ -5,7 +5,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle2, XCircle, Mail } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function AceitarConvite() {
   const navigate = useNavigate();
@@ -13,9 +13,8 @@ export default function AceitarConvite() {
   const token = searchParams.get('token');
   const { refreshOrganization } = useOrganization();
   
-  const [status, setStatus] = useState<'loading' | 'checking' | 'accepting' | 'success' | 'error' | 'need-auth'>('loading');
+  const [status, setStatus] = useState<'loading' | 'checking' | 'accepting' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
-  const [inviteEmail, setInviteEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -31,25 +30,14 @@ export default function AceitarConvite() {
     setStatus('checking');
     
     try {
-      // Check if user is logged in
+      // Check if user is logged in (they should be after setting password via invite email)
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        // User needs to login/register first
-        // Try to get invite info to show email
-        const { data: invite } = await supabase
-          .from('convites_pendentes')
-          .select('email')
-          .eq('token', token)
-          .eq('status', 'pendente')
-          .single();
-        
-        if (invite) {
-          setInviteEmail(invite.email);
-        }
-        
-        setStatus('need-auth');
-        setMessage('Você precisa fazer login ou criar uma conta para aceitar o convite');
+        // User is not logged in - this shouldn't happen if they came from invite email
+        // But if it does, show an error message
+        setStatus('error');
+        setMessage('Você precisa estar logado para aceitar o convite. Por favor, use o link enviado no email de convite para definir sua senha.');
         return;
       }
 
@@ -99,12 +87,6 @@ export default function AceitarConvite() {
     }
   };
 
-  const handleLoginRedirect = () => {
-    // Store the invite token to process after login
-    localStorage.setItem('pendingInviteToken', token || '');
-    navigate('/auth');
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
@@ -114,7 +96,6 @@ export default function AceitarConvite() {
             {status === 'loading' && 'Carregando...'}
             {status === 'checking' && 'Verificando convite...'}
             {status === 'accepting' && 'Processando convite...'}
-            {status === 'need-auth' && 'Autenticação necessária'}
             {status === 'success' && 'Convite aceito!'}
             {status === 'error' && 'Erro no convite'}
           </CardDescription>
@@ -136,29 +117,8 @@ export default function AceitarConvite() {
             <>
               <XCircle className="h-12 w-12 text-destructive" />
               <p className="text-center text-muted-foreground">{message}</p>
-              <Button onClick={() => navigate('/')} variant="outline">
-                Voltar ao Início
-              </Button>
-            </>
-          )}
-          
-          {status === 'need-auth' && (
-            <>
-              <Mail className="h-12 w-12 text-primary" />
-              <p className="text-center text-muted-foreground">{message}</p>
-              {inviteEmail && (
-                <div className="bg-primary/10 border border-primary/20 px-4 py-3 rounded-lg text-center">
-                  <p className="text-sm text-muted-foreground mb-1">Este convite é para:</p>
-                  <p className="font-semibold text-primary text-lg">{inviteEmail}</p>
-                </div>
-              )}
-              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-3 rounded-lg">
-                <p className="text-sm text-amber-800 dark:text-amber-200 text-center">
-                  <strong>Importante:</strong> Use o mesmo email acima ao criar sua conta ou fazer login.
-                </p>
-              </div>
-              <Button onClick={handleLoginRedirect} className="w-full">
-                Fazer Login / Criar Conta
+              <Button onClick={() => navigate('/auth')} variant="outline">
+                Ir para Login
               </Button>
             </>
           )}
