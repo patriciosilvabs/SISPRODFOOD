@@ -2,7 +2,7 @@ export type PlanoAssinatura = 'basico' | 'profissional' | 'enterprise';
 
 export interface WooviChargeRequest {
   organizationId: string;
-  plano: PlanoAssinatura;
+  plano: string; // slug do plano do banco de dados
   valor: number; // em centavos
   customerName?: string;
   customerEmail?: string;

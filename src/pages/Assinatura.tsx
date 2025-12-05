@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -7,8 +7,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PixPaymentModal } from '@/components/payment/PixPaymentModal';
-import { PlanoAssinatura, PLANOS_CONFIG } from '@/types/payment';
-import { AlertTriangle, Check, Clock, CreditCard, Building2 } from 'lucide-react';
+import { AlertTriangle, Check, Clock, CreditCard, Building2, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+
+interface PlanoFromDB {
+  id: string;
+  slug: string;
+  nome: string;
+  preco_centavos: number;
+  recursos: string[] | null;
+  destaque: boolean | null;
+  descricao: string | null;
+}
 
 const StatusBadge = ({ subscriptionStatus, daysRemaining, isTrialExpired, isSubscriptionActive }: any) => {
   if (isSubscriptionActive) return <Badge className="bg-green-500">Ativo</Badge>;
@@ -18,26 +28,27 @@ const StatusBadge = ({ subscriptionStatus, daysRemaining, isTrialExpired, isSubs
   return <Badge variant="secondary">{subscriptionStatus}</Badge>;
 };
 
-const PlanoCard = ({ plano, onAssinar, destaque }: any) => (
-  <Card className={destaque ? 'border-primary ring-2 ring-primary' : ''}>
+const PlanoCard = ({ plano, onAssinar }: { plano: PlanoFromDB; onAssinar: () => void }) => (
+  <Card className={plano.destaque ? 'border-primary ring-2 ring-primary' : ''}>
     <CardHeader>
-      {destaque && <Badge className="w-fit mb-2">Mais popular</Badge>}
+      {plano.destaque && <Badge className="w-fit mb-2">Mais popular</Badge>}
       <CardTitle className="text-lg">{plano.nome}</CardTitle>
       <div className="flex items-baseline gap-1">
-        <span className="text-3xl font-bold">R$ {plano.preco / 100}</span>
+        <span className="text-3xl font-bold">R$ {plano.preco_centavos / 100}</span>
         <span className="text-muted-foreground">/mês</span>
       </div>
+      {plano.descricao && <p className="text-sm text-muted-foreground">{plano.descricao}</p>}
     </CardHeader>
     <CardContent className="space-y-4">
       <ul className="space-y-2">
-        {plano.recursos.map((recurso: string, idx: number) => (
+        {(plano.recursos || []).map((recurso: string, idx: number) => (
           <li key={idx} className="flex items-center gap-2 text-sm">
             <Check className="h-4 w-4 text-green-500 shrink-0" />
             {recurso}
           </li>
         ))}
       </ul>
-      <Button className="w-full" variant={destaque ? 'default' : 'outline'} onClick={onAssinar}>
+      <Button className="w-full" variant={plano.destaque ? 'default' : 'outline'} onClick={onAssinar}>
         <CreditCard className="h-4 w-4 mr-2" />
         Assinar {plano.nome}
       </Button>
@@ -49,14 +60,33 @@ const Assinatura = () => {
   const { organizationName, organizationId } = useOrganization();
   const { subscriptionStatus, daysRemaining, isTrialExpired, isSubscriptionActive, subscriptionPlan } = useSubscription();
   const { isLoading, error, charge, createCharge, reset } = useWooviPayment();
-  const [selectedPlano, setSelectedPlano] = useState<PlanoAssinatura | null>(null);
+  const [selectedPlano, setSelectedPlano] = useState<PlanoFromDB | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [planos, setPlanos] = useState<PlanoFromDB[]>([]);
+  const [loadingPlanos, setLoadingPlanos] = useState(true);
 
-  const handleAssinar = async (plano: PlanoAssinatura) => {
+  useEffect(() => {
+    const fetchPlanos = async () => {
+      setLoadingPlanos(true);
+      const { data, error } = await supabase
+        .from('planos_assinatura')
+        .select('id, slug, nome, preco_centavos, recursos, destaque, descricao')
+        .eq('ativo', true)
+        .order('preco_centavos');
+      
+      if (!error && data) {
+        setPlanos(data as PlanoFromDB[]);
+      }
+      setLoadingPlanos(false);
+    };
+    fetchPlanos();
+  }, []);
+
+  const handleAssinar = async (plano: PlanoFromDB) => {
     if (!organizationId) return;
     setSelectedPlano(plano);
     setModalOpen(true);
-    await createCharge(organizationId, plano);
+    await createCharge(organizationId, plano.slug, plano.preco_centavos);
   };
 
   const handleCloseModal = () => {
@@ -64,9 +94,6 @@ const Assinatura = () => {
     reset();
     setSelectedPlano(null);
   };
-
-  const planos = Object.entries(PLANOS_CONFIG).map(([key, config]) => ({ id: key as PlanoAssinatura, ...config }));
-  const selectedPlanoConfig = selectedPlano ? PLANOS_CONFIG[selectedPlano] : null;
 
   return (
     <Layout>
@@ -116,11 +143,17 @@ const Assinatura = () => {
 
         <div>
           <h2 className="text-xl font-semibold mb-4">Escolha seu plano</h2>
-          <div className="grid md:grid-cols-3 gap-4">
-            {planos.map((plano) => (
-              <PlanoCard key={plano.id} plano={plano} destaque={'destaque' in plano && plano.destaque} onAssinar={() => handleAssinar(plano.id)} />
-            ))}
-          </div>
+          {loadingPlanos ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-4">
+              {planos.map((plano) => (
+                <PlanoCard key={plano.id} plano={plano} onAssinar={() => handleAssinar(plano)} />
+              ))}
+            </div>
+          )}
         </div>
 
         {isSubscriptionActive && (
@@ -137,7 +170,7 @@ const Assinatura = () => {
           </Card>
         )}
 
-        <PixPaymentModal open={modalOpen} onOpenChange={handleCloseModal} charge={charge} planoNome={selectedPlanoConfig?.nome || ''} isLoading={isLoading} error={error} />
+        <PixPaymentModal open={modalOpen} onOpenChange={handleCloseModal} charge={charge} planoNome={selectedPlano?.nome || ''} isLoading={isLoading} error={error} />
       </div>
     </Layout>
   );
