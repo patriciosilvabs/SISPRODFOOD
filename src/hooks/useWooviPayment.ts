@@ -2,12 +2,20 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { WooviChargeRequest, WooviChargeResponse, PaymentState } from '@/types/payment';
 
+export interface PaymentStatusResponse {
+  correlationID: string;
+  status: 'ACTIVE' | 'COMPLETED' | 'EXPIRED';
+  paidAt?: string;
+  value: number;
+}
+
 export const useWooviPayment = () => {
   const [state, setState] = useState<PaymentState>({
     isLoading: false,
     error: null,
     charge: null,
   });
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'paid' | 'expired'>('pending');
 
   const createCharge = useCallback(async (
     organizationId: string,
@@ -20,6 +28,7 @@ export const useWooviPayment = () => {
     }
   ): Promise<WooviChargeResponse | null> => {
     setState({ isLoading: true, error: null, charge: null });
+    setPaymentStatus('pending');
 
     try {
       const request: WooviChargeRequest = {
@@ -56,13 +65,52 @@ export const useWooviPayment = () => {
     }
   }, []);
 
+  const checkStatus = useCallback(async (
+    correlationID: string,
+    organizationId: string
+  ): Promise<PaymentStatusResponse | null> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('woovi-check-status', {
+        body: { correlationID, organizationId },
+      });
+
+      if (error) {
+        console.error('Error checking status:', error);
+        return null;
+      }
+
+      if (data?.error) {
+        console.error('Status check error:', data.error);
+        return null;
+      }
+
+      const statusResponse = data as PaymentStatusResponse;
+      
+      // Atualizar status local
+      if (statusResponse.status === 'COMPLETED') {
+        setPaymentStatus('paid');
+      } else if (statusResponse.status === 'EXPIRED') {
+        setPaymentStatus('expired');
+      }
+
+      return statusResponse;
+
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+      return null;
+    }
+  }, []);
+
   const reset = useCallback(() => {
     setState({ isLoading: false, error: null, charge: null });
+    setPaymentStatus('pending');
   }, []);
 
   return {
     ...state,
+    paymentStatus,
     createCharge,
+    checkStatus,
     reset,
   };
 };

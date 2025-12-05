@@ -8,3 +8,9 @@ verify_jwt = true
 
 [functions.woovi-pix]
 verify_jwt = true
+
+[functions.woovi-webhook]
+verify_jwt = false
+
+[functions.woovi-check-status]
+verify_jwt = true

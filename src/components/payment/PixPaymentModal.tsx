@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { WooviChargeResponse } from '@/types/payment';
-import { Copy, Check, Clock, QrCode } from 'lucide-react';
+import { Copy, Check, Clock, QrCode, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface PixPaymentModalProps {
@@ -12,6 +12,10 @@ interface PixPaymentModalProps {
   planoNome: string;
   isLoading?: boolean;
   error?: string | null;
+  paymentStatus: 'pending' | 'paid' | 'expired';
+  onCheckStatus: () => Promise<void>;
+  onPaymentConfirmed?: () => void;
+  organizationId?: string;
 }
 
 export const PixPaymentModal = ({
@@ -21,10 +25,16 @@ export const PixPaymentModal = ({
   planoNome,
   isLoading,
   error,
+  paymentStatus,
+  onCheckStatus,
+  onPaymentConfirmed,
 }: PixPaymentModalProps) => {
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(900); // 15 minutos
+  const [isChecking, setIsChecking] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Timer de expiração
   useEffect(() => {
     if (!charge?.expiresAt) {
       setTimeLeft(900);
@@ -44,6 +54,46 @@ export const PixPaymentModal = ({
 
     return () => clearInterval(interval);
   }, [charge?.expiresAt]);
+
+  // Polling para verificar status do pagamento
+  useEffect(() => {
+    if (!open || !charge || paymentStatus !== 'pending' || timeLeft <= 0) {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      return;
+    }
+
+    // Verificar a cada 5 segundos
+    pollingRef.current = setInterval(async () => {
+      setIsChecking(true);
+      await onCheckStatus();
+      setIsChecking(false);
+    }, 5000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [open, charge, paymentStatus, timeLeft, onCheckStatus]);
+
+  // Quando pagamento for confirmado
+  useEffect(() => {
+    if (paymentStatus === 'paid') {
+      toast.success('Pagamento confirmado com sucesso!');
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      // Chamar callback após pequeno delay para mostrar a confirmação
+      setTimeout(() => {
+        onPaymentConfirmed?.();
+      }, 2000);
+    }
+  }, [paymentStatus, onPaymentConfirmed]);
 
   const handleCopyCode = async () => {
     if (!charge?.brCode) return;
@@ -69,6 +119,12 @@ export const PixPaymentModal = ({
       style: 'currency',
       currency: 'BRL',
     }).format(cents / 100);
+  };
+
+  const handleManualCheck = async () => {
+    setIsChecking(true);
+    await onCheckStatus();
+    setIsChecking(false);
   };
 
   return (
@@ -98,7 +154,34 @@ export const PixPaymentModal = ({
             </div>
           )}
 
-          {charge && !isLoading && (
+          {/* Status de pagamento confirmado */}
+          {paymentStatus === 'paid' && (
+            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+              <div className="rounded-full bg-green-100 p-4">
+                <CheckCircle className="h-16 w-16 text-green-600" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-semibold text-green-600">Pagamento Confirmado!</h3>
+                <p className="text-muted-foreground mt-1">Sua assinatura foi ativada com sucesso.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Status expirado */}
+          {paymentStatus === 'expired' && (
+            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+              <div className="rounded-full bg-orange-100 p-4">
+                <AlertCircle className="h-16 w-16 text-orange-600" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-semibold text-orange-600">PIX Expirado</h3>
+                <p className="text-muted-foreground mt-1">O código PIX expirou. Por favor, gere um novo.</p>
+              </div>
+              <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+            </div>
+          )}
+
+          {charge && !isLoading && paymentStatus === 'pending' && (
             <>
               {/* Plano e Valor */}
               <div className="text-center border-b pb-4">
@@ -121,12 +204,26 @@ export const PixPaymentModal = ({
                 )}
               </div>
 
-              {/* Timer */}
-              <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                <Clock className="h-4 w-4" />
-                <span className={timeLeft < 60 ? 'text-destructive font-medium' : ''}>
-                  Expira em {formatTime(timeLeft)}
-                </span>
+              {/* Timer e Status de verificação */}
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span className={timeLeft < 60 ? 'text-destructive font-medium' : ''}>
+                    Expira em {formatTime(timeLeft)}
+                  </span>
+                </div>
+                
+                {/* Indicador de verificação */}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {isChecking ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Verificando pagamento...</span>
+                    </>
+                  ) : (
+                    <span>Verificação automática ativa</span>
+                  )}
+                </div>
               </div>
 
               {/* Código PIX */}
@@ -152,6 +249,26 @@ export const PixPaymentModal = ({
                   </div>
                 </div>
               )}
+
+              {/* Botão verificar manualmente */}
+              <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={handleManualCheck}
+                disabled={isChecking}
+              >
+                {isChecking ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Verificando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Já paguei, verificar
+                  </>
+                )}
+              </Button>
 
               {/* ID da Cobrança */}
               <p className="text-xs text-muted-foreground text-center">

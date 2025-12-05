@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode, useMemo } from 'react';
+import { createContext, useContext, ReactNode, useMemo, useCallback } from 'react';
 import { useOrganization } from './OrganizationContext';
 
 interface SubscriptionContextType {
@@ -10,12 +10,13 @@ interface SubscriptionContextType {
   isTrialExpired: boolean;
   isSubscriptionActive: boolean;
   canAccess: boolean;
+  refreshSubscription: () => Promise<void>;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
 export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
-  const { subscriptionStatus, trialEndDate, subscriptionExpiresAt, subscriptionPlan } = useOrganization();
+  const { subscriptionStatus, trialEndDate, subscriptionExpiresAt, subscriptionPlan, refreshOrganization } = useOrganization();
 
   const { daysRemaining, isTrialExpired, isSubscriptionActive, canAccess } = useMemo(() => {
     const now = new Date();
@@ -46,6 +47,10 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [subscriptionStatus, trialEndDate, subscriptionExpiresAt]);
 
+  const refreshSubscription = useCallback(async () => {
+    await refreshOrganization();
+  }, [refreshOrganization]);
+
   return (
     <SubscriptionContext.Provider value={{
       subscriptionStatus,
@@ -55,7 +60,8 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       daysRemaining,
       isTrialExpired,
       isSubscriptionActive,
-      canAccess
+      canAccess,
+      refreshSubscription
     }}>
       {children}
     </SubscriptionContext.Provider>

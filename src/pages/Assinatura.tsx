@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Layout } from '@/components/Layout';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -58,8 +58,8 @@ const PlanoCard = ({ plano, onAssinar }: { plano: PlanoFromDB; onAssinar: () => 
 
 const Assinatura = () => {
   const { organizationName, organizationId } = useOrganization();
-  const { subscriptionStatus, daysRemaining, isTrialExpired, isSubscriptionActive, subscriptionPlan } = useSubscription();
-  const { isLoading, error, charge, createCharge, reset } = useWooviPayment();
+  const { subscriptionStatus, daysRemaining, isTrialExpired, isSubscriptionActive, subscriptionPlan, refreshSubscription } = useSubscription();
+  const { isLoading, error, charge, paymentStatus, createCharge, checkStatus, reset } = useWooviPayment();
   const [selectedPlano, setSelectedPlano] = useState<PlanoFromDB | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [planos, setPlanos] = useState<PlanoFromDB[]>([]);
@@ -94,6 +94,20 @@ const Assinatura = () => {
     reset();
     setSelectedPlano(null);
   };
+
+  const handleCheckStatus = useCallback(async () => {
+    if (!charge?.correlationID || !organizationId) return;
+    await checkStatus(charge.correlationID, organizationId);
+  }, [charge?.correlationID, organizationId, checkStatus]);
+
+  const handlePaymentConfirmed = useCallback(() => {
+    // Atualizar status da assinatura
+    refreshSubscription();
+    // Fechar modal após um delay
+    setTimeout(() => {
+      handleCloseModal();
+    }, 1000);
+  }, [refreshSubscription]);
 
   return (
     <Layout>
@@ -170,7 +184,18 @@ const Assinatura = () => {
           </Card>
         )}
 
-        <PixPaymentModal open={modalOpen} onOpenChange={handleCloseModal} charge={charge} planoNome={selectedPlano?.nome || ''} isLoading={isLoading} error={error} />
+        <PixPaymentModal 
+          open={modalOpen} 
+          onOpenChange={handleCloseModal} 
+          charge={charge} 
+          planoNome={selectedPlano?.nome || ''} 
+          isLoading={isLoading} 
+          error={error}
+          paymentStatus={paymentStatus}
+          onCheckStatus={handleCheckStatus}
+          onPaymentConfirmed={handlePaymentConfirmed}
+          organizationId={organizationId || undefined}
+        />
       </div>
     </Layout>
   );
