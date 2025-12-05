@@ -95,6 +95,14 @@ serve(async (req) => {
       if (existingInvite.status === "aceito") {
         throw new Error("Este email já aceitou um convite para esta organização");
       }
+      // Se o convite foi cancelado, deletar para permitir novo convite
+      if (existingInvite.status === "cancelado") {
+        console.log("Deleting cancelled invite to allow resend:", existingInvite.id);
+        await supabase
+          .from("convites_pendentes")
+          .delete()
+          .eq("id", existingInvite.id);
+      }
     }
 
     // Check if user already belongs to organization
