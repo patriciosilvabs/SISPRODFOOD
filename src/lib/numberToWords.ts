@@ -116,3 +116,23 @@ export function numberToWords(value: number | string, unidade: string): string {
   
   return resultado;
 }
+
+/**
+ * Converte peso com interpretação progressiva para extenso
+ * - Até 3 dígitos = gramas
+ * - 4+ dígitos = quilogramas
+ */
+export function pesoProgressivoToWords(value: string | number): string {
+  const numStr = String(value).replace(/\D/g, '');
+  const num = parseInt(numStr) || 0;
+  
+  if (num === 0) return '';
+  
+  if (numStr.length <= 3) {
+    // Interpretar como gramas
+    return numberToWords(num, 'g');
+  } else {
+    // Interpretar como quilogramas (÷1000)
+    return numberToWords(num / 1000, 'kg');
+  }
+}
