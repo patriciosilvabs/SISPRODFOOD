@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-signature',
 };
 
 interface WooviWebhookPayload {
@@ -27,6 +27,47 @@ interface WooviWebhookPayload {
   };
 }
 
+// Verify webhook signature using HMAC-SHA256
+async function verifyWebhookSignature(payload: string, signature: string | null, secret: string): Promise<boolean> {
+  if (!signature) {
+    console.error('Missing webhook signature header');
+    return false;
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const messageData = encoder.encode(payload);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const computedSignature = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Compare signatures (case-insensitive)
+    const isValid = computedSignature.toLowerCase() === signature.toLowerCase();
+    
+    if (!isValid) {
+      console.error('Webhook signature mismatch');
+      console.log('Computed:', computedSignature.substring(0, 16) + '...');
+      console.log('Received:', signature.substring(0, 16) + '...');
+    }
+
+    return isValid;
+  } catch (error) {
+    console.error('Error verifying signature:', error);
+    return false;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -34,12 +75,39 @@ serve(async (req) => {
   }
 
   try {
+    const webhookSecret = Deno.env.get('WOOVI_WEBHOOK_SECRET');
+    
+    if (!webhookSecret) {
+      console.error('WOOVI_WEBHOOK_SECRET not configured');
+      return new Response(JSON.stringify({ error: 'Webhook not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get the raw body for signature verification
+    const rawBody = await req.text();
+    
+    // Verify webhook signature
+    const signature = req.headers.get('x-webhook-signature');
+    const isValidSignature = await verifyWebhookSignature(rawBody, signature, webhookSecret);
+    
+    if (!isValidSignature) {
+      console.error('Invalid webhook signature - rejecting request');
+      return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log('Webhook signature verified successfully');
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const payload: WooviWebhookPayload = await req.json();
+    const payload: WooviWebhookPayload = JSON.parse(rawBody);
     console.log('Received Woovi webhook:', JSON.stringify(payload));
 
     // Verificar se é um evento de pagamento confirmado
