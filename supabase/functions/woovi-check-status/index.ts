@@ -24,11 +24,43 @@ serve(async (req) => {
       throw new Error('Configuração de pagamento não encontrada');
     }
 
+    // Extract and validate JWT token
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Token de autenticação não encontrado');
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Get user from JWT token
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    
+    if (userError || !user) {
+      console.error('Invalid token:', userError);
+      throw new Error('Token de autenticação inválido');
+    }
+
     const body: CheckStatusRequest = await req.json();
     console.log('Checking payment status:', body.correlationID);
 
     if (!body.correlationID || !body.organizationId) {
       throw new Error('Campos obrigatórios: correlationID, organizationId');
+    }
+
+    // SECURITY: Verify user belongs to the organization they're querying
+    const { data: orgMember, error: orgError } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .eq('organization_id', body.organizationId)
+      .single();
+
+    if (orgError || !orgMember) {
+      console.error('User not member of organization:', { userId: user.id, orgId: body.organizationId });
+      throw new Error('Acesso não autorizado a esta organização');
     }
 
     // Consultar status da cobrança na Woovi
@@ -66,10 +98,6 @@ serve(async (req) => {
 
     // Se o pagamento foi confirmado, atualizar a organização
     if (charge.status === 'COMPLETED') {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
       // Extrair plano do comentário
       const planoMatch = charge.comment?.match(/plano (\w+)/i);
       const planoSlug = planoMatch ? planoMatch[1].toLowerCase() : 'basico';
