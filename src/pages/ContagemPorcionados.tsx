@@ -64,7 +64,7 @@ interface EstoqueIdeal {
 }
 
 const ContagemPorcionados = () => {
-  const { user } = useAuth();
+  const { user, roles, isAdmin, hasRole } = useAuth();
   const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
@@ -87,19 +87,51 @@ const ContagemPorcionados = () => {
   });
   const [estoquesIdeaisMap, setEstoquesIdeaisMap] = useState<Record<string, EstoqueIdeal>>({});
 
+  // Verificar se usuário é apenas Loja (sem Admin ou Produção)
+  const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
+
   useEffect(() => {
-    loadData();
-  }, []);
+    if (user) {
+      loadData();
+    }
+  }, [user]);
 
   const loadData = async () => {
     try {
-      // Carregar lojas
-      const { data: lojasData, error: lojasError } = await supabase
-        .from('lojas')
-        .select('*')
-        .order('nome');
+      // Carregar lojas baseado no role do usuário
+      let lojasData: Loja[] = [];
       
-      if (lojasError) throw lojasError;
+      if (isLojaUser && user) {
+        // Usuário Loja: buscar apenas lojas vinculadas via lojas_acesso
+        const { data: lojasAcesso, error: acessoError } = await supabase
+          .from('lojas_acesso')
+          .select('loja_id')
+          .eq('user_id', user.id);
+        
+        if (acessoError) throw acessoError;
+        
+        const lojasIds = lojasAcesso?.map(la => la.loja_id) || [];
+        
+        if (lojasIds.length > 0) {
+          const { data, error } = await supabase
+            .from('lojas')
+            .select('*')
+            .in('id', lojasIds)
+            .order('nome');
+          
+          if (error) throw error;
+          lojasData = data || [];
+        }
+      } else {
+        // Admin/Produção: ver todas as lojas
+        const { data, error } = await supabase
+          .from('lojas')
+          .select('*')
+          .order('nome');
+        
+        if (error) throw error;
+        lojasData = data || [];
+      }
 
       // Carregar itens porcionados (apenas ativos)
       const { data: itensData, error: itensError } = await supabase

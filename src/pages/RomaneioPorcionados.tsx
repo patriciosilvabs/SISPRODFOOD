@@ -181,9 +181,39 @@ const RomaneioPorcionados = () => {
   };
 
   const fetchLojas = async () => {
-    const { data, error } = await supabase.from('lojas').select('*').order('nome');
-    if (error) { toast.error('Erro ao carregar lojas'); return; }
-    setLojas(data || []);
+    try {
+      // Admin/Produção vê todas as lojas, Loja vê apenas as vinculadas
+      if (isLojaOnly) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        const { data: lojasAcesso } = await supabase
+          .from('lojas_acesso')
+          .select('loja_id')
+          .eq('user_id', user.id);
+        
+        const lojasIds = lojasAcesso?.map(la => la.loja_id) || [];
+        
+        if (lojasIds.length > 0) {
+          const { data, error } = await supabase
+            .from('lojas')
+            .select('*')
+            .in('id', lojasIds)
+            .order('nome');
+          
+          if (error) throw error;
+          setLojas(data || []);
+        } else {
+          setLojas([]);
+        }
+      } else {
+        const { data, error } = await supabase.from('lojas').select('*').order('nome');
+        if (error) throw error;
+        setLojas(data || []);
+      }
+    } catch (error) {
+      toast.error('Erro ao carregar lojas');
+    }
   };
 
   const fetchItensDisponiveis = async () => {
