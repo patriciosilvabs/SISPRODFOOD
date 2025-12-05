@@ -1,0 +1,113 @@
+import * as React from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { formatPesoProgressivo, parsePesoProgressivo } from "@/lib/weightUtils";
+import { pesoProgressivoToWords } from "@/lib/numberToWords";
+import { cn } from "@/lib/utils";
+
+interface WeightInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  required?: boolean;
+  placeholder?: string;
+  helperText?: string;
+  className?: string;
+  inputClassName?: string;
+  showLabel?: boolean;
+  compact?: boolean;
+}
+
+export function WeightInput({
+  value,
+  onChange,
+  label = "Peso",
+  required = false,
+  placeholder = "0",
+  helperText,
+  className,
+  inputClassName,
+  showLabel = true,
+  compact = false,
+}: WeightInputProps) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Permite apenas dígitos
+    const rawValue = e.target.value.replace(/\D/g, '');
+    onChange(rawValue);
+  };
+
+  const parsed = parsePesoProgressivo(value);
+  const hasValue = parsed.valorRaw > 0;
+
+  return (
+    <div className={cn("space-y-1", className)}>
+      {showLabel && label && (
+        <Label className={cn(compact && "text-xs")}>
+          {label} {required && <span className="text-destructive">*</span>}
+        </Label>
+      )}
+      <Input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        className={cn(compact && "h-8 text-sm", inputClassName)}
+      />
+      {hasValue && (
+        <div className={cn("space-y-0.5", compact && "text-xs")}>
+          <p className="text-muted-foreground text-xs">
+            {formatPesoProgressivo(value)}
+          </p>
+          <p className="text-primary text-xs font-medium">
+            {pesoProgressivoToWords(value)}
+          </p>
+        </div>
+      )}
+      {helperText && (
+        <p className="text-xs text-muted-foreground">{helperText}</p>
+      )}
+    </div>
+  );
+}
+
+// Versão inline mais compacta para tabelas/grids
+export function WeightInputInline({
+  value,
+  onChange,
+  placeholder = "0",
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\D/g, '');
+    onChange(rawValue);
+  };
+
+  const parsed = parsePesoProgressivo(value);
+  const hasValue = parsed.valorRaw > 0;
+
+  return (
+    <div className={cn("space-y-0.5", className)}>
+      <Input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        className="h-8 text-sm"
+      />
+      {hasValue && (
+        <p className="text-xs text-primary truncate" title={pesoProgressivoToWords(value)}>
+          {formatPesoProgressivo(value)}
+        </p>
+      )}
+    </div>
+  );
+}

@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Package, CheckCircle2 } from 'lucide-react';
 import { numberToWords } from '@/lib/numberToWords';
+import { WeightInput } from '@/components/ui/weight-input';
+import { rawToKg } from '@/lib/weightUtils';
 
 interface FinalizarProducaoModalProps {
   open: boolean;
@@ -29,7 +31,7 @@ export function FinalizarProducaoModal({
 }: FinalizarProducaoModalProps) {
   const [unidadesReais, setUnidadesReais] = useState(unidadesProgramadas?.toString() || '');
   const [pesoFinal, setPesoFinal] = useState('');
-  const [sobra, setSobra] = useState('0');
+  const [sobra, setSobra] = useState('');
   const [observacao, setObservacao] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -37,16 +39,10 @@ export function FinalizarProducaoModal({
     e.preventDefault();
     
     const unidadesNum = parseInt(unidadesReais);
-    const pesoFinalNum = parseFloat(pesoFinal);
-    const sobraNum = parseFloat(sobra);
+    const pesoFinalKg = rawToKg(pesoFinal);
+    const sobraKg = rawToKg(sobra);
     
     if (isNaN(unidadesNum) || unidadesNum <= 0) {
-      return;
-    }
-    if (isNaN(pesoFinalNum) || pesoFinalNum < 0) {
-      return;
-    }
-    if (isNaN(sobraNum) || sobraNum < 0) {
       return;
     }
 
@@ -54,15 +50,15 @@ export function FinalizarProducaoModal({
     try {
       await onConfirm({
         unidades_reais: unidadesNum,
-        peso_final_kg: parseFloat(pesoFinal) || 0,
-        sobra_kg: parseFloat(sobra) || 0,
+        peso_final_kg: pesoFinalKg,
+        sobra_kg: sobraKg,
         observacao_porcionamento: observacao,
       });
       
       // Reset form
       setUnidadesReais('');
       setPesoFinal('');
-      setSobra('0');
+      setSobra('');
       setObservacao('');
       onOpenChange(false);
     } finally {
@@ -120,53 +116,23 @@ export function FinalizarProducaoModal({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="peso-final" className="text-base">
-              PESO FINAL (kg) <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="peso-final"
-              type="number"
-              step="0.001"
-              placeholder="Ex: 2.3"
-              value={pesoFinal}
-              onChange={(e) => setPesoFinal(e.target.value)}
-              required
-              className="text-lg"
-            />
-            {pesoFinal && parseFloat(pesoFinal) > 0 && (
-              <p className="text-sm font-medium text-primary">
-                {numberToWords(pesoFinal, 'kg')}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Peso total dos itens embalados
-            </p>
-          </div>
+          <WeightInput
+            value={pesoFinal}
+            onChange={setPesoFinal}
+            label="PESO FINAL"
+            required
+            placeholder="Ex: 2300 (gramas)"
+            helperText="Peso total dos itens embalados"
+          />
 
-          <div className="space-y-2">
-            <Label htmlFor="sobra" className="text-base">
-              SOBRA/PERDA (kg) <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="sobra"
-              type="number"
-              step="0.001"
-              placeholder="Ex: 0.2"
-              value={sobra}
-              onChange={(e) => setSobra(e.target.value)}
-              required
-              className="text-lg"
-            />
-            {sobra && parseFloat(sobra) > 0 && (
-              <p className="text-sm font-medium text-primary">
-                {numberToWords(sobra, 'kg')}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Restos do processo de porcionamento
-            </p>
-          </div>
+          <WeightInput
+            value={sobra}
+            onChange={setSobra}
+            label="SOBRA/PERDA"
+            required
+            placeholder="Ex: 200 (gramas)"
+            helperText="Restos do processo de porcionamento"
+          />
 
           <div className="space-y-2">
             <Label htmlFor="observacao-final" className="text-base">
@@ -190,7 +156,7 @@ export function FinalizarProducaoModal({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSubmitting || !unidadesReais || !pesoFinal || sobra === ''}>
+            <Button type="submit" disabled={isSubmitting || !unidadesReais || !pesoFinal || !sobra}>
               {isSubmitting ? 'Finalizando...' : '✅ Finalizar'}
             </Button>
           </DialogFooter>

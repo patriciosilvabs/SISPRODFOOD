@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { numberToWords } from '@/lib/numberToWords';
+import { WeightInputInline } from '@/components/ui/weight-input';
+import { parsePesoProgressivo } from '@/lib/weightUtils';
 import {
   Collapsible,
   CollapsibleContent,
@@ -636,12 +638,9 @@ const ContagemPorcionados = () => {
                           </div>
 
                           <div className="col-span-2">
-                            <Input
-                              type="number"
-                              step="0.01"
+                            <WeightInputInline
                               value={pesoTotal}
-                              onChange={(e) => handleValueChange(loja.id, item.id, 'peso_total_g', e.target.value)}
-                              className="h-8 text-center text-sm"
+                              onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                               placeholder="0"
                             />
                           </div>
