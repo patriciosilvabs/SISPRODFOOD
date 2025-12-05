@@ -903,6 +903,13 @@ export type Database = {
           id: string
           nome: string
           slug: string
+          subscription_expires_at: string | null
+          subscription_plan: string | null
+          subscription_status: string | null
+          trial_end_date: string | null
+          trial_start_date: string | null
+          woovi_customer_id: string | null
+          woovi_subscription_id: string | null
         }
         Insert: {
           ativo?: boolean
@@ -910,6 +917,13 @@ export type Database = {
           id?: string
           nome: string
           slug: string
+          subscription_expires_at?: string | null
+          subscription_plan?: string | null
+          subscription_status?: string | null
+          trial_end_date?: string | null
+          trial_start_date?: string | null
+          woovi_customer_id?: string | null
+          woovi_subscription_id?: string | null
         }
         Update: {
           ativo?: boolean
@@ -917,6 +931,13 @@ export type Database = {
           id?: string
           nome?: string
           slug?: string
+          subscription_expires_at?: string | null
+          subscription_plan?: string | null
+          subscription_status?: string | null
+          trial_end_date?: string | null
+          trial_start_date?: string | null
+          woovi_customer_id?: string | null
+          woovi_subscription_id?: string | null
         }
         Relationships: []
       }
@@ -1383,6 +1404,50 @@ export type Database = {
           },
           {
             foreignKeyName: "romaneios_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_history: {
+        Row: {
+          amount_cents: number | null
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json | null
+          organization_id: string
+          payment_method: string | null
+          woovi_charge_id: string | null
+          woovi_correlation_id: string | null
+        }
+        Insert: {
+          amount_cents?: number | null
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          organization_id: string
+          payment_method?: string | null
+          woovi_charge_id?: string | null
+          woovi_correlation_id?: string | null
+        }
+        Update: {
+          amount_cents?: number | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          organization_id?: string
+          payment_method?: string | null
+          woovi_charge_id?: string | null
+          woovi_correlation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_history_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
