@@ -202,6 +202,59 @@ export type Database = {
           },
         ]
       }
+      convites_pendentes: {
+        Row: {
+          accepted_at: string | null
+          convidado_por_id: string
+          convidado_por_nome: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          lojas_ids: string[] | null
+          organization_id: string
+          roles: string[]
+          status: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          convidado_por_id: string
+          convidado_por_nome: string
+          created_at?: string
+          email: string
+          expires_at?: string
+          id?: string
+          lojas_ids?: string[] | null
+          organization_id: string
+          roles?: string[]
+          status?: string
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          convidado_por_id?: string
+          convidado_por_nome?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          lojas_ids?: string[] | null
+          organization_id?: string
+          roles?: string[]
+          status?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "convites_pendentes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       erros_devolucoes: {
         Row: {
           created_at: string

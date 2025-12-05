@@ -1,6 +1,6 @@
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -28,15 +28,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Pencil, Trash2, User, Mail, Calendar } from 'lucide-react';
+import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface Profile {
   id: string;
@@ -65,6 +67,17 @@ interface UsuarioCompleto extends Profile {
   lojas: { id: string; nome: string }[];
 }
 
+interface ConvitePendente {
+  id: string;
+  email: string;
+  roles: string[];
+  lojas_ids: string[];
+  status: string;
+  expires_at: string;
+  created_at: string;
+  convidado_por_nome: string;
+}
+
 const roleLabels: Record<string, { label: string; color: string; description: string }> = {
   'Admin': { 
     label: 'Admin', 
@@ -87,15 +100,31 @@ const GerenciarUsuarios = () => {
   const { user: currentUser } = useAuth();
   const { organizationId } = useOrganization();
   const [usuarios, setUsuarios] = useState<UsuarioCompleto[]>([]);
+  const [convitesPendentes, setConvitesPendentes] = useState<ConvitePendente[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UsuarioCompleto | null>(null);
-  const [deletingUser, setDeletingUser] = useState<UsuarioCompleto | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<UsuarioCompleto | null>(null);
+  
+  // Invite modal state
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRoles, setInviteRoles] = useState<string[]>([]);
+  const [inviteLojas, setInviteLojas] = useState<string[]>([]);
+  const [sendingInvite, setSendingInvite] = useState(false);
+  
+  // Cancel invite dialog state
+  const [cancelInviteDialogOpen, setCancelInviteDialogOpen] = useState(false);
+  const [cancelingInvite, setCancelingInvite] = useState<ConvitePendente | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -135,6 +164,19 @@ const GerenciarUsuarios = () => {
         .select('user_id, loja_id');
 
       if (lojasAcessoError) throw lojasAcessoError;
+
+      // Buscar convites pendentes
+      const { data: convites, error: convitesError } = await supabase
+        .from('convites_pendentes')
+        .select('*')
+        .eq('status', 'pendente')
+        .order('created_at', { ascending: false });
+
+      if (convitesError) {
+        console.error('Erro ao buscar convites:', convitesError);
+      } else {
+        setConvitesPendentes(convites || []);
+      }
 
       // Combinar dados
       const usuariosCompletos: UsuarioCompleto[] = (profiles || []).map(profile => {
@@ -292,20 +334,207 @@ const GerenciarUsuarios = () => {
     }
   };
 
+  // Invite handlers
+  const handleInviteRoleToggle = (role: string) => {
+    setInviteRoles(prev => 
+      prev.includes(role) 
+        ? prev.filter(r => r !== role)
+        : [...prev, role]
+    );
+  };
+
+  const handleInviteLojaToggle = (lojaId: string) => {
+    setInviteLojas(prev =>
+      prev.includes(lojaId)
+        ? prev.filter(id => id !== lojaId)
+        : [...prev, lojaId]
+    );
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail || inviteRoles.length === 0) {
+      toast.error('Preencha o email e selecione pelo menos uma função');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteEmail)) {
+      toast.error('Email inválido');
+      return;
+    }
+
+    try {
+      setSendingInvite(true);
+
+      const { data, error } = await supabase.functions.invoke('convidar-funcionario', {
+        body: {
+          email: inviteEmail.toLowerCase().trim(),
+          roles: inviteRoles,
+          lojas_ids: inviteLojas,
+        },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast.success(data.message || 'Convite enviado com sucesso!');
+      setInviteModalOpen(false);
+      setInviteEmail('');
+      setInviteRoles([]);
+      setInviteLojas([]);
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao enviar convite:', error);
+      toast.error(error.message || 'Erro ao enviar convite');
+    } finally {
+      setSendingInvite(false);
+    }
+  };
+
+  const handleCancelInvite = async () => {
+    if (!cancelingInvite) return;
+
+    try {
+      const { error } = await supabase
+        .from('convites_pendentes')
+        .update({ status: 'cancelado' })
+        .eq('id', cancelingInvite.id);
+
+      if (error) throw error;
+
+      toast.success('Convite cancelado');
+      setCancelInviteDialogOpen(false);
+      setCancelingInvite(null);
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao cancelar convite:', error);
+      toast.error('Erro ao cancelar convite');
+    }
+  };
+
+  const handleResendInvite = async (convite: ConvitePendente) => {
+    try {
+      // Delete old invite and create new one
+      await supabase
+        .from('convites_pendentes')
+        .delete()
+        .eq('id', convite.id);
+
+      const { data, error } = await supabase.functions.invoke('convidar-funcionario', {
+        body: {
+          email: convite.email,
+          roles: convite.roles,
+          lojas_ids: convite.lojas_ids,
+        },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast.success('Convite reenviado com sucesso!');
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao reenviar convite:', error);
+      toast.error(error.message || 'Erro ao reenviar convite');
+    }
+  };
+
   const isLojaRoleSelected = selectedRoles.includes('Loja');
+  const isInviteLojaRoleSelected = inviteRoles.includes('Loja');
+
+  const getLojaNameById = (lojaId: string) => {
+    const loja = lojas.find(l => l.id === lojaId);
+    return loja?.nome || 'Loja Desconhecida';
+  };
 
   return (
     <Layout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">Gerenciar Usuários</h1>
-          <p className="text-muted-foreground mt-1">
-            Atribua roles e vincule lojas aos usuários do sistema
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Gerenciar Usuários</h1>
+            <p className="text-muted-foreground mt-1">
+              Atribua roles e vincule lojas aos usuários do sistema
+            </p>
+          </div>
+          <Button onClick={() => setInviteModalOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Convidar Funcionário
+          </Button>
         </div>
 
-        {/* Table */}
+        {/* Pending Invites */}
+        {convitesPendentes.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5 text-amber-500" />
+                Convites Pendentes ({convitesPendentes.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {convitesPendentes.map((convite) => (
+                  <div 
+                    key={convite.id} 
+                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">{convite.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap gap-1">
+                          {convite.roles.map((role) => (
+                            <Badge key={role} variant="secondary" className={roleLabels[role]?.color || ''}>
+                              {roleLabels[role]?.label || role}
+                            </Badge>
+                          ))}
+                        </div>
+                        {convite.lojas_ids.length > 0 && (
+                          <span className="text-sm text-muted-foreground">
+                            • {convite.lojas_ids.map(id => getLojaNameById(id)).join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Convidado por {convite.convidado_por_nome} em{' '}
+                        {format(new Date(convite.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        {' • Expira em '}
+                        {format(new Date(convite.expires_at), "dd/MM/yyyy", { locale: ptBR })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleResendInvite(convite)}
+                      >
+                        <Send className="h-4 w-4 mr-1" />
+                        Reenviar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setCancelingInvite(convite);
+                          setCancelInviteDialogOpen(true);
+                        }}
+                      >
+                        <XCircle className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Users Table */}
         <Card>
           <CardContent className="pt-6">
             {loading ? (
@@ -351,9 +580,9 @@ const GerenciarUsuarios = () => {
                                 <Badge 
                                   key={role} 
                                   variant="secondary"
-                                  className={roleLabels[role].color}
+                                  className={roleLabels[role]?.color || ''}
                                 >
-                                  {roleLabels[role].label}
+                                  {roleLabels[role]?.label || role}
                                 </Badge>
                               ))}
                             </div>
@@ -405,11 +634,124 @@ const GerenciarUsuarios = () => {
         </Card>
       </div>
 
+      {/* Invite Modal */}
+      <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Convidar Funcionário
+            </DialogTitle>
+            <DialogDescription>
+              Envie um convite por email para adicionar um novo funcionário ao sistema
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Email Input */}
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Email do Funcionário *</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="funcionario@empresa.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+              />
+            </div>
+
+            {/* Roles Section */}
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Permissões (Roles) *</Label>
+              <div className="space-y-3">
+                {Object.entries(roleLabels).map(([role, info]) => (
+                  <div key={role} className="flex items-start space-x-3 p-3 rounded-lg border">
+                    <Checkbox
+                      id={`invite-role-${role}`}
+                      checked={inviteRoles.includes(role)}
+                      onCheckedChange={() => handleInviteRoleToggle(role)}
+                    />
+                    <div className="flex-1">
+                      <label
+                        htmlFor={`invite-role-${role}`}
+                        className="text-sm font-medium leading-none cursor-pointer"
+                      >
+                        {info.label}
+                      </label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {info.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Lojas Section */}
+            {isInviteLojaRoleSelected && (
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">
+                  Lojas Vinculadas
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    (para role "Loja")
+                  </span>
+                </Label>
+                {lojas.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma loja cadastrada no sistema
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {lojas.map(loja => (
+                      <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                        <Checkbox
+                          id={`invite-loja-${loja.id}`}
+                          checked={inviteLojas.includes(loja.id)}
+                          onCheckedChange={() => handleInviteLojaToggle(loja.id)}
+                        />
+                        <label
+                          htmlFor={`invite-loja-${loja.id}`}
+                          className="text-sm font-medium leading-none cursor-pointer flex-1"
+                        >
+                          {loja.nome}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSendInvite} 
+              disabled={sendingInvite || !inviteEmail || inviteRoles.length === 0}
+            >
+              {sendingInvite ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Enviar Convite
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>✏️ Editar Usuário</DialogTitle>
+            <DialogTitle>Editar Usuário</DialogTitle>
             <DialogDescription>
               Atribua roles e vincule lojas ao usuário
             </DialogDescription>
@@ -457,7 +799,7 @@ const GerenciarUsuarios = () => {
                 </div>
                 {editingUser.id === currentUser?.id && (
                   <p className="text-xs text-muted-foreground">
-                    ℹ️ Você não pode remover seu próprio role de Admin
+                    Você não pode remover seu próprio role de Admin
                   </p>
                 )}
               </div>
@@ -504,7 +846,7 @@ const GerenciarUsuarios = () => {
               Cancelar
             </Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? 'Salvando...' : '💾 Salvar'}
+              {saving ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -530,6 +872,29 @@ const GerenciarUsuarios = () => {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
               Remover Permissões
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Invite Dialog */}
+      <AlertDialog open={cancelInviteDialogOpen} onOpenChange={setCancelInviteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar Convite?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelingInvite && (
+                <>
+                  O convite enviado para <span className="font-semibold">{cancelingInvite.email}</span> será cancelado
+                  e não poderá mais ser aceito.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelInvite} className="bg-destructive hover:bg-destructive/90">
+              Cancelar Convite
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
