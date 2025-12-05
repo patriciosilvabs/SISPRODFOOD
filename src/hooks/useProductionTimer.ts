@@ -34,21 +34,30 @@ export function useProductionTimer(
       const remaining = Math.max(0, totalSeconds - elapsedSeconds);
 
       return {
-        isActive: true,
+        isActive: remaining > 0, // Só ativo se ainda tem tempo
         secondsRemaining: remaining,
         isFinished: remaining === 0,
       };
     };
 
-    // Atualizar a cada segundo
-    const interval = setInterval(() => {
-      setState(calculateTimeRemaining());
-    }, 1000);
-
     // Calcular estado inicial
-    setState(calculateTimeRemaining());
+    const initialState = calculateTimeRemaining();
+    setState(initialState);
 
-    return () => clearInterval(interval);
+    // Só configurar interval se ainda não terminou
+    if (initialState.secondsRemaining > 0) {
+      const interval = setInterval(() => {
+        const newState = calculateTimeRemaining();
+        setState(newState);
+        
+        // Se terminou, parar o interval
+        if (newState.secondsRemaining === 0) {
+          clearInterval(interval);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
   }, [itemId, timerMinutes, timerAtivo, dataInicioPreparo]);
 
   return state;
