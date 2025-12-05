@@ -766,7 +766,7 @@ export type Database = {
           {
             foreignKeyName: "itens_reserva_diaria_item_porcionado_id_fkey"
             columns: ["item_porcionado_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "itens_porcionados"
             referencedColumns: ["id"]
           },
