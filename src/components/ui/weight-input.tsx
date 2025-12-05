@@ -56,7 +56,6 @@ export function WeightInput({
       <Input
         type="text"
         inputMode="numeric"
-        pattern="[0-9]*"
         placeholder={placeholder}
         value={displayValue}
         onChange={handleChange}
@@ -105,7 +104,6 @@ export function WeightInputInline({
       <Input
         type="text"
         inputMode="numeric"
-        pattern="[0-9]*"
         placeholder={placeholder}
         value={displayValue}
         onChange={handleChange}
