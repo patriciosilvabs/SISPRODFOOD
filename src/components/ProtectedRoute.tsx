@@ -44,8 +44,9 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       return;
     }
 
-    // Redirecionar para onboarding se precisar (exceto se já estiver lá)
-    if (!loading && !orgLoading && user && needsOnboarding && location.pathname !== '/onboarding') {
+    // Redirecionar para onboarding se precisar (exceto se já estiver lá ou tiver convite pendente)
+    const hasPendingInvite = typeof window !== 'undefined' && localStorage.getItem('pendingInviteToken');
+    if (!loading && !orgLoading && user && needsOnboarding && !hasPendingInvite && location.pathname !== '/onboarding') {
       navigate('/onboarding');
       return;
     }
