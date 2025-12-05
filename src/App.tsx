@@ -97,7 +97,7 @@ const App = () => (
                 <Route
                   path="/estoque-diario"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <EstoqueDiario />
                     </ProtectedRoute>
                   }
@@ -105,7 +105,7 @@ const App = () => (
                 <Route
                   path="/atender-pedidos-diarios"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <AtenderPedidosDiarios />
                     </ProtectedRoute>
                   }
@@ -121,7 +121,7 @@ const App = () => (
                 <Route
                   path="/contagem-porcionados"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <ContagemPorcionados />
                     </ProtectedRoute>
                   }
@@ -129,7 +129,7 @@ const App = () => (
                 <Route
                   path="/romaneio-porcionados"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <RomaneioPorcionados />
                     </ProtectedRoute>
                   }
@@ -137,7 +137,7 @@ const App = () => (
                 <Route
                   path="/receber-porcionados"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <ReceberPorcionados />
                     </ProtectedRoute>
                   }
@@ -145,7 +145,7 @@ const App = () => (
                 <Route
                   path="/erros-devolucoes"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
                       <ErrosDevolucoes />
                     </ProtectedRoute>
                   }
