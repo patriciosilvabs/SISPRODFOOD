@@ -1,7 +1,8 @@
 import * as React from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatPesoProgressivo, parsePesoProgressivo } from "@/lib/weightUtils";
+import { formatPesoParaInput, parsePesoProgressivo } from "@/lib/weightUtils";
 import { pesoProgressivoToWords } from "@/lib/numberToWords";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,8 @@ export function WeightInput({
   showLabel = true,
   compact = false,
 }: WeightInputProps) {
+  const [isFocused, setIsFocused] = useState(false);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Permite apenas dígitos
     const rawValue = e.target.value.replace(/\D/g, '');
@@ -38,6 +41,10 @@ export function WeightInput({
 
   const parsed = parsePesoProgressivo(value);
   const hasValue = parsed.valorRaw > 0;
+
+  // Quando focado: mostra número puro para facilitar digitação
+  // Quando desfocado: mostra valor formatado (ex: "5,5 kg")
+  const displayValue = isFocused ? value : (hasValue ? formatPesoParaInput(value) : '');
 
   return (
     <div className={cn("space-y-1", className)}>
@@ -51,19 +58,16 @@ export function WeightInput({
         inputMode="numeric"
         pattern="[0-9]*"
         placeholder={placeholder}
-        value={value}
+        value={displayValue}
         onChange={handleChange}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         className={cn(compact && "h-8 text-sm", inputClassName)}
       />
-      {hasValue && (
-        <div className={cn("space-y-0.5", compact && "text-xs")}>
-          <p className="text-muted-foreground text-xs">
-            {formatPesoProgressivo(value)}
-          </p>
-          <p className="text-primary text-xs font-medium">
-            {pesoProgressivoToWords(value)}
-          </p>
-        </div>
+      {hasValue && !isFocused && (
+        <p className="text-primary text-xs font-medium">
+          {pesoProgressivoToWords(value)}
+        </p>
       )}
       {helperText && (
         <p className="text-xs text-muted-foreground">{helperText}</p>
@@ -84,6 +88,8 @@ export function WeightInputInline({
   placeholder?: string;
   className?: string;
 }) {
+  const [isFocused, setIsFocused] = useState(false);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value.replace(/\D/g, '');
     onChange(rawValue);
@@ -92,6 +98,8 @@ export function WeightInputInline({
   const parsed = parsePesoProgressivo(value);
   const hasValue = parsed.valorRaw > 0;
 
+  const displayValue = isFocused ? value : (hasValue ? formatPesoParaInput(value) : '');
+
   return (
     <div className={cn("space-y-0.5", className)}>
       <Input
@@ -99,13 +107,15 @@ export function WeightInputInline({
         inputMode="numeric"
         pattern="[0-9]*"
         placeholder={placeholder}
-        value={value}
+        value={displayValue}
         onChange={handleChange}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         className="h-8 text-sm"
       />
-      {hasValue && (
-        <p className="text-xs text-primary truncate" title={pesoProgressivoToWords(value)}>
-          {formatPesoProgressivo(value)}
+      {hasValue && !isFocused && (
+        <p className="text-xs text-muted-foreground truncate" title={pesoProgressivoToWords(value)}>
+          {pesoProgressivoToWords(value)}
         </p>
       )}
     </div>

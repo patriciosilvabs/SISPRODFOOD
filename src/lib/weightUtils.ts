@@ -60,6 +60,25 @@ export function formatPesoProgressivo(value: string | number): string {
 }
 
 /**
+ * Formata peso para exibição DENTRO do input (sem cálculos intermediários)
+ * Retorna apenas o resultado final: "300 g" ou "5,5 kg"
+ */
+export function formatPesoParaInput(value: string | number): string {
+  const numStr = String(value).replace(/\D/g, '');
+  const num = parseInt(numStr) || 0;
+  
+  if (num === 0) return '';
+  
+  if (numStr.length <= 3) {
+    return `${num} g`;
+  } else {
+    const kg = num / 1000;
+    const kgFormatado = kg % 1 === 0 ? kg.toFixed(0) : kg.toFixed(1).replace('.', ',');
+    return `${kgFormatado} kg`;
+  }
+}
+
+/**
  * Converte valor raw (gramas digitados) para kg para salvar no banco
  */
 export function rawToKg(value: string | number): number {
