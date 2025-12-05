@@ -75,12 +75,22 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
     registro.data_inicio_preparo || null
   );
 
-  // Notificar quando timer acabar
+  // Notificar quando timer acabar - apenas se ainda não foi processado
   useEffect(() => {
-    if (columnId === 'em_preparo' && timerState.isFinished && onTimerFinished) {
+    // Só disparar se:
+    // 1. Está na coluna em_preparo
+    // 2. Timer está finished
+    // 3. Callback existe
+    // 4. timer_status ainda não é 'concluido' (não foi processado)
+    if (
+      columnId === 'em_preparo' && 
+      timerState.isFinished && 
+      onTimerFinished && 
+      registro.timer_status !== 'concluido'
+    ) {
       onTimerFinished(registro.id);
     }
-  }, [timerState.isFinished, columnId, registro.id, onTimerFinished]);
+  }, [timerState.isFinished, columnId, registro.id, registro.timer_status, onTimerFinished]);
 
   const getButtonConfig = () => {
     switch (columnId) {

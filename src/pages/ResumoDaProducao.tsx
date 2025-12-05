@@ -108,18 +108,19 @@ const ResumoDaProducao = () => {
 
   // Função para notificar quando timer acabar
   const handleTimerFinished = async (registroId: string) => {
-    setFinishedTimers(prev => {
-      const newSet = new Set(prev);
-      if (!newSet.has(registroId)) {
-        newSet.add(registroId);
-        // Tocar alarme apenas uma vez por timer
-        if (!alarmPlaying) {
-          playAlarm();
-          setAlarmPlaying(true);
-        }
-      }
-      return newSet;
-    });
+    // Early return se já foi processado
+    if (finishedTimers.has(registroId)) {
+      return;
+    }
+
+    // Adicionar ao Set IMEDIATAMENTE para evitar chamadas duplicadas
+    setFinishedTimers(prev => new Set(prev).add(registroId));
+    
+    // Tocar alarme apenas uma vez
+    if (!alarmPlaying) {
+      playAlarm();
+      setAlarmPlaying(true);
+    }
 
     // Atualizar timer_status do registro atual e desbloquear próximo traço
     try {
@@ -138,19 +139,14 @@ const ResumoDaProducao = () => {
 
       // Desbloquear próximo traço na sequência (se houver)
       if (registro?.lote_producao_id && registro.sequencia_traco) {
-        const { error: unblockError } = await supabase
+        await supabase
           .from('producao_registros')
           .update({ bloqueado_por_traco_anterior: false })
           .eq('lote_producao_id', registro.lote_producao_id)
           .eq('sequencia_traco', registro.sequencia_traco + 1);
-
-        if (unblockError) {
-          console.error('Erro ao desbloquear próximo traço:', unblockError);
-        }
       }
 
-      // Recarregar para refletir mudanças
-      loadProducaoRegistros();
+      // NÃO chamar loadProducaoRegistros() - realtime listener vai atualizar
     } catch (error) {
       console.error('Erro ao processar timer finalizado:', error);
     }
