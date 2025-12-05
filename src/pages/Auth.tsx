@@ -15,10 +15,17 @@ const Auth = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Redirecionar se já estiver logado
+  // Redirecionar se já estiver logado (verificar convite pendente primeiro)
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/');
+      // Verificar se há convite pendente no localStorage
+      const pendingToken = localStorage.getItem('pendingInviteToken');
+      if (pendingToken) {
+        localStorage.removeItem('pendingInviteToken');
+        navigate(`/aceitar-convite?token=${pendingToken}`);
+      } else {
+        navigate('/');
+      }
     }
   }, [user, authLoading, navigate]);
   const [email, setEmail] = useState('');

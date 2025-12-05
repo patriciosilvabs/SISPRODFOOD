@@ -139,11 +139,16 @@ export default function AceitarConvite() {
               <Mail className="h-12 w-12 text-primary" />
               <p className="text-center text-muted-foreground">{message}</p>
               {inviteEmail && (
-                <div className="bg-muted px-4 py-2 rounded-md">
-                  <p className="text-sm text-muted-foreground">Convite para:</p>
-                  <p className="font-medium">{inviteEmail}</p>
+                <div className="bg-primary/10 border border-primary/20 px-4 py-3 rounded-lg text-center">
+                  <p className="text-sm text-muted-foreground mb-1">Este convite é para:</p>
+                  <p className="font-semibold text-primary text-lg">{inviteEmail}</p>
                 </div>
               )}
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-3 rounded-lg">
+                <p className="text-sm text-amber-800 dark:text-amber-200 text-center">
+                  <strong>Importante:</strong> Use o mesmo email acima ao criar sua conta ou fazer login.
+                </p>
+              </div>
               <Button onClick={handleLoginRedirect} className="w-full">
                 Fazer Login / Criar Conta
               </Button>
