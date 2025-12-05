@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Package } from 'lucide-react';
 import { WeightInput } from '@/components/ui/weight-input';
 import { rawToKg } from '@/lib/weightUtils';
+import { toast } from 'sonner';
 
 interface ConcluirPreparoModalProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function ConcluirPreparoModal({
     const sobraKg = rawToKg(sobraPreparo);
     
     if (pesoKg <= 0) {
+      toast.error('Por favor, informe o peso total');
       return;
     }
 
@@ -47,11 +49,14 @@ export function ConcluirPreparoModal({
         observacao_preparo: observacao,
       });
       
-      // Reset form
+      // Reset form apenas se sucesso
       setPesoPreparo('');
       setSobraPreparo('');
       setObservacao('');
       onOpenChange(false);
+    } catch (error) {
+      console.error('Erro ao concluir preparo:', error);
+      // Mantém modal aberto se houver erro
     } finally {
       setIsSubmitting(false);
     }

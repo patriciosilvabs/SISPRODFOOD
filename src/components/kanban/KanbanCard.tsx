@@ -130,7 +130,17 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
     registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
   // Verificar se está bloqueado (fila de traços)
-  const estaBloqueado = registro.bloqueado_por_traco_anterior === true;
+  const estaBloqueadoPorTraco = registro.bloqueado_por_traco_anterior === true;
+  
+  // Verificar se timer ainda está rodando (bloqueia "Ir para Porcionamento")
+  const timerAindaRodando = columnId === 'em_preparo' && 
+    registro.timer_ativo && 
+    timerState.isActive && 
+    !timerState.isFinished;
+
+  // Combinação de todas as condições de bloqueio
+  const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando;
+  
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
 
@@ -388,7 +398,12 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
               size="sm"
               disabled={estaBloqueado}
             >
-              {estaBloqueado ? (
+              {timerAindaRodando ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2" />
+                  Aguardando timer
+                </>
+              ) : estaBloqueadoPorTraco ? (
                 <>
                   <Lock className="h-4 w-4 mr-2" />
                   Bloqueado
