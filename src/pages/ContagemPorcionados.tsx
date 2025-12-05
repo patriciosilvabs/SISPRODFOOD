@@ -556,16 +556,16 @@ const ContagemPorcionados = () => {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Gerenciamento de Contagem de Porcionados</h1>
-          <Button className="bg-purple-600 hover:bg-purple-700">
+          <h1 className="text-2xl font-bold">Contagem de Porcionados</h1>
+          <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
             <Sparkles className="mr-2 h-4 w-4" />
             Otimizar com IA
           </Button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {lojas.map((loja) => {
             const contagensLoja = contagens[loja.id] || [];
             const isOpen = openLojas.has(loja.id);
@@ -575,148 +575,110 @@ const ContagemPorcionados = () => {
                 key={loja.id}
                 open={isOpen}
                 onOpenChange={() => toggleLoja(loja.id)}
-                className="bg-card rounded-lg border shadow-sm"
+                className="bg-card rounded-lg border"
               >
                 <CollapsibleTrigger className="w-full">
-                  <div className="flex items-center justify-between p-4 hover:bg-accent/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full bg-green-500" />
-                      <div className="text-left">
-                        <h2 className="text-xl font-semibold">{loja.nome}</h2>
-                        <p className="text-sm text-muted-foreground">
-                          Responsável: {loja.responsavel}
-                        </p>
-                      </div>
+                  <div className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500" />
+                      <span className="font-semibold">{loja.nome}</span>
+                      <span className="text-xs text-muted-foreground">({loja.responsavel})</span>
                     </div>
                     {isOpen ? (
-                      <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
                     ) : (
-                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     )}
                   </div>
                 </CollapsibleTrigger>
 
                 <CollapsibleContent>
-                  <div className="p-4 border-t">
-                    {/* Cabeçalho da tabela */}
-                    <div className="grid grid-cols-12 gap-4 mb-4 text-sm font-medium text-muted-foreground">
-                      <div className="col-span-2">Item</div>
-                      <div className="col-span-2 text-center">Final (sobra)</div>
-                      <div className="col-span-2 text-center">Peso Total</div>
-                      <div className="col-span-2 text-center">Ideal (Amanhã)</div>
+                  <div className="border-t">
+                    {/* Cabeçalho compacto */}
+                    <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
+                      <div className="col-span-3">Item</div>
+                      <div className="col-span-2 text-center">Sobra</div>
+                      <div className="col-span-2 text-center">Peso (g)</div>
+                      <div className="col-span-2 text-center">Ideal</div>
                       <div className="col-span-2 text-center">A Produzir</div>
-                      <div className="col-span-2 text-center">Ações</div>
+                      <div className="col-span-1 text-center">Ação</div>
                     </div>
 
-                    {/* Linhas de itens */}
+                    {/* Itens */}
                     {itens.map((item) => {
                       const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
                       const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
                       const finalSobra = finalSobraRaw === '' ? '' : finalSobraRaw;
                       const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
-                      // Buscar ideal_amanha dos estoques ideais semanais, não da contagem salva
                       const idealAmanhaRaw = getEditingValue(loja.id, item.id, 'ideal_amanha', '');
                       const idealAmanha = idealAmanhaRaw === '' ? '' : idealAmanhaRaw;
                       const aProduzir = Math.max(0, Number(idealAmanha || 0) - Number(finalSobra || 0));
 
                       return (
-                        <div key={item.id} className="mb-6">
-                          <div className="grid grid-cols-12 gap-4 items-center">
-                            <div className="col-span-2">
-                              <div className="font-medium">{item.nome}</div>
-                            </div>
+                        <div key={item.id} className="grid grid-cols-12 gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20">
+                          <div className="col-span-3">
+                            <span className="font-medium text-sm">{item.nome}</span>
+                            {contagem && (
+                              <p className="text-[10px] text-muted-foreground">
+                                {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
+                              </p>
+                            )}
+                          </div>
 
-                            <div className="col-span-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs">Final (sobra)</Label>
-                                <div className="flex gap-1 items-center">
-                                  <Input
-                                    type="number"
-                                    value={finalSobra}
-                                    onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
-                                    className="text-center"
-                                    placeholder="0"
-                                  />
-                                  <span className="text-xs text-muted-foreground whitespace-nowrap">unidade</span>
-                                </div>
-                                {Number(finalSobra) > 0 && (
-                                  <p className="text-xs text-muted-foreground italic">
-                                    {numberToWords(Number(finalSobra), 'unidade')}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
+                          <div className="col-span-2">
+                            <Input
+                              type="number"
+                              value={finalSobra}
+                              onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
+                              className="h-8 text-center text-sm"
+                              placeholder="0"
+                            />
+                          </div>
 
-                            <div className="col-span-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs">Peso Total</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={pesoTotal}
-                                  onChange={(e) => handleValueChange(loja.id, item.id, 'peso_total_g', e.target.value)}
-                                  placeholder="em gramas"
-                                  className="text-center"
-                                />
-                                {pesoTotal > 0 && (
-                                  <p className="text-xs text-muted-foreground italic">
-                                    {numberToWords(pesoTotal, 'g')}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
+                          <div className="col-span-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={pesoTotal}
+                              onChange={(e) => handleValueChange(loja.id, item.id, 'peso_total_g', e.target.value)}
+                              className="h-8 text-center text-sm"
+                              placeholder="0"
+                            />
+                          </div>
 
-                            <div className="col-span-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs">Ideal p/ Amanhã</Label>
-                                <Input
-                                  type="number"
-                                  value={idealAmanha}
-                                  onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
-                                  className="text-center font-medium"
-                                  placeholder="0"
-                                />
-                                {Number(idealAmanha) > 0 && (
-                                  <p className="text-xs text-muted-foreground italic">
-                                    {numberToWords(Number(idealAmanha), 'unidade')}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
+                          <div className="col-span-2">
+                            <Input
+                              type="number"
+                              value={idealAmanha}
+                              onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
+                              className="h-8 text-center text-sm"
+                              placeholder="0"
+                            />
+                          </div>
 
-                            <div className="col-span-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs">Necessidade Prod.</Label>
-                                <div className="bg-orange-500 text-white font-bold rounded-md py-2 px-3 text-center">
-                                  {aProduzir} unidade
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="col-span-2 flex gap-2 justify-center">
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="secondary"
-                                onClick={() => handleSave(loja.id, item.id)}
-                                className="min-w-[80px]"
-                              >
-                                Salvar
-                              </Button>
+                          <div className="col-span-2">
+                            <div className={`text-center font-bold text-sm py-1.5 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                              {aProduzir} un
                             </div>
                           </div>
 
-                          {contagem && (
-                            <div className="text-xs text-muted-foreground mt-2 ml-2">
-                              Última contagem: {format(new Date(contagem.updated_at), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR })}
-                              {' '}por {contagem.usuario_nome}
-                            </div>
-                          )}
+                          <div className="col-span-1 flex gap-1 justify-center">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                              onClick={() => handleSave(loja.id, item.id)}
+                            >
+                              Salvar
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}
