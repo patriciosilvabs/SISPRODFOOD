@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +11,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 const Auth = () => {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, loading: authLoading } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Redirecionar se já estiver logado
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/');
+    }
+  }, [user, authLoading, navigate]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');

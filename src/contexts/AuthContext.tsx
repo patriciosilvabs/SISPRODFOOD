@@ -145,6 +145,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     toast.success('Conta criada com sucesso!');
+    navigate('/onboarding');
   };
 
   const signOut = async () => {
