@@ -37,6 +37,13 @@ import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
 import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
 import RelatorioConsumoHistorico from "./pages/relatorios/RelatorioConsumoHistorico";
 import NotFound from "./pages/NotFound";
+import {
+  SuperAdminDashboard,
+  SuperAdminOrganizacoes,
+  SuperAdminAssinaturas,
+  SuperAdminUsuarios,
+  SuperAdminPlanos,
+} from "./pages/super-admin";
 
 const queryClient = new QueryClient();
 
@@ -258,6 +265,47 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <RelatorioConsumoHistorico />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* Super Admin Routes */}
+                <Route
+                  path="/super-admin"
+                  element={
+                    <ProtectedRoute requiredRoles={['SuperAdmin']}>
+                      <SuperAdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/super-admin/organizacoes"
+                  element={
+                    <ProtectedRoute requiredRoles={['SuperAdmin']}>
+                      <SuperAdminOrganizacoes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/super-admin/assinaturas"
+                  element={
+                    <ProtectedRoute requiredRoles={['SuperAdmin']}>
+                      <SuperAdminAssinaturas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/super-admin/usuarios"
+                  element={
+                    <ProtectedRoute requiredRoles={['SuperAdmin']}>
+                      <SuperAdminUsuarios />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/super-admin/planos"
+                  element={
+                    <ProtectedRoute requiredRoles={['SuperAdmin']}>
+                      <SuperAdminPlanos />
                     </ProtectedRoute>
                   }
                 />
