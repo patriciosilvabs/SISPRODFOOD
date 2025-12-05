@@ -37,6 +37,7 @@ import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
 import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
 import RelatorioConsumoHistorico from "./pages/relatorios/RelatorioConsumoHistorico";
 import NotFound from "./pages/NotFound";
+import AceitarConvite from "./pages/AceitarConvite";
 import {
   SuperAdminDashboard,
   SuperAdminOrganizacoes,
@@ -60,6 +61,7 @@ const App = () => (
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/onboarding" element={<Onboarding />} />
+                <Route path="/aceitar-convite" element={<AceitarConvite />} />
                 <Route
                   path="/assinatura"
                   element={

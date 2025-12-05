@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.woovi-check-status]
 verify_jwt = true
+
+[functions.convidar-funcionario]
+verify_jwt = true
+
+[functions.aceitar-convite]
+verify_jwt = true
