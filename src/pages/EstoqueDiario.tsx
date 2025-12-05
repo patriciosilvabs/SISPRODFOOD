@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck, PackageCheck } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SaveButton } from '@/components/ui/save-button';
 
 interface Loja {
   id: string;
@@ -75,6 +76,8 @@ const EstoqueDiario = () => {
   const [receivingProducts, setReceivingProducts] = useState(false);
   const [observacaoRecebimento, setObservacaoRecebimento] = useState('');
   const [quantidadesRecebidas, setQuantidadesRecebidas] = useState<{ [key: string]: number }>({});
+  const [originalEstoques, setOriginalEstoques] = useState<{ [key: string]: number }>({});
+  const [hasDirtyEstoque, setHasDirtyEstoque] = useState(false);
 
   // Obter dia da semana atual
   const diaAtual = useMemo(() => {
@@ -189,6 +192,14 @@ const EstoqueDiario = () => {
           data_confirmacao_recebimento: e.data_confirmacao_recebimento
         }));
         setEstoquesAtuais(estoquesMap);
+        
+        // Salvar valores originais para detecção de mudanças
+        const originals: { [key: string]: number } = {};
+        estoquesMap.forEach(e => {
+          originals[e.produto_id] = e.quantidade;
+        });
+        setOriginalEstoques(originals);
+        setHasDirtyEstoque(false);
 
         // Pegar última atualização
         if (estoquesAtuaisData && estoquesAtuaisData.length > 0) {
@@ -275,6 +286,20 @@ const EstoqueDiario = () => {
         return [...prev, { produto_id: produtoId, quantidade }];
       }
     });
+    
+    // Verificar se há mudanças comparando com valores originais
+    const originalVal = originalEstoques[produtoId] ?? 0;
+    if (quantidade !== originalVal) {
+      setHasDirtyEstoque(true);
+    } else {
+      // Verificar se ainda há alguma mudança em outros produtos
+      const stillDirty = estoquesAtuais.some(e => {
+        if (e.produto_id === produtoId) return false;
+        const origVal = originalEstoques[e.produto_id] ?? 0;
+        return e.quantidade !== origVal;
+      });
+      setHasDirtyEstoque(stillDirty);
+    }
   };
 
   // Atualizar quantidade de envio
@@ -477,14 +502,23 @@ const EstoqueDiario = () => {
         .eq('loja_id', lojaSelecionada);
 
       if (dadosAtualizados) {
-        setEstoquesAtuais(dadosAtualizados.map(e => ({
+        const estoquesMap = dadosAtualizados.map(e => ({
           produto_id: e.produto_id,
           quantidade: Number(e.quantidade),
           quantidade_ultimo_envio: e.quantidade_ultimo_envio ? Number(e.quantidade_ultimo_envio) : undefined,
           data_ultima_contagem: e.data_ultima_contagem,
           data_ultimo_envio: e.data_ultimo_envio,
           data_confirmacao_recebimento: e.data_confirmacao_recebimento
-        })));
+        }));
+        setEstoquesAtuais(estoquesMap);
+        
+        // Atualizar valores originais após salvar
+        const originals: { [key: string]: number } = {};
+        estoquesMap.forEach(e => {
+          originals[e.produto_id] = e.quantidade;
+        });
+        setOriginalEstoques(originals);
+        setHasDirtyEstoque(false);
       }
       
       // Atualizar última atualização
@@ -770,14 +804,15 @@ const EstoqueDiario = () => {
                     <>Nenhuma atualização registrada</>
                   )}
                 </div>
-                <Button 
-                  onClick={handleSalvar} 
-                  disabled={saving || produtosFiltrados.length === 0}
+                <SaveButton 
+                  isDirty={hasDirtyEstoque}
+                  isSaving={saving}
+                  onClick={handleSalvar}
                   className="gap-2"
                 >
-                  <Save className="h-4 w-4" />
-                  {saving ? 'Salvando...' : 'Salvar Estoque'}
-                </Button>
+                  <Save className="h-4 w-4 mr-1" />
+                  Salvar Estoque
+                </SaveButton>
               </div>
             )}
           </CardContent>

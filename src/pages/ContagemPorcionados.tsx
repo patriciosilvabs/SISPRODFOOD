@@ -13,6 +13,7 @@ import { ptBR } from 'date-fns/locale';
 import { numberToWords } from '@/lib/numberToWords';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { parsePesoProgressivo } from '@/lib/weightUtils';
+import { SaveButton } from '@/components/ui/save-button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -71,6 +72,8 @@ const ContagemPorcionados = () => {
   const [openLojas, setOpenLojas] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [editingValues, setEditingValues] = useState<Record<string, any>>({});
+  const [originalValues, setOriginalValues] = useState<Record<string, any>>({});
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<{ lojaId: string; itemId: string; itemNome: string } | null>(null);
   const [estoquesIdeais, setEstoquesIdeais] = useState<EstoqueIdeal>({
@@ -143,6 +146,8 @@ const ContagemPorcionados = () => {
 
       // Organizar contagens por loja
       const contagensPorLoja: Record<string, Contagem[]> = {};
+      const originals: Record<string, any> = {};
+      
       (contagensData || []).forEach((contagem: any) => {
         const item = itensData?.find(i => i.id === contagem.item_porcionado_id);
         const contagemComNome = {
@@ -154,9 +159,18 @@ const ContagemPorcionados = () => {
           contagensPorLoja[contagem.loja_id] = [];
         }
         contagensPorLoja[contagem.loja_id].push(contagemComNome);
+        
+        // Salvar valores originais para detecção de mudanças
+        const key = `${contagem.loja_id}-${contagem.item_porcionado_id}`;
+        originals[key] = {
+          final_sobra: contagem.final_sobra,
+          peso_total_g: contagem.peso_total_g,
+          ideal_amanha: contagem.ideal_amanha,
+        };
       });
 
       setContagens(contagensPorLoja);
+      setOriginalValues(originals);
       
       // Abrir todas as lojas por padrão
       setOpenLojas(new Set(lojasData?.map(l => l.id) || []));
@@ -191,9 +205,33 @@ const ContagemPorcionados = () => {
     }));
   };
 
+  // Função para detectar se uma linha está "dirty" (com mudanças não salvas)
+  const isRowDirty = (lojaId: string, itemId: string): boolean => {
+    const key = `${lojaId}-${itemId}`;
+    const current = editingValues[key];
+    const original = originalValues[key];
+    
+    if (!current) return false; // Nenhuma edição ainda
+    
+    // Comparar campo a campo
+    const fields = ['final_sobra', 'peso_total_g', 'ideal_amanha'];
+    for (const field of fields) {
+      if (current[field] !== undefined) {
+        const currentVal = String(current[field] ?? '');
+        const originalVal = String(original?.[field] ?? '');
+        if (currentVal !== originalVal) return true;
+      }
+    }
+    
+    return false;
+  };
+
   const handleSave = async (lojaId: string, itemId: string) => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
+    
+    // Marcar como salvando
+    setSavingKeys(prev => new Set([...prev, key]));
 
     if (!user) return;
 
@@ -416,7 +454,18 @@ const ContagemPorcionados = () => {
       }
 
       toast.success('Contagem salva com sucesso');
-      loadData();
+      
+      // Atualizar valores originais após salvar
+      const savedFinalSobra = parseInt(values?.final_sobra) || 0;
+      const savedIdealAmanha = parseInt(values?.ideal_amanha) || 0;
+      setOriginalValues(prev => ({
+        ...prev,
+        [key]: {
+          final_sobra: savedFinalSobra,
+          peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
+          ideal_amanha: savedIdealAmanha,
+        }
+      }));
       
       // Limpar valores editados
       setEditingValues(prev => {
@@ -424,9 +473,18 @@ const ContagemPorcionados = () => {
         delete newValues[key];
         return newValues;
       });
+      
+      loadData();
     } catch (error) {
       console.error('Erro ao salvar:', error);
       toast.error('Erro ao salvar contagem');
+    } finally {
+      // Remover do estado de salvando
+      setSavingKeys(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(key);
+        return newSet;
+      });
     }
   };
 
@@ -670,13 +728,12 @@ const ContagemPorcionados = () => {
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </Button>
-                            <Button
-                              size="sm"
-                              className="h-8 px-2 text-xs"
+                            <SaveButton
+                              isDirty={isRowDirty(loja.id, item.id)}
+                              isSaving={savingKeys.has(`${loja.id}-${item.id}`)}
                               onClick={() => handleSave(loja.id, item.id)}
-                            >
-                              Salvar
-                            </Button>
+                              className="h-8 px-2 text-xs"
+                            />
                           </div>
                         </div>
                       );
