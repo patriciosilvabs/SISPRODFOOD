@@ -16,7 +16,7 @@ interface ConcluirPreparoModalProps {
     peso_preparo_kg: number;
     sobra_preparo_kg: number;
     observacao_preparo: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export function ConcluirPreparoModal({
@@ -32,22 +32,28 @@ export function ConcluirPreparoModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('🔵 handleSubmit iniciado');
     
     const pesoKg = rawToKg(pesoPreparo);
     const sobraKg = rawToKg(sobraPreparo);
+    console.log('🔵 pesoKg:', pesoKg, 'sobraKg:', sobraKg, 'pesoPreparo raw:', pesoPreparo);
     
     if (pesoKg <= 0) {
+      console.log('🔴 pesoKg <= 0, retornando');
       toast.error('Por favor, informe o peso total');
       return;
     }
 
     setIsSubmitting(true);
+    console.log('🔵 Chamando onConfirm...');
+    
     try {
       await onConfirm({
         peso_preparo_kg: pesoKg,
         sobra_preparo_kg: sobraKg,
         observacao_preparo: observacao,
       });
+      console.log('🟢 onConfirm completou com sucesso');
       
       // Reset form apenas se sucesso
       setPesoPreparo('');
@@ -55,10 +61,12 @@ export function ConcluirPreparoModal({
       setObservacao('');
       onOpenChange(false);
     } catch (error) {
-      console.error('Erro ao concluir preparo:', error);
+      console.error('🔴 Erro no onConfirm:', error);
+      toast.error('Erro ao salvar. Tente novamente.');
       // Mantém modal aberto se houver erro
     } finally {
       setIsSubmitting(false);
+      console.log('🔵 handleSubmit finalizado');
     }
   };
 
