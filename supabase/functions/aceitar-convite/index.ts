@@ -1,207 +1,239 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 interface AceitarConviteRequest {
   token: string;
+  action: 'validate' | 'accept';
+  password?: string;
 }
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
+Deno.serve(async (req) => {
+  // Handle CORS
+  if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Get the authorization header
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new Error("Não autorizado");
-    }
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // Create Supabase client with user's token
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    
-    const supabaseUser = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
+    // Use service role client to bypass RLS
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     });
 
-    // Get current user
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
-    if (userError || !user) {
-      throw new Error("Usuário não autenticado");
-    }
-
-    // Use service role client for database operations
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Parse request body
-    const { token }: AceitarConviteRequest = await req.json();
+    const { token, action, password } = await req.json() as AceitarConviteRequest;
 
     if (!token) {
-      throw new Error("Token de convite não fornecido");
+      return new Response(
+        JSON.stringify({ error: 'Token de convite é obrigatório' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Find the invite
-    const { data: invite, error: inviteError } = await supabase
-      .from("convites_pendentes")
-      .select("*, organizations(nome)")
-      .eq("token", token)
+    // Fetch the pending invitation
+    const { data: invite, error: inviteError } = await supabaseAdmin
+      .from('convites_pendentes')
+      .select('*, organizations(nome)')
+      .eq('token', token)
       .single();
 
     if (inviteError || !invite) {
-      throw new Error("Convite não encontrado");
+      console.error('Error fetching invite:', inviteError);
+      return new Response(
+        JSON.stringify({ error: 'Convite não encontrado ou inválido' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Check if invite is still valid
-    if (invite.status !== "pendente") {
-      throw new Error(`Este convite já foi ${invite.status === "aceito" ? "aceito" : "cancelado ou expirou"}`);
+    // Validate invite status
+    if (invite.status !== 'pendente') {
+      return new Response(
+        JSON.stringify({ error: 'Este convite já foi utilizado' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Check if invite has expired
-    if (new Date(invite.expires_at) < new Date()) {
-      // Update status to expired
-      await supabase
-        .from("convites_pendentes")
-        .update({ status: "expirado" })
-        .eq("id", invite.id);
-      throw new Error("Este convite expirou");
+    const now = new Date();
+    const expiresAt = new Date(invite.expires_at);
+    if (now > expiresAt) {
+      return new Response(
+        JSON.stringify({ error: 'Este convite expirou' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Check if user email matches invite email
-    if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new Error(`Este convite foi enviado para ${invite.email}. Faça login com esse email para aceitar.`);
+    // If action is validate, just return invite info
+    if (action === 'validate') {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          email: invite.email,
+          organizationName: invite.organizations?.nome || 'Organização',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Check if user already belongs to an organization
-    const { data: existingMember } = await supabase
-      .from("organization_members")
-      .select("id, organization_id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (existingMember) {
-      if (existingMember.organization_id === invite.organization_id) {
-        // Already in this organization, just update invite status
-        await supabase
-          .from("convites_pendentes")
-          .update({ status: "aceito", accepted_at: new Date().toISOString() })
-          .eq("id", invite.id);
-        
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: "Você já faz parte desta organização",
-            already_member: true,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json", ...corsHeaders },
-          }
-        );
-      } else {
-        throw new Error("Você já pertence a outra organização. Não é possível aceitar este convite.");
-      }
+    // Action is 'accept' - need password
+    if (!password || password.length < 6) {
+      return new Response(
+        JSON.stringify({ error: 'Senha é obrigatória e deve ter pelo menos 6 caracteres' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Start transaction-like operations
-    console.log("Processing invite for user:", user.id);
-
-    // 1. Add user to organization
-    const { error: memberError } = await supabase
-      .from("organization_members")
-      .insert({
-        organization_id: invite.organization_id,
-        user_id: user.id,
-        role: invite.roles[0] || "Loja", // Default role for organization_members
-      });
-
-    if (memberError) {
-      console.error("Error adding to organization:", memberError);
-      throw new Error("Erro ao adicionar usuário à organização");
+    // Find the user by email
+    const { data: { users }, error: listUsersError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    if (listUsersError) {
+      console.error('Error listing users:', listUsersError);
+      return new Response(
+        JSON.stringify({ error: 'Erro ao buscar usuário' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // 2. Add user roles
-    const roleInserts = invite.roles.map((role: string) => ({
-      user_id: user.id,
-      role: role,
-    }));
+    const user = users.find(u => u.email?.toLowerCase() === invite.email.toLowerCase());
 
-    const { error: rolesError } = await supabase
-      .from("user_roles")
-      .insert(roleInserts);
-
-    if (rolesError) {
-      console.error("Error adding roles:", rolesError);
-      // Rollback organization membership
-      await supabase
-        .from("organization_members")
-        .delete()
-        .eq("user_id", user.id);
-      throw new Error("Erro ao atribuir funções ao usuário");
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: 'Usuário não encontrado. Contate o administrador.' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // 3. Add store access if any
-    if (invite.lojas_ids && invite.lojas_ids.length > 0) {
-      const lojaInserts = invite.lojas_ids.map((lojaId: string) => ({
-        user_id: user.id,
-        loja_id: lojaId,
-        organization_id: invite.organization_id,
-      }));
-
-      const { error: lojasError } = await supabase
-        .from("lojas_acesso")
-        .insert(lojaInserts);
-
-      if (lojasError) {
-        console.error("Error adding store access:", lojasError);
-        // Continue anyway, stores can be added later
-      }
-    }
-
-    // 4. Update invite status
-    const { error: updateError } = await supabase
-      .from("convites_pendentes")
-      .update({ 
-        status: "aceito", 
-        accepted_at: new Date().toISOString() 
-      })
-      .eq("id", invite.id);
-
-    if (updateError) {
-      console.error("Error updating invite status:", updateError);
-    }
-
-    console.log("Invite accepted successfully for user:", user.id);
-
-    const orgName = (invite.organizations as any)?.nome || "organização";
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: `Bem-vindo à ${orgName}!`,
-        organization_id: invite.organization_id,
-        roles: invite.roles,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+    // Update user password
+    const { error: updatePasswordError } = await supabaseAdmin.auth.admin.updateUserById(
+      user.id,
+      { password: password }
     );
-  } catch (error: any) {
-    console.error("Error in aceitar-convite:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+
+    if (updatePasswordError) {
+      console.error('Error updating password:', updatePasswordError);
+      return new Response(
+        JSON.stringify({ error: 'Erro ao definir senha' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check if user is already a member of the organization
+    const { data: existingMember, error: memberCheckError } = await supabaseAdmin
+      .from('organization_members')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('organization_id', invite.organization_id)
+      .maybeSingle();
+
+    if (memberCheckError) {
+      console.error('Error checking membership:', memberCheckError);
+    }
+
+    // If not already a member, add them
+    if (!existingMember) {
+      // Add user to organization_members
+      const { error: memberError } = await supabaseAdmin
+        .from('organization_members')
+        .insert({
+          user_id: user.id,
+          organization_id: invite.organization_id,
+          role: invite.roles[0] || 'Loja',
+        });
+
+      if (memberError) {
+        console.error('Error adding organization member:', memberError);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao adicionar membro à organização' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+    }
+
+    // Add user roles
+    for (const role of invite.roles) {
+      const { data: existingRole } = await supabaseAdmin
+        .from('user_roles')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('role', role)
+        .maybeSingle();
+
+      if (!existingRole) {
+        const { error: roleError } = await supabaseAdmin
+          .from('user_roles')
+          .insert({
+            user_id: user.id,
+            role: role,
+          });
+
+        if (roleError) {
+          console.error('Error adding role:', role, roleError);
+        }
+      }
+    }
+
+    // Add store access if specified
+    if (invite.lojas_ids && invite.lojas_ids.length > 0) {
+      for (const lojaId of invite.lojas_ids) {
+        const { data: existingAccess } = await supabaseAdmin
+          .from('lojas_acesso')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('loja_id', lojaId)
+          .maybeSingle();
+
+        if (!existingAccess) {
+          const { error: accessError } = await supabaseAdmin
+            .from('lojas_acesso')
+            .insert({
+              user_id: user.id,
+              loja_id: lojaId,
+              organization_id: invite.organization_id,
+            });
+
+          if (accessError) {
+            console.error('Error adding store access:', lojaId, accessError);
+          }
+        }
+      }
+    }
+
+    // Update invite status to accepted
+    const { error: updateInviteError } = await supabaseAdmin
+      .from('convites_pendentes')
+      .update({
+        status: 'aceito',
+        accepted_at: new Date().toISOString(),
+      })
+      .eq('id', invite.id);
+
+    if (updateInviteError) {
+      console.error('Error updating invite status:', updateInviteError);
+    }
+
+    console.log(`Invite accepted successfully for user ${user.id} in organization ${invite.organization_id}`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'Convite aceito com sucesso! Bem-vindo à equipe.',
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Erro interno do servidor' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
