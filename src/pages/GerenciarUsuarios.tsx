@@ -127,41 +127,68 @@ const GerenciarUsuarios = () => {
   const [cancelingInvite, setCancelingInvite] = useState<ConvitePendente | null>(null);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (organizationId) {
+      fetchData();
+    }
+  }, [organizationId]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
+
+      if (!organizationId) {
+        setLoading(false);
+        return;
+      }
       
-      // Buscar profiles
+      // Buscar membros da organização primeiro
+      const { data: members, error: membersError } = await supabase
+        .from('organization_members')
+        .select('user_id')
+        .eq('organization_id', organizationId);
+
+      if (membersError) throw membersError;
+
+      const memberUserIds = (members || []).map(m => m.user_id);
+
+      if (memberUserIds.length === 0) {
+        setUsuarios([]);
+        setLoading(false);
+        return;
+      }
+
+      // Buscar profiles dos membros da organização
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
+        .in('id', memberUserIds)
         .order('nome');
 
       if (profilesError) throw profilesError;
 
-      // Buscar roles
+      // Buscar roles dos membros
       const { data: roles, error: rolesError } = await supabase
         .from('user_roles')
-        .select('user_id, role');
+        .select('user_id, role')
+        .in('user_id', memberUserIds);
 
       if (rolesError) throw rolesError;
 
-      // Buscar lojas
+      // Buscar lojas da organização
       const { data: lojasData, error: lojasError } = await supabase
         .from('lojas')
         .select('*')
+        .eq('organization_id', organizationId)
         .order('nome');
 
       if (lojasError) throw lojasError;
       setLojas(lojasData || []);
 
-      // Buscar acessos às lojas
+      // Buscar acessos às lojas dos membros
       const { data: lojasAcesso, error: lojasAcessoError } = await supabase
         .from('lojas_acesso')
-        .select('user_id, loja_id');
+        .select('user_id, loja_id')
+        .in('user_id', memberUserIds);
 
       if (lojasAcessoError) throw lojasAcessoError;
 
@@ -170,6 +197,7 @@ const GerenciarUsuarios = () => {
         .from('convites_pendentes')
         .select('*')
         .eq('status', 'pendente')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (convitesError) {
