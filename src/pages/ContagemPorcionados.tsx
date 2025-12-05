@@ -600,7 +600,7 @@ const ContagemPorcionados = () => {
                     <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
                       <div className="col-span-3">Item</div>
                       <div className="col-span-2 text-center">Sobra</div>
-                      <div className="col-span-2 text-center">Peso (g)</div>
+                      <div className="col-span-2 text-center">Peso</div>
                       <div className="col-span-2 text-center">Ideal</div>
                       <div className="col-span-2 text-center">A Produzir</div>
                       <div className="col-span-1 text-center">Ação</div>
