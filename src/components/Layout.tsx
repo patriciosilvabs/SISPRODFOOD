@@ -71,17 +71,24 @@ export const Layout = ({ children }: LayoutProps) => {
           <SectionLabel>CPD - Produção</SectionLabel>
           <NavLink to="/resumo-da-producao" icon={Factory}>Resumo da Produção</NavLink>
           <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
-          <NavLink to="/contagem-porcionados" icon={ClipboardList}>Contagem Porcionados</NavLink>
-          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
         </>
       )}
       
       {/* LOJA */}
-      {(isAdmin() || hasRole('Loja') || hasRole('Produção')) && (
+      {(isAdmin() || hasRole('Loja')) && (
         <>
           <SectionLabel>Loja</SectionLabel>
+          <NavLink to="/contagem-porcionados" icon={ClipboardList}>Contagem Porcionados</NavLink>
           <NavLink to="/estoque-diario" icon={Boxes}>Estoque da Loja</NavLink>
           <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
+        </>
+      )}
+      
+      {/* LOGÍSTICA - Compartilhado entre CPD e Loja */}
+      {(isAdmin() || hasRole('Produção') || hasRole('Loja')) && (
+        <>
+          <SectionLabel>Logística</SectionLabel>
+          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
         </>
       )}
       
