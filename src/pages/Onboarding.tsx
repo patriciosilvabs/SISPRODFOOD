@@ -39,8 +39,7 @@ export default function Onboarding() {
     try {
       const { data, error } = await supabase.functions.invoke('criar-organizacao', {
         body: {
-          nome: nomeOrganizacao.trim(),
-          userId: user.id
+          nome: nomeOrganizacao.trim()
         }
       });
 

@@ -12,10 +12,42 @@ serve(async (req) => {
   }
 
   try {
-    const { nome, userId } = await req.json();
+    // Extract and validate JWT token from Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Authorization header é obrigatório');
+    }
 
-    if (!nome || !userId) {
-      throw new Error('Nome da organização e userId são obrigatórios');
+    const token = authHeader.replace('Bearer ', '');
+    
+    // Create a client with anon key to verify the user's token
+    const supabaseAuth = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    // Get the authenticated user from the JWT token
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
+    
+    if (userError || !user) {
+      console.error('Erro ao validar usuário:', userError);
+      throw new Error('Token inválido ou usuário não autenticado');
+    }
+
+    // Use the authenticated user's ID - NOT from request body
+    const userId = user.id;
+    console.log('Usuário autenticado:', userId);
+
+    const { nome } = await req.json();
+
+    if (!nome) {
+      throw new Error('Nome da organização é obrigatório');
     }
 
     if (nome.length < 3 || nome.length > 100) {
@@ -33,6 +65,17 @@ serve(async (req) => {
         }
       }
     );
+
+    // Verificar se o usuário já pertence a alguma organização
+    const { data: existingMembership } = await supabaseAdmin
+      .from('organization_members')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (existingMembership) {
+      throw new Error('Usuário já pertence a uma organização');
+    }
 
     // Gerar slug único a partir do nome
     let slug = nome
