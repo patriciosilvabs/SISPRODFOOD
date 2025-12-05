@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.criar-organizacao]
 verify_jwt = false
+
+[functions.woovi-pix]
+verify_jwt = true
