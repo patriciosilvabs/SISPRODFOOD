@@ -160,7 +160,7 @@ serve(async (req) => {
           "Authorization": `Bearer ${RESEND_API_KEY}`,
         },
         body: JSON.stringify({
-          from: `${orgName} <onboarding@resend.dev>`,
+          from: `${orgName} <noreply@simchef.app>`,
           to: [email],
           subject: `Você foi convidado para ${orgName}`,
           html: `
