@@ -1534,6 +1534,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
