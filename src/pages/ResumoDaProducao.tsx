@@ -471,12 +471,17 @@ const ResumoDaProducao = () => {
     sobra_preparo_kg: number;
     observacao_preparo: string;
   }) => {
+    console.log('🔵 handleConcluirPreparo chamado com data:', data);
+    console.log('🔵 selectedRegistro:', selectedRegistro?.id, selectedRegistro?.item_nome);
+    
     if (!selectedRegistro) {
       console.error('❌ selectedRegistro está null!');
       toast.error('Erro: registro não selecionado. Tente novamente.');
       return;
     }
 
+    console.log('🔵 Fazendo update no Supabase para registro:', selectedRegistro.id);
+    
     try {
       const { error } = await supabase
         .from('producao_registros')
@@ -490,14 +495,18 @@ const ResumoDaProducao = () => {
         })
         .eq('id', selectedRegistro.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('🔴 Erro do Supabase:', error);
+        throw error;
+      }
 
-      toast.success('Etapa de preparo concluída');
+      console.log('🟢 Update no Supabase bem sucedido!');
+      toast.success(`${selectedRegistro.item_nome} avançou para porcionamento`);
       loadProducaoRegistros();
       setModalPreparo(false);
       setSelectedRegistro(null);
     } catch (error) {
-      console.error('Erro ao concluir preparo:', error);
+      console.error('🔴 Erro ao concluir preparo:', error);
       toast.error('Erro ao concluir preparo');
       throw error; // Re-throw para o modal saber que falhou
     }
