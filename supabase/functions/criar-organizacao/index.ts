@@ -61,15 +61,22 @@ serve(async (req) => {
       contador++;
     }
 
-    console.log('Criando organização:', { nome, slug: slugFinal, userId });
+    // Calcular datas de trial (7 dias)
+    const now = new Date();
+    const trialEndDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // 1. Criar organização
+    console.log('Criando organização:', { nome, slug: slugFinal, userId, trialEndDate: trialEndDate.toISOString() });
+
+    // 1. Criar organização com dados de trial
     const { data: org, error: orgError } = await supabaseAdmin
       .from('organizations')
       .insert({
         nome,
         slug: slugFinal,
-        ativo: true
+        ativo: true,
+        subscription_status: 'trial',
+        trial_start_date: now.toISOString(),
+        trial_end_date: trialEndDate.toISOString()
       })
       .select()
       .single();

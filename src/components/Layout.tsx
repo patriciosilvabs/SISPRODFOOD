@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -8,14 +9,12 @@ import {
   LogOut, 
   Menu,
   Settings,
-  Trash2,
   Truck,
   AlertTriangle,
   ShoppingCart,
   Clock,
   ArrowLeft,
   Factory,
-  Store,
   ClipboardList,
   Boxes
 } from 'lucide-react';
@@ -24,7 +23,6 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Separator } from '@/components/ui/separator';
 
 interface LayoutProps {
   children: ReactNode;
@@ -32,6 +30,7 @@ interface LayoutProps {
 
 export const Layout = ({ children }: LayoutProps) => {
   const { profile, signOut, isAdmin, hasRole } = useAuth();
+  const { subscriptionStatus, daysRemaining, isTrialExpired } = useSubscription();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -109,6 +108,22 @@ export const Layout = ({ children }: LayoutProps) => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Banner de Trial */}
+      {subscriptionStatus === 'trial' && !isTrialExpired && daysRemaining !== null && (
+        <div className="bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 text-center text-sm">
+          <Clock className="inline h-4 w-4 mr-1 text-amber-600 dark:text-amber-400" />
+          <span className="text-amber-800 dark:text-amber-200">
+            Período de teste: <strong>{daysRemaining} dias restantes</strong>
+          </span>
+          <Link 
+            to="/assinatura" 
+            className="ml-2 underline text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100"
+          >
+            Assinar agora
+          </Link>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center justify-between">
