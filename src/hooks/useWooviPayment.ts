@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { WooviChargeRequest, WooviChargeResponse, PaymentState, PlanoAssinatura, PLANOS_CONFIG } from '@/types/payment';
+import { WooviChargeRequest, WooviChargeResponse, PaymentState } from '@/types/payment';
 
 export const useWooviPayment = () => {
   const [state, setState] = useState<PaymentState>({
@@ -11,7 +11,8 @@ export const useWooviPayment = () => {
 
   const createCharge = useCallback(async (
     organizationId: string,
-    plano: PlanoAssinatura,
+    planoSlug: string,
+    valorCentavos: number,
     customerInfo?: {
       name?: string;
       email?: string;
@@ -21,15 +22,10 @@ export const useWooviPayment = () => {
     setState({ isLoading: true, error: null, charge: null });
 
     try {
-      const planoConfig = PLANOS_CONFIG[plano];
-      if (!planoConfig) {
-        throw new Error('Plano inválido');
-      }
-
       const request: WooviChargeRequest = {
         organizationId,
-        plano,
-        valor: planoConfig.preco,
+        plano: planoSlug,
+        valor: valorCentavos,
         customerName: customerInfo?.name,
         customerEmail: customerInfo?.email,
         customerTaxID: customerInfo?.taxID,
