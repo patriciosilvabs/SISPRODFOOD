@@ -471,7 +471,11 @@ const ResumoDaProducao = () => {
     sobra_preparo_kg: number;
     observacao_preparo: string;
   }) => {
-    if (!selectedRegistro) return;
+    if (!selectedRegistro) {
+      console.error('❌ selectedRegistro está null!');
+      toast.error('Erro: registro não selecionado. Tente novamente.');
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -495,6 +499,7 @@ const ResumoDaProducao = () => {
     } catch (error) {
       console.error('Erro ao concluir preparo:', error);
       toast.error('Erro ao concluir preparo');
+      throw error; // Re-throw para o modal saber que falhou
     }
   };
 
