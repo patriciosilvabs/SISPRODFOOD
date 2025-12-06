@@ -10,6 +10,7 @@ interface ConviteRequest {
   email: string;
   roles: string[];
   lojas_ids?: string[];
+  permissions?: string[];
 }
 
 // Send invitation email via Resend with SimChef branded template
@@ -182,10 +183,15 @@ serve(async (req) => {
       .single();
 
     // Parse request body
-    const { email, roles, lojas_ids = [] }: ConviteRequest = await req.json();
+    const { email, roles = [], lojas_ids = [], permissions = [] }: ConviteRequest = await req.json();
 
-    if (!email || !roles || roles.length === 0) {
-      throw new Error("Email e pelo menos uma função são obrigatórios");
+    if (!email) {
+      throw new Error("Email é obrigatório");
+    }
+
+    // Deve ter pelo menos uma role OU pelo menos uma permissão
+    if (roles.length === 0 && permissions.length === 0) {
+      throw new Error("Pelo menos uma função (role) ou permissão é obrigatória");
     }
 
     const normalizedEmail = email.toLowerCase();
