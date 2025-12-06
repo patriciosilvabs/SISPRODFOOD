@@ -68,13 +68,17 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       if (isSuperAdminRoute) return;
       
       // Verificar permissão de rota usando o sistema granular
-      // Rotas que não precisam de permissão específica (dashboard, auth-related)
-      const publicRoutes = ['/', '/assinatura', '/aceitar-convite'];
+      // Rotas que não precisam de permissão específica (auth-related apenas)
+      const publicRoutes = ['/assinatura', '/aceitar-convite'];
       const isPublicRoute = publicRoutes.includes(location.pathname);
       
       if (!isPublicRoute && !hasRouteAccess(location.pathname)) {
-        // Usuário não tem permissão para esta rota
-        navigate('/');
+        // Usuário não tem permissão para esta rota - redirecionar para primeira rota permitida
+        const { ROUTE_PERMISSIONS } = require('@/lib/permissions');
+        const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
+          (route: string) => route !== '/' && hasRouteAccess(route)
+        );
+        navigate(allowedRoute || '/assinatura');
         return;
       }
       

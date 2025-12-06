@@ -102,9 +102,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .select('role')
         .eq('user_id', userId);
 
-      if (rolesData) {
-        setRoles(rolesData.map((r: UserRole) => r.role));
+      let userRoles = rolesData?.map((r: UserRole) => r.role) || [];
+
+      // Se não tem roles em user_roles, buscar de organization_members
+      if (userRoles.length === 0) {
+        const { data: orgMemberData } = await supabase
+          .from('organization_members')
+          .select('role')
+          .eq('user_id', userId)
+          .single();
+        
+        if (orgMemberData?.role) {
+          userRoles = [orgMemberData.role as 'Admin' | 'Produção' | 'Loja' | 'SuperAdmin'];
+        }
       }
+
+      setRoles(userRoles);
     } catch (error) {
       console.error('Error fetching profile:', error);
     }
