@@ -158,11 +158,12 @@ const ConfigurarInterface = () => {
           .upsert(
             {
               organization_id: organizationId,
+              user_id: null, // Configuração da organização (não específica de usuário)
               pagina_id: paginaId,
               config: JSON.parse(JSON.stringify(config))
             } as any, 
             { 
-              onConflict: 'organization_id,pagina_id',
+              onConflict: 'organization_id,user_id,pagina_id',
               ignoreDuplicates: false 
             }
           );
