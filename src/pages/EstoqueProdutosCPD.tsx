@@ -39,7 +39,11 @@ import {
   RefreshCw,
   Truck,
   ClipboardList,
-  Calendar
+  Calendar,
+  Send,
+  ShoppingCart,
+  Trash2,
+  X
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -97,6 +101,31 @@ interface ItemPedido {
   unidade: string | null;
   divergencia: boolean;
   observacao_divergencia: string | null;
+}
+
+interface Loja {
+  id: string;
+  nome: string;
+}
+
+interface RomaneioProduto {
+  id: string;
+  loja_id: string;
+  loja_nome: string;
+  status: string;
+  data_criacao: string;
+  data_envio: string | null;
+  usuario_nome: string;
+  observacao: string | null;
+}
+
+interface RomaneioProdutoItem {
+  id: string;
+  romaneio_id: string;
+  produto_id: string;
+  produto_nome: string;
+  quantidade: number;
+  unidade: string | null;
 }
 
 const CATEGORIAS = [
@@ -158,6 +187,16 @@ export default function EstoqueProdutosCPD() {
   const [modalCriarPedido, setModalCriarPedido] = useState(false);
   const [modalConferir, setModalConferir] = useState(false);
   const [pedidoParaConferir, setPedidoParaConferir] = useState<PedidoCompra | null>(null);
+
+  // Estados para Enviar para Lojas
+  const [lojas, setLojas] = useState<Loja[]>([]);
+  const [lojaSelecionadaRomaneio, setLojaSelecionadaRomaneio] = useState("");
+  const [carrinhoRomaneio, setCarrinhoRomaneio] = useState<{ produto_id: string; produto_nome: string; quantidade: number; unidade: string | null }[]>([]);
+  const [searchRomaneio, setSearchRomaneio] = useState("");
+  const [romaneiosPendentes, setRomaneiosPendentes] = useState<RomaneioProduto[]>([]);
+  const [itensRomaneiosPendentes, setItensRomaneiosPendentes] = useState<{ [key: string]: RomaneioProdutoItem[] }>({});
+  const [loadingRomaneios, setLoadingRomaneios] = useState(false);
+  const [enviandoRomaneio, setEnviandoRomaneio] = useState(false);
 
   // Buscar produtos e estoques
   const fetchData = async () => {
@@ -319,8 +358,58 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
+  // Buscar lojas
+  const fetchLojas = async () => {
+    if (!organizationId) return;
+    try {
+      const { data, error } = await supabase
+        .from("lojas")
+        .select("id, nome")
+        .order("nome");
+      if (error) throw error;
+      setLojas(data || []);
+    } catch (error: any) {
+      console.error("Erro ao buscar lojas:", error);
+    }
+  };
+
+  // Buscar romaneios de produtos pendentes
+  const fetchRomaneiosProdutos = async () => {
+    if (!organizationId) return;
+    setLoadingRomaneios(true);
+    try {
+      const { data, error } = await supabase
+        .from("romaneios_produtos")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .in("status", ["pendente", "enviado"])
+        .order("data_criacao", { ascending: false });
+
+      if (error) throw error;
+      setRomaneiosPendentes(data || []);
+
+      // Buscar itens de cada romaneio pendente
+      for (const romaneio of data || []) {
+        const { data: itens } = await supabase
+          .from("romaneios_produtos_itens")
+          .select("*")
+          .eq("romaneio_id", romaneio.id);
+        
+        setItensRomaneiosPendentes(prev => ({
+          ...prev,
+          [romaneio.id]: itens || []
+        }));
+      }
+    } catch (error: any) {
+      console.error("Erro ao buscar romaneios:", error);
+    } finally {
+      setLoadingRomaneios(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchLojas();
   }, [organizationId]);
 
   useEffect(() => {
@@ -328,6 +417,8 @@ export default function EstoqueProdutosCPD() {
       fetchDemandas();
     } else if (activeTab === "receber") {
       fetchPedidos();
+    } else if (activeTab === "enviar") {
+      fetchRomaneiosProdutos();
     }
   }, [activeTab, organizationId]);
 
@@ -635,6 +726,231 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
+  // Funções de Romaneio de Produtos
+  const produtosParaRomaneio = useMemo(() => {
+    return produtos.filter(p => {
+      const estoque = estoques.find(e => e.produto_id === p.id);
+      const quantidade = estoque?.quantidade || 0;
+      if (quantidade <= 0) return false;
+      const matchSearch = searchRomaneio === "" ||
+        p.nome.toLowerCase().includes(searchRomaneio.toLowerCase()) ||
+        p.codigo?.toLowerCase().includes(searchRomaneio.toLowerCase());
+      return matchSearch;
+    }).map(p => {
+      const estoque = estoques.find(e => e.produto_id === p.id);
+      return {
+        ...p,
+        quantidade: estoque?.quantidade || 0
+      };
+    });
+  }, [produtos, estoques, searchRomaneio]);
+
+  const handleAdicionarAoCarrinho = (produto: Produto & { quantidade: number }, qtd: number) => {
+    if (qtd <= 0 || qtd > produto.quantidade) return;
+    
+    setCarrinhoRomaneio(prev => {
+      const existente = prev.find(p => p.produto_id === produto.id);
+      if (existente) {
+        return prev.map(p =>
+          p.produto_id === produto.id
+            ? { ...p, quantidade: Math.min(p.quantidade + qtd, produto.quantidade) }
+            : p
+        );
+      }
+      return [...prev, {
+        produto_id: produto.id,
+        produto_nome: produto.nome,
+        quantidade: qtd,
+        unidade: produto.unidade_consumo
+      }];
+    });
+  };
+
+  const handleRemoverDoCarrinho = (produtoId: string) => {
+    setCarrinhoRomaneio(prev => prev.filter(p => p.produto_id !== produtoId));
+  };
+
+  const handleCriarRomaneio = async () => {
+    if (!organizationId || !profile || !lojaSelecionadaRomaneio || carrinhoRomaneio.length === 0) {
+      toast({
+        title: "Dados incompletos",
+        description: "Selecione uma loja e adicione produtos ao carrinho.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const loja = lojas.find(l => l.id === lojaSelecionadaRomaneio);
+      
+      // Validar estoque disponível
+      for (const item of carrinhoRomaneio) {
+        const estoque = estoques.find(e => e.produto_id === item.produto_id);
+        if (!estoque || estoque.quantidade < item.quantidade) {
+          toast({
+            title: "Estoque insuficiente",
+            description: `Produto "${item.produto_nome}" não tem estoque suficiente.`,
+            variant: "destructive",
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Criar romaneio
+      const { data: romaneioData, error: romaneioError } = await supabase
+        .from("romaneios_produtos")
+        .insert({
+          loja_id: lojaSelecionadaRomaneio,
+          loja_nome: loja?.nome || "Loja",
+          usuario_id: profile.id,
+          usuario_nome: profile.nome,
+          organization_id: organizationId,
+        })
+        .select()
+        .single();
+
+      if (romaneioError) throw romaneioError;
+
+      // Criar itens do romaneio
+      const itensParaInserir = carrinhoRomaneio.map(item => ({
+        romaneio_id: romaneioData.id,
+        produto_id: item.produto_id,
+        produto_nome: item.produto_nome,
+        quantidade: item.quantidade,
+        unidade: item.unidade,
+        organization_id: organizationId,
+      }));
+
+      const { error: itensError } = await supabase
+        .from("romaneios_produtos_itens")
+        .insert(itensParaInserir);
+
+      if (itensError) throw itensError;
+
+      toast({
+        title: "Romaneio criado",
+        description: `Romaneio para ${loja?.nome} criado com ${carrinhoRomaneio.length} produtos.`,
+      });
+
+      // Limpar carrinho
+      setCarrinhoRomaneio([]);
+      setLojaSelecionadaRomaneio("");
+      setSearchRomaneio("");
+      fetchRomaneiosProdutos();
+    } catch (error: any) {
+      console.error("Erro ao criar romaneio:", error);
+      toast({
+        title: "Erro ao criar romaneio",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEnviarRomaneio = async (romaneioId: string) => {
+    if (!organizationId || !profile) return;
+    setEnviandoRomaneio(true);
+
+    try {
+      const itens = itensRomaneiosPendentes[romaneioId] || [];
+      
+      // Validar e decrementar estoque
+      for (const item of itens) {
+        const estoque = estoques.find(e => e.produto_id === item.produto_id);
+        if (!estoque || estoque.quantidade < item.quantidade) {
+          toast({
+            title: "Estoque insuficiente",
+            description: `Produto "${item.produto_nome}" não tem estoque suficiente. Disponível: ${estoque?.quantidade || 0}, Necessário: ${item.quantidade}`,
+            variant: "destructive",
+          });
+          setEnviandoRomaneio(false);
+          return;
+        }
+      }
+
+      // Decrementar estoque e registrar movimentação
+      for (const item of itens) {
+        const estoque = estoques.find(e => e.produto_id === item.produto_id);
+        const quantidadeAnterior = estoque?.quantidade || 0;
+        const quantidadeFinal = quantidadeAnterior - item.quantidade;
+
+        await supabase
+          .from("estoque_cpd_produtos")
+          .update({
+            quantidade: quantidadeFinal,
+            data_ultima_movimentacao: new Date().toISOString(),
+          })
+          .eq("produto_id", item.produto_id)
+          .eq("organization_id", organizationId);
+
+        await supabase
+          .from("movimentacoes_cpd_produtos")
+          .insert({
+            produto_id: item.produto_id,
+            produto_nome: item.produto_nome,
+            tipo: "saida_romaneio",
+            quantidade: item.quantidade,
+            quantidade_anterior: quantidadeAnterior,
+            quantidade_posterior: quantidadeFinal,
+            observacao: `Romaneio #${romaneioId.slice(0, 8)}`,
+            usuario_id: profile.id,
+            usuario_nome: profile.nome,
+            organization_id: organizationId,
+          });
+      }
+
+      // Atualizar status do romaneio
+      await supabase
+        .from("romaneios_produtos")
+        .update({
+          status: "enviado",
+          data_envio: new Date().toISOString(),
+        })
+        .eq("id", romaneioId);
+
+      toast({
+        title: "Romaneio enviado",
+        description: "Estoque debitado e romaneio marcado como enviado.",
+      });
+
+      fetchData();
+      fetchRomaneiosProdutos();
+    } catch (error: any) {
+      console.error("Erro ao enviar romaneio:", error);
+      toast({
+        title: "Erro ao enviar",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setEnviandoRomaneio(false);
+    }
+  };
+
+  const handleExcluirRomaneio = async (romaneioId: string) => {
+    if (!confirm("Excluir este romaneio pendente?")) return;
+
+    try {
+      await supabase
+        .from("romaneios_produtos")
+        .delete()
+        .eq("id", romaneioId);
+
+      toast({ title: "Romaneio excluído" });
+      fetchRomaneiosProdutos();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao excluir",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   // Estatísticas
   const stats = useMemo(() => {
     const total = produtosComEstoque.length;
@@ -674,7 +990,7 @@ export default function EstoqueProdutosCPD() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="estoque" className="gap-2">
               <Package className="h-4 w-4" />
               <span className="hidden sm:inline">Estoque</span>
@@ -686,6 +1002,15 @@ export default function EstoqueProdutosCPD() {
             <TabsTrigger value="demandas" className="gap-2">
               <Store className="h-4 w-4" />
               <span className="hidden sm:inline">Demandas</span>
+            </TabsTrigger>
+            <TabsTrigger value="enviar" className="gap-2">
+              <Send className="h-4 w-4" />
+              <span className="hidden sm:inline">Enviar Lojas</span>
+              {romaneiosPendentes.filter(r => r.status === "pendente").length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
+                  {romaneiosPendentes.filter(r => r.status === "pendente").length}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="receber" className="gap-2">
               <Truck className="h-4 w-4" />
@@ -999,6 +1324,235 @@ export default function EstoqueProdutosCPD() {
                         })}
                       </TableBody>
                     </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Aba Enviar para Lojas */}
+          <TabsContent value="enviar" className="space-y-4">
+            {/* Criar Romaneio */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5" />
+                  Criar Romaneio de Produtos
+                </CardTitle>
+                <CardDescription>
+                  Selecione produtos do estoque CPD para enviar às lojas
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Seleção de Loja */}
+                <div className="space-y-2">
+                  <Label>Loja de Destino</Label>
+                  <Select value={lojaSelecionadaRomaneio} onValueChange={setLojaSelecionadaRomaneio}>
+                    <SelectTrigger className="w-full sm:w-72">
+                      <SelectValue placeholder="Selecione a loja..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lojas.map((loja) => (
+                        <SelectItem key={loja.id} value={loja.id}>
+                          {loja.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {lojaSelecionadaRomaneio && (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Produtos Disponíveis */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-semibold">Produtos Disponíveis</Label>
+                        <Badge variant="outline">{produtosParaRomaneio.length} itens</Badge>
+                      </div>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar produto..."
+                          value={searchRomaneio}
+                          onChange={(e) => setSearchRomaneio(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                      <div className="border rounded-lg max-h-80 overflow-y-auto">
+                        {produtosParaRomaneio.length === 0 ? (
+                          <div className="p-4 text-center text-muted-foreground">
+                            Nenhum produto com estoque disponível
+                          </div>
+                        ) : (
+                          <div className="divide-y">
+                            {produtosParaRomaneio.slice(0, 20).map((produto) => {
+                              const [qtdTemp, setQtdTemp] = useState(1);
+                              return (
+                                <div key={produto.id} className="p-3 flex items-center justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium truncate">{produto.nome}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Estoque: {produto.quantidade} {produto.unidade_consumo || "un"}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={produto.quantidade}
+                                      value={qtdTemp}
+                                      onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
+                                      className="w-16 h-8 text-center"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleAdicionarAoCarrinho(produto, qtdTemp)}
+                                      disabled={qtdTemp <= 0 || qtdTemp > produto.quantidade}
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Carrinho */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-semibold flex items-center gap-2">
+                          <ShoppingCart className="h-4 w-4" />
+                          Carrinho
+                        </Label>
+                        <Badge>{carrinhoRomaneio.length} produtos</Badge>
+                      </div>
+                      <div className="border rounded-lg min-h-48">
+                        {carrinhoRomaneio.length === 0 ? (
+                          <div className="p-8 text-center text-muted-foreground">
+                            <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>Adicione produtos ao carrinho</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y">
+                            {carrinhoRomaneio.map((item) => (
+                              <div key={item.produto_id} className="p-3 flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium">{item.produto_nome}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {item.quantidade} {item.unidade || "un"}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleRemoverDoCarrinho(item.produto_id)}
+                                >
+                                  <X className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        onClick={handleCriarRomaneio}
+                        disabled={saving || carrinhoRomaneio.length === 0}
+                        className="w-full"
+                      >
+                        {saving ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-2" />
+                        )}
+                        Criar Romaneio
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Romaneios Pendentes de Envio */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5" />
+                    Romaneios Pendentes de Envio
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={fetchRomaneiosProdutos} disabled={loadingRomaneios}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loadingRomaneios ? "animate-spin" : ""}`} />
+                    Atualizar
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingRomaneios ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : romaneiosPendentes.filter(r => r.status === "pendente").length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-12 w-12 mb-4 text-green-500" />
+                    <p>Nenhum romaneio pendente de envio</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {romaneiosPendentes
+                      .filter(r => r.status === "pendente")
+                      .map((romaneio) => {
+                        const itens = itensRomaneiosPendentes[romaneio.id] || [];
+                        return (
+                          <div key={romaneio.id} className="border rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div>
+                                <h4 className="font-semibold flex items-center gap-2">
+                                  <Store className="h-4 w-4" />
+                                  {romaneio.loja_nome}
+                                </h4>
+                                <p className="text-sm text-muted-foreground">
+                                  {itens.length} produtos • Criado em {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                                </p>
+                              </div>
+                              <Badge>Pendente</Badge>
+                            </div>
+                            <div className="text-sm text-muted-foreground mb-3 space-y-1">
+                              {itens.map((item) => (
+                                <div key={item.id} className="flex justify-between">
+                                  <span>{item.produto_nome}</span>
+                                  <span className="font-mono">{item.quantidade} {item.unidade || "un"}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleExcluirRomaneio(romaneio.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Excluir
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleEnviarRomaneio(romaneio.id)}
+                                disabled={enviandoRomaneio}
+                              >
+                                {enviandoRomaneio ? (
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                ) : (
+                                  <Send className="h-4 w-4 mr-1" />
+                                )}
+                                Enviar
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </CardContent>

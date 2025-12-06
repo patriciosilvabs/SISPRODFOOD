@@ -1930,6 +1930,139 @@ export type Database = {
           },
         ]
       }
+      romaneios_produtos: {
+        Row: {
+          created_at: string | null
+          data_criacao: string | null
+          data_envio: string | null
+          data_recebimento: string | null
+          id: string
+          loja_id: string
+          loja_nome: string
+          observacao: string | null
+          observacao_recebimento: string | null
+          organization_id: string | null
+          recebido_por_id: string | null
+          recebido_por_nome: string | null
+          status: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          data_recebimento?: string | null
+          id?: string
+          loja_id: string
+          loja_nome: string
+          observacao?: string | null
+          observacao_recebimento?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          data_criacao?: string | null
+          data_envio?: string | null
+          data_recebimento?: string | null
+          id?: string
+          loja_id?: string
+          loja_nome?: string
+          observacao?: string | null
+          observacao_recebimento?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneios_produtos_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_produtos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      romaneios_produtos_itens: {
+        Row: {
+          created_at: string | null
+          divergencia: boolean | null
+          id: string
+          observacao_divergencia: string | null
+          organization_id: string | null
+          produto_id: string
+          produto_nome: string
+          quantidade: number
+          quantidade_recebida: number | null
+          romaneio_id: string
+          unidade: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          divergencia?: boolean | null
+          id?: string
+          observacao_divergencia?: string | null
+          organization_id?: string | null
+          produto_id: string
+          produto_nome: string
+          quantidade: number
+          quantidade_recebida?: number | null
+          romaneio_id: string
+          unidade?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          divergencia?: boolean | null
+          id?: string
+          observacao_divergencia?: string | null
+          organization_id?: string | null
+          produto_id?: string
+          produto_nome?: string
+          quantidade?: number
+          quantidade_recebida?: number | null
+          romaneio_id?: string
+          unidade?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "romaneios_produtos_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_produtos_itens_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "romaneios_produtos_itens_romaneio_id_fkey"
+            columns: ["romaneio_id"]
+            isOneToOne: false
+            referencedRelation: "romaneios_produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_history: {
         Row: {
           amount_cents: number | null
