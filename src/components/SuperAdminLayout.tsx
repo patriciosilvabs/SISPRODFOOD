@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   LayoutDashboard, 
@@ -30,12 +30,7 @@ const menuItems = [
 
 export const SuperAdminLayout = ({ children, title }: SuperAdminLayoutProps) => {
   const { signOut, profile } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
-
-  const handleNavigation = (url: string) => {
-    navigate(url);
-  };
 
   return (
     <div className="min-h-screen flex w-full bg-background">
@@ -64,8 +59,8 @@ export const SuperAdminLayout = ({ children, title }: SuperAdminLayoutProps) => 
               const isActive = location.pathname === item.url;
               return (
                 <li key={item.title}>
-                  <button
-                    onClick={() => handleNavigation(item.url)}
+                  <Link
+                    to={item.url}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-left',
                       isActive 
@@ -76,7 +71,7 @@ export const SuperAdminLayout = ({ children, title }: SuperAdminLayoutProps) => 
                     <item.icon className="h-5 w-5 flex-shrink-0" />
                     <span className="flex-1">{item.title}</span>
                     {isActive && <ChevronRight className="h-4 w-4" />}
-                  </button>
+                  </Link>
                 </li>
               );
             })}
