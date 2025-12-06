@@ -91,6 +91,33 @@ export const PERMISSIONS_CONFIG: PermissionSection[] = [
     ]
   },
   {
+    key: 'pedidos_compra',
+    label: 'Pedidos de Compra',
+    description: 'Gestão de pedidos de compra e conferência de recebimento',
+    permissions: [
+      {
+        key: 'pedidos_compra.view',
+        label: 'Visualizar Pedidos de Compra',
+        description: 'Ver pedidos de compra e histórico',
+        section: 'pedidos_compra'
+      },
+      {
+        key: 'pedidos_compra.manage',
+        label: 'Gerenciar Pedidos de Compra',
+        description: 'Criar e editar pedidos de compra',
+        section: 'pedidos_compra',
+        dependsOn: ['pedidos_compra.view']
+      },
+      {
+        key: 'pedidos_compra.receber',
+        label: 'Conferir Recebimento',
+        description: 'Conferir e registrar recebimento de mercadorias',
+        section: 'pedidos_compra',
+        dependsOn: ['pedidos_compra.view']
+      }
+    ]
+  },
+  {
     key: 'contagem',
     label: 'Contagem de Porcionados',
     description: 'Contagem diária de itens porcionados',

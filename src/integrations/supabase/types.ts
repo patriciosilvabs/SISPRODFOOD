@@ -1099,6 +1099,132 @@ export type Database = {
         }
         Relationships: []
       }
+      pedidos_compra: {
+        Row: {
+          created_at: string | null
+          data_pedido: string | null
+          data_prevista_entrega: string | null
+          data_recebimento: string | null
+          fornecedor: string
+          id: string
+          numero_pedido: string
+          observacao: string | null
+          organization_id: string | null
+          recebido_por_id: string | null
+          recebido_por_nome: string | null
+          status: string
+          updated_at: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_pedido?: string | null
+          data_prevista_entrega?: string | null
+          data_recebimento?: string | null
+          fornecedor: string
+          id?: string
+          numero_pedido: string
+          observacao?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          updated_at?: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          data_pedido?: string | null
+          data_prevista_entrega?: string | null
+          data_recebimento?: string | null
+          fornecedor?: string
+          id?: string
+          numero_pedido?: string
+          observacao?: string | null
+          organization_id?: string | null
+          recebido_por_id?: string | null
+          recebido_por_nome?: string | null
+          status?: string
+          updated_at?: string | null
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_compra_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedidos_compra_itens: {
+        Row: {
+          created_at: string | null
+          divergencia: boolean | null
+          id: string
+          observacao_divergencia: string | null
+          organization_id: string | null
+          pedido_id: string
+          produto_id: string
+          produto_nome: string
+          quantidade_recebida: number | null
+          quantidade_solicitada: number
+          unidade: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          divergencia?: boolean | null
+          id?: string
+          observacao_divergencia?: string | null
+          organization_id?: string | null
+          pedido_id: string
+          produto_id: string
+          produto_nome: string
+          quantidade_recebida?: number | null
+          quantidade_solicitada: number
+          unidade?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          divergencia?: boolean | null
+          id?: string
+          observacao_divergencia?: string | null
+          organization_id?: string | null
+          pedido_id?: string
+          produto_id?: string
+          produto_nome?: string
+          quantidade_recebida?: number | null
+          quantidade_solicitada?: number
+          unidade?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_compra_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_compra_itens_pedido_id_fkey"
+            columns: ["pedido_id"]
+            isOneToOne: false
+            referencedRelation: "pedidos_compra"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_compra_itens_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       permission_presets: {
         Row: {
           created_at: string

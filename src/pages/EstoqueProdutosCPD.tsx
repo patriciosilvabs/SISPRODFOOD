@@ -36,8 +36,15 @@ import {
   CheckCircle2,
   Loader2,
   Store,
-  RefreshCw
+  RefreshCw,
+  Truck,
+  ClipboardList,
+  Calendar
 } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { CriarPedidoCompraModal } from "@/components/modals/CriarPedidoCompraModal";
+import { ConferirRecebimentoModal } from "@/components/modals/ConferirRecebimentoModal";
 
 interface Produto {
   id: string;
@@ -67,6 +74,31 @@ interface DemandaLoja {
   necessidade: number;
 }
 
+interface PedidoCompra {
+  id: string;
+  numero_pedido: string;
+  fornecedor: string;
+  status: string;
+  data_pedido: string;
+  data_prevista_entrega: string | null;
+  data_recebimento: string | null;
+  recebido_por_nome: string | null;
+  observacao: string | null;
+  usuario_nome: string;
+}
+
+interface ItemPedido {
+  id: string;
+  pedido_id: string;
+  produto_id: string;
+  produto_nome: string;
+  quantidade_solicitada: number;
+  quantidade_recebida: number | null;
+  unidade: string | null;
+  divergencia: boolean;
+  observacao_divergencia: string | null;
+}
+
 const CATEGORIAS = [
   { value: "todas", label: "Todas as categorias" },
   { value: "congelado", label: "Congelado" },
@@ -86,6 +118,13 @@ const TIPOS_ENTRADA = [
   { value: "ajuste_positivo", label: "➕ Ajuste Positivo", description: "Correção de inventário" },
   { value: "ajuste_negativo", label: "➖ Ajuste Negativo", description: "Correção de inventário" },
 ];
+
+const STATUS_PEDIDO = {
+  pendente: { label: "Pendente", color: "bg-amber-500" },
+  parcial: { label: "Parcial", color: "bg-blue-500" },
+  recebido: { label: "Recebido", color: "bg-green-500" },
+  cancelado: { label: "Cancelado", color: "bg-destructive" },
+};
 
 export default function EstoqueProdutosCPD() {
   const { organizationId } = useOrganization();
@@ -111,6 +150,14 @@ export default function EstoqueProdutosCPD() {
   // Estados para Demandas das Lojas
   const [demandas, setDemandas] = useState<DemandaLoja[]>([]);
   const [loadingDemandas, setLoadingDemandas] = useState(false);
+
+  // Estados para Receber Mercadorias
+  const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
+  const [itensPedidoSelecionado, setItensPedidoSelecionado] = useState<ItemPedido[]>([]);
+  const [loadingPedidos, setLoadingPedidos] = useState(false);
+  const [modalCriarPedido, setModalCriarPedido] = useState(false);
+  const [modalConferir, setModalConferir] = useState(false);
+  const [pedidoParaConferir, setPedidoParaConferir] = useState<PedidoCompra | null>(null);
 
   // Buscar produtos e estoques
   const fetchData = async () => {
@@ -224,6 +271,54 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
+  // Buscar pedidos de compra
+  const fetchPedidos = async () => {
+    if (!organizationId) return;
+    setLoadingPedidos(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("pedidos_compra")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .order("data_pedido", { ascending: false });
+
+      if (error) throw error;
+      setPedidos(data || []);
+    } catch (error: any) {
+      console.error("Erro ao buscar pedidos:", error);
+      toast({
+        title: "Erro ao carregar pedidos",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPedidos(false);
+    }
+  };
+
+  // Buscar itens de um pedido específico
+  const fetchItensPedido = async (pedidoId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("pedidos_compra_itens")
+        .select("*")
+        .eq("pedido_id", pedidoId);
+
+      if (error) throw error;
+      setItensPedidoSelecionado(data || []);
+      return data || [];
+    } catch (error: any) {
+      console.error("Erro ao buscar itens do pedido:", error);
+      toast({
+        title: "Erro ao carregar itens",
+        description: error.message,
+        variant: "destructive",
+      });
+      return [];
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [organizationId]);
@@ -231,6 +326,8 @@ export default function EstoqueProdutosCPD() {
   useEffect(() => {
     if (activeTab === "demandas") {
       fetchDemandas();
+    } else if (activeTab === "receber") {
+      fetchPedidos();
     }
   }, [activeTab, organizationId]);
 
@@ -357,6 +454,187 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
+  // Criar pedido de compra
+  const handleCriarPedido = async (pedido: {
+    numero_pedido: string;
+    fornecedor: string;
+    data_prevista_entrega: string | null;
+    observacao: string;
+    itens: Array<{ produto_id: string; produto_nome: string; quantidade: number; unidade: string | null }>;
+  }) => {
+    if (!organizationId || !profile) return;
+    setSaving(true);
+
+    try {
+      // Criar pedido
+      const { data: pedidoData, error: pedidoError } = await supabase
+        .from("pedidos_compra")
+        .insert({
+          numero_pedido: pedido.numero_pedido,
+          fornecedor: pedido.fornecedor,
+          data_prevista_entrega: pedido.data_prevista_entrega,
+          observacao: pedido.observacao || null,
+          usuario_id: profile.id,
+          usuario_nome: profile.nome,
+          organization_id: organizationId,
+        })
+        .select()
+        .single();
+
+      if (pedidoError) throw pedidoError;
+
+      // Criar itens do pedido
+      const itensParaInserir = pedido.itens.map(item => ({
+        pedido_id: pedidoData.id,
+        produto_id: item.produto_id,
+        produto_nome: item.produto_nome,
+        quantidade_solicitada: item.quantidade,
+        unidade: item.unidade,
+        organization_id: organizationId,
+      }));
+
+      const { error: itensError } = await supabase
+        .from("pedidos_compra_itens")
+        .insert(itensParaInserir);
+
+      if (itensError) throw itensError;
+
+      toast({
+        title: "Pedido criado",
+        description: `Pedido #${pedido.numero_pedido} criado com ${pedido.itens.length} itens.`,
+      });
+
+      setModalCriarPedido(false);
+      fetchPedidos();
+    } catch (error: any) {
+      console.error("Erro ao criar pedido:", error);
+      toast({
+        title: "Erro ao criar pedido",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Abrir modal de conferência
+  const handleAbrirConferencia = async (pedido: PedidoCompra) => {
+    setPedidoParaConferir(pedido);
+    await fetchItensPedido(pedido.id);
+    setModalConferir(true);
+  };
+
+  // Confirmar recebimento
+  const handleConfirmarRecebimento = async (
+    itensConferidos: Array<{ id: string; quantidade_recebida: number; divergencia: boolean; observacao_divergencia?: string }>,
+    observacaoGeral: string
+  ) => {
+    if (!organizationId || !profile || !pedidoParaConferir) return;
+    setSaving(true);
+
+    try {
+      // Atualizar cada item do pedido
+      for (const item of itensConferidos) {
+        const { error: itemError } = await supabase
+          .from("pedidos_compra_itens")
+          .update({
+            quantidade_recebida: item.quantidade_recebida,
+            divergencia: item.divergencia,
+            observacao_divergencia: item.observacao_divergencia || null,
+          })
+          .eq("id", item.id);
+
+        if (itemError) throw itemError;
+
+        // Registrar entrada no estoque usando quantidade RECEBIDA
+        if (item.quantidade_recebida > 0) {
+          const itemOriginal = itensPedidoSelecionado.find(i => i.id === item.id);
+          if (itemOriginal) {
+            const estoqueAtual = estoques.find(e => e.produto_id === itemOriginal.produto_id);
+            const quantidadeAnterior = estoqueAtual?.quantidade || 0;
+            const quantidadeFinal = quantidadeAnterior + item.quantidade_recebida;
+
+            // Upsert estoque
+            const { error: estoqueError } = await supabase
+              .from("estoque_cpd_produtos")
+              .upsert({
+                produto_id: itemOriginal.produto_id,
+                quantidade: quantidadeFinal,
+                data_ultima_movimentacao: new Date().toISOString(),
+                organization_id: organizationId,
+              }, {
+                onConflict: "organization_id,produto_id",
+              });
+
+            if (estoqueError) throw estoqueError;
+
+            // Registrar movimentação
+            const { error: movError } = await supabase
+              .from("movimentacoes_cpd_produtos")
+              .insert({
+                produto_id: itemOriginal.produto_id,
+                produto_nome: itemOriginal.produto_nome,
+                tipo: "entrada_compra",
+                quantidade: item.quantidade_recebida,
+                quantidade_anterior: quantidadeAnterior,
+                quantidade_posterior: quantidadeFinal,
+                observacao: `Recebimento Pedido #${pedidoParaConferir.numero_pedido}${item.divergencia ? " (com divergência)" : ""}`,
+                usuario_id: profile.id,
+                usuario_nome: profile.nome,
+                organization_id: organizationId,
+              });
+
+            if (movError) throw movError;
+          }
+        }
+      }
+
+      // Determinar status do pedido
+      const todoRecebido = itensConferidos.every(i => {
+        const original = itensPedidoSelecionado.find(o => o.id === i.id);
+        return original && i.quantidade_recebida >= original.quantidade_solicitada;
+      });
+      const algumRecebido = itensConferidos.some(i => i.quantidade_recebida > 0);
+
+      const novoStatus = todoRecebido ? "recebido" : algumRecebido ? "parcial" : "pendente";
+
+      // Atualizar pedido
+      const { error: pedidoError } = await supabase
+        .from("pedidos_compra")
+        .update({
+          status: novoStatus,
+          data_recebimento: new Date().toISOString(),
+          recebido_por_id: profile.id,
+          recebido_por_nome: profile.nome,
+          observacao: observacaoGeral || pedidoParaConferir.observacao,
+        })
+        .eq("id", pedidoParaConferir.id);
+
+      if (pedidoError) throw pedidoError;
+
+      const divergencias = itensConferidos.filter(i => i.divergencia).length;
+      toast({
+        title: "Recebimento confirmado",
+        description: `${itensConferidos.length} itens conferidos${divergencias > 0 ? ` (${divergencias} com divergência)` : ""}.`,
+      });
+
+      setModalConferir(false);
+      setPedidoParaConferir(null);
+      fetchPedidos();
+      fetchData(); // Atualizar estoques
+    } catch (error: any) {
+      console.error("Erro ao confirmar recebimento:", error);
+      toast({
+        title: "Erro ao confirmar",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Estatísticas
   const stats = useMemo(() => {
     const total = produtosComEstoque.length;
@@ -372,6 +650,17 @@ export default function EstoqueProdutosCPD() {
     return { totalDemandas, lojasAfetadas };
   }, [demandas]);
 
+  // Estatísticas de pedidos
+  const pedidoStats = useMemo(() => {
+    const pendentes = pedidos.filter(p => p.status === "pendente" || p.status === "parcial").length;
+    const recebidos = pedidos.filter(p => p.status === "recebido").length;
+    return { pendentes, recebidos, total: pedidos.length };
+  }, [pedidos]);
+
+  const pedidosPendentes = useMemo(() => {
+    return pedidos.filter(p => p.status === "pendente" || p.status === "parcial");
+  }, [pedidos]);
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -385,21 +674,27 @@ export default function EstoqueProdutosCPD() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="estoque" className="gap-2">
               <Package className="h-4 w-4" />
-              <span className="hidden sm:inline">Estoque Atual</span>
-              <span className="sm:hidden">Estoque</span>
+              <span className="hidden sm:inline">Estoque</span>
             </TabsTrigger>
             <TabsTrigger value="entrada" className="gap-2">
               <ArrowDownToLine className="h-4 w-4" />
-              <span className="hidden sm:inline">Registrar Entrada</span>
-              <span className="sm:hidden">Entrada</span>
+              <span className="hidden sm:inline">Entrada</span>
             </TabsTrigger>
             <TabsTrigger value="demandas" className="gap-2">
               <Store className="h-4 w-4" />
-              <span className="hidden sm:inline">Demandas das Lojas</span>
-              <span className="sm:hidden">Demandas</span>
+              <span className="hidden sm:inline">Demandas</span>
+            </TabsTrigger>
+            <TabsTrigger value="receber" className="gap-2">
+              <Truck className="h-4 w-4" />
+              <span className="hidden sm:inline">Receber</span>
+              {pedidoStats.pendentes > 0 && (
+                <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
+                  {pedidoStats.pendentes}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -709,8 +1004,182 @@ export default function EstoqueProdutosCPD() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Aba Receber Mercadorias */}
+          <TabsContent value="receber" className="space-y-4">
+            {/* Seção: Criar Novo Pedido */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <ClipboardList className="h-5 w-5" />
+                      Pedidos de Compra
+                    </CardTitle>
+                    <CardDescription>
+                      Registre pedidos enviados aos fornecedores e confira o recebimento
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Badge variant="outline">{pedidoStats.total} pedidos</Badge>
+                    {pedidoStats.pendentes > 0 && (
+                      <Badge variant="destructive">{pedidoStats.pendentes} pendentes</Badge>
+                    )}
+                    <Button onClick={() => setModalCriarPedido(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Novo Pedido
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Seção: Pedidos Pendentes */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  Pedidos Pendentes de Recebimento
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingPedidos ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : pedidosPendentes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <CheckCircle2 className="h-12 w-12 mb-4 text-green-500" />
+                    <p className="text-lg font-medium">Nenhum pedido pendente!</p>
+                    <p className="text-sm">Todos os pedidos foram recebidos.</p>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nº Pedido</TableHead>
+                          <TableHead>Fornecedor</TableHead>
+                          <TableHead>Data Pedido</TableHead>
+                          <TableHead>Previsão</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-right">Ação</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pedidosPendentes.map((pedido) => {
+                          const statusInfo = STATUS_PEDIDO[pedido.status as keyof typeof STATUS_PEDIDO] || STATUS_PEDIDO.pendente;
+                          return (
+                            <TableRow key={pedido.id}>
+                              <TableCell className="font-mono font-medium">#{pedido.numero_pedido}</TableCell>
+                              <TableCell>{pedido.fornecedor}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {format(new Date(pedido.data_pedido), "dd/MM/yyyy", { locale: ptBR })}
+                              </TableCell>
+                              <TableCell>
+                                {pedido.data_prevista_entrega ? (
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {format(new Date(pedido.data_prevista_entrega), "dd/MM", { locale: ptBR })}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge className={`${statusInfo.color} text-white`}>
+                                  {statusInfo.label}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleAbrirConferencia(pedido)}
+                                >
+                                  <Truck className="h-4 w-4 mr-2" />
+                                  Receber
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Seção: Histórico de Pedidos Recebidos */}
+            {pedidos.filter(p => p.status === "recebido").length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    Pedidos Recebidos Recentemente
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nº Pedido</TableHead>
+                          <TableHead>Fornecedor</TableHead>
+                          <TableHead>Data Recebimento</TableHead>
+                          <TableHead>Recebido por</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pedidos
+                          .filter(p => p.status === "recebido")
+                          .slice(0, 5)
+                          .map((pedido) => (
+                            <TableRow key={pedido.id}>
+                              <TableCell className="font-mono font-medium">#{pedido.numero_pedido}</TableCell>
+                              <TableCell>{pedido.fornecedor}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {pedido.data_recebimento 
+                                  ? format(new Date(pedido.data_recebimento), "dd/MM/yyyy HH:mm", { locale: ptBR })
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>{pedido.recebido_por_nome || "-"}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge className="bg-green-500 text-white">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Recebido
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
+
+      {/* Modals */}
+      <CriarPedidoCompraModal
+        open={modalCriarPedido}
+        onOpenChange={setModalCriarPedido}
+        produtos={produtos}
+        onCriar={handleCriarPedido}
+        saving={saving}
+      />
+
+      <ConferirRecebimentoModal
+        open={modalConferir}
+        onOpenChange={setModalConferir}
+        pedido={pedidoParaConferir}
+        itens={itensPedidoSelecionado}
+        onConfirmar={handleConfirmarRecebimento}
+        saving={saving}
+      />
     </Layout>
   );
 }
