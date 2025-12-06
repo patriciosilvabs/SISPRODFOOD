@@ -144,7 +144,7 @@ export const Layout = ({ children }: LayoutProps) => {
       {canSeeLogistica && (
         <>
           <SectionLabel>Logística</SectionLabel>
-          <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
+          <NavLink to="/romaneio" icon={Truck}>Romaneio</NavLink>
         </>
       )}
       
