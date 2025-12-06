@@ -2,7 +2,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -190,6 +190,13 @@ const Configuracoes = () => {
       icon: Users,
       color: 'bg-blue-100 text-blue-600',
       onClick: () => navigate('/gerenciar-usuarios'),
+    },
+    {
+      title: 'Configurar Interface',
+      description: 'Personalize quais elementos da interface os usuários podem ver.',
+      icon: Settings2,
+      color: 'bg-indigo-100 text-indigo-600',
+      onClick: () => navigate('/configurar-interface'),
     },
   ];
 
