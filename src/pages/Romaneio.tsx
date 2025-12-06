@@ -1415,7 +1415,7 @@ const Romaneio = () => {
       }
 
       // Atualizar status do romaneio para recebido
-      await supabase
+      const { error: updateError } = await supabase
         .from('romaneios_produtos')
         .update({
           status: 'recebido',
@@ -1425,6 +1425,8 @@ const Romaneio = () => {
           observacao_recebimento: observacaoRecebimento[romaneioId] || null
         })
         .eq('id', romaneioId);
+
+      if (updateError) throw updateError;
 
       toast.success('Recebimento de produtos confirmado!');
       fetchRomaneiosProdutosEnviados();
