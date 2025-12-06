@@ -442,7 +442,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/estoque-produtos-cpd': ['estoque_cpd_produtos.view'],
   '/contagem-porcionados': ['contagem.view'],
   '/estoque-diario': ['estoque_loja.view'],
-  '/romaneio-porcionados': ['romaneio.view'],
+  '/romaneio': ['romaneio.view'],
   '/erros-devolucoes': ['erros.view'],
   '/lista-de-compras-ia': ['compras.view'],
   '/central-de-relatorios': ['relatorios.producao', 'relatorios.romaneios', 'relatorios.estoque', 'relatorios.insumos', 'relatorios.consumo', 'relatorios.diagnostico'],
