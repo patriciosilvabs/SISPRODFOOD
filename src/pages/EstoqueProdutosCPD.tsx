@@ -62,17 +62,6 @@ interface EstoqueProduto {
   produto?: Produto;
 }
 
-interface DemandaLoja {
-  loja_id: string;
-  loja_nome: string;
-  produto_id: string;
-  produto_nome: string;
-  produto_codigo: string | null;
-  estoque_atual: number;
-  estoque_minimo: number;
-  necessidade: number;
-}
-
 interface PedidoCompra {
   id: string;
   numero_pedido: string;
@@ -147,10 +136,6 @@ export default function EstoqueProdutosCPD() {
   const [quantidade, setQuantidade] = useState("");
   const [observacao, setObservacao] = useState("");
 
-  // Estados para Demandas das Lojas
-  const [demandas, setDemandas] = useState<DemandaLoja[]>([]);
-  const [loadingDemandas, setLoadingDemandas] = useState(false);
-
   // Estados para Receber Mercadorias
   const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
   const [itensPedidoSelecionado, setItensPedidoSelecionado] = useState<ItemPedido[]>([]);
@@ -158,16 +143,6 @@ export default function EstoqueProdutosCPD() {
   const [modalCriarPedido, setModalCriarPedido] = useState(false);
   const [modalConferir, setModalConferir] = useState(false);
   const [pedidoParaConferir, setPedidoParaConferir] = useState<PedidoCompra | null>(null);
-
-  // Estados para Enviar para Lojas
-  const [lojas, setLojas] = useState<Loja[]>([]);
-  const [lojaSelecionadaRomaneio, setLojaSelecionadaRomaneio] = useState("");
-  const [carrinhoRomaneio, setCarrinhoRomaneio] = useState<{ produto_id: string; produto_nome: string; quantidade: number; unidade: string | null }[]>([]);
-  const [searchRomaneio, setSearchRomaneio] = useState("");
-  const [romaneiosPendentes, setRomaneiosPendentes] = useState<RomaneioProduto[]>([]);
-  const [itensRomaneiosPendentes, setItensRomaneiosPendentes] = useState<{ [key: string]: RomaneioProdutoItem[] }>({});
-  const [loadingRomaneios, setLoadingRomaneios] = useState(false);
-  const [enviandoRomaneio, setEnviandoRomaneio] = useState(false);
 
   // Buscar produtos e estoques
   const fetchData = async () => {
@@ -209,75 +184,6 @@ export default function EstoqueProdutosCPD() {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Buscar demandas das lojas
-  const fetchDemandas = async () => {
-    if (!organizationId) return;
-    setLoadingDemandas(true);
-
-    try {
-      // Buscar estoques das lojas com mínimos configurados
-      const { data: estoquesLojas, error: estoquesError } = await supabase
-        .from("estoque_loja_produtos")
-        .select(`
-          loja_id,
-          produto_id,
-          quantidade,
-          lojas!inner(nome),
-          produtos!inner(nome, codigo)
-        `)
-        .eq("organization_id", organizationId);
-
-      if (estoquesError) throw estoquesError;
-
-      // Buscar mínimos semanais
-      const hoje = new Date();
-      const diaSemana = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][hoje.getDay()];
-
-      const { data: minimosData, error: minimosError } = await supabase
-        .from("produtos_estoque_minimo_semanal")
-        .select("*")
-        .eq("organization_id", organizationId);
-
-      if (minimosError) throw minimosError;
-
-      // Calcular demandas
-      const demandasCalculadas: DemandaLoja[] = [];
-
-      for (const estoque of estoquesLojas || []) {
-        const minimo = minimosData?.find(
-          m => m.produto_id === estoque.produto_id && m.loja_id === estoque.loja_id
-        );
-        
-        const estoqueMinimo = minimo ? (minimo as any)[diaSemana] || 0 : 0;
-        const necessidade = Math.max(0, estoqueMinimo - (estoque.quantidade || 0));
-
-        if (necessidade > 0) {
-          demandasCalculadas.push({
-            loja_id: estoque.loja_id,
-            loja_nome: (estoque.lojas as any)?.nome || "Loja",
-            produto_id: estoque.produto_id,
-            produto_nome: (estoque.produtos as any)?.nome || "Produto",
-            produto_codigo: (estoque.produtos as any)?.codigo,
-            estoque_atual: estoque.quantidade || 0,
-            estoque_minimo: estoqueMinimo,
-            necessidade,
-          });
-        }
-      }
-
-      setDemandas(demandasCalculadas.sort((a, b) => b.necessidade - a.necessidade));
-    } catch (error: any) {
-      console.error("Erro ao buscar demandas:", error);
-      toast({
-        title: "Erro ao carregar demandas",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingDemandas(false);
     }
   };
 
@@ -329,67 +235,13 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
-  // Buscar lojas
-  const fetchLojas = async () => {
-    if (!organizationId) return;
-    try {
-      const { data, error } = await supabase
-        .from("lojas")
-        .select("id, nome")
-        .order("nome");
-      if (error) throw error;
-      setLojas(data || []);
-    } catch (error: any) {
-      console.error("Erro ao buscar lojas:", error);
-    }
-  };
-
-  // Buscar romaneios de produtos pendentes
-  const fetchRomaneiosProdutos = async () => {
-    if (!organizationId) return;
-    setLoadingRomaneios(true);
-    try {
-      const { data, error } = await supabase
-        .from("romaneios_produtos")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .in("status", ["pendente", "enviado"])
-        .order("data_criacao", { ascending: false });
-
-      if (error) throw error;
-      setRomaneiosPendentes(data || []);
-
-      // Buscar itens de cada romaneio pendente
-      for (const romaneio of data || []) {
-        const { data: itens } = await supabase
-          .from("romaneios_produtos_itens")
-          .select("*")
-          .eq("romaneio_id", romaneio.id);
-        
-        setItensRomaneiosPendentes(prev => ({
-          ...prev,
-          [romaneio.id]: itens || []
-        }));
-      }
-    } catch (error: any) {
-      console.error("Erro ao buscar romaneios:", error);
-    } finally {
-      setLoadingRomaneios(false);
-    }
-  };
-
   useEffect(() => {
     fetchData();
-    fetchLojas();
   }, [organizationId]);
 
   useEffect(() => {
-    if (activeTab === "demandas") {
-      fetchDemandas();
-    } else if (activeTab === "receber") {
+    if (activeTab === "receber") {
       fetchPedidos();
-    } else if (activeTab === "enviar") {
-      fetchRomaneiosProdutos();
     }
   }, [activeTab, organizationId]);
 
@@ -697,231 +549,6 @@ export default function EstoqueProdutosCPD() {
     }
   };
 
-  // Funções de Romaneio de Produtos
-  const produtosParaRomaneio = useMemo(() => {
-    return produtos.filter(p => {
-      const estoque = estoques.find(e => e.produto_id === p.id);
-      const quantidade = estoque?.quantidade || 0;
-      if (quantidade <= 0) return false;
-      const matchSearch = searchRomaneio === "" ||
-        p.nome.toLowerCase().includes(searchRomaneio.toLowerCase()) ||
-        p.codigo?.toLowerCase().includes(searchRomaneio.toLowerCase());
-      return matchSearch;
-    }).map(p => {
-      const estoque = estoques.find(e => e.produto_id === p.id);
-      return {
-        ...p,
-        quantidade: estoque?.quantidade || 0
-      };
-    });
-  }, [produtos, estoques, searchRomaneio]);
-
-  const handleAdicionarAoCarrinho = (produto: Produto & { quantidade: number }, qtd: number) => {
-    if (qtd <= 0 || qtd > produto.quantidade) return;
-    
-    setCarrinhoRomaneio(prev => {
-      const existente = prev.find(p => p.produto_id === produto.id);
-      if (existente) {
-        return prev.map(p =>
-          p.produto_id === produto.id
-            ? { ...p, quantidade: Math.min(p.quantidade + qtd, produto.quantidade) }
-            : p
-        );
-      }
-      return [...prev, {
-        produto_id: produto.id,
-        produto_nome: produto.nome,
-        quantidade: qtd,
-        unidade: produto.unidade_consumo
-      }];
-    });
-  };
-
-  const handleRemoverDoCarrinho = (produtoId: string) => {
-    setCarrinhoRomaneio(prev => prev.filter(p => p.produto_id !== produtoId));
-  };
-
-  const handleCriarRomaneio = async () => {
-    if (!organizationId || !profile || !lojaSelecionadaRomaneio || carrinhoRomaneio.length === 0) {
-      toast({
-        title: "Dados incompletos",
-        description: "Selecione uma loja e adicione produtos ao carrinho.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const loja = lojas.find(l => l.id === lojaSelecionadaRomaneio);
-      
-      // Validar estoque disponível
-      for (const item of carrinhoRomaneio) {
-        const estoque = estoques.find(e => e.produto_id === item.produto_id);
-        if (!estoque || estoque.quantidade < item.quantidade) {
-          toast({
-            title: "Estoque insuficiente",
-            description: `Produto "${item.produto_nome}" não tem estoque suficiente.`,
-            variant: "destructive",
-          });
-          setSaving(false);
-          return;
-        }
-      }
-
-      // Criar romaneio
-      const { data: romaneioData, error: romaneioError } = await supabase
-        .from("romaneios_produtos")
-        .insert({
-          loja_id: lojaSelecionadaRomaneio,
-          loja_nome: loja?.nome || "Loja",
-          usuario_id: profile.id,
-          usuario_nome: profile.nome,
-          organization_id: organizationId,
-        })
-        .select()
-        .single();
-
-      if (romaneioError) throw romaneioError;
-
-      // Criar itens do romaneio
-      const itensParaInserir = carrinhoRomaneio.map(item => ({
-        romaneio_id: romaneioData.id,
-        produto_id: item.produto_id,
-        produto_nome: item.produto_nome,
-        quantidade: item.quantidade,
-        unidade: item.unidade,
-        organization_id: organizationId,
-      }));
-
-      const { error: itensError } = await supabase
-        .from("romaneios_produtos_itens")
-        .insert(itensParaInserir);
-
-      if (itensError) throw itensError;
-
-      toast({
-        title: "Romaneio criado",
-        description: `Romaneio para ${loja?.nome} criado com ${carrinhoRomaneio.length} produtos.`,
-      });
-
-      // Limpar carrinho
-      setCarrinhoRomaneio([]);
-      setLojaSelecionadaRomaneio("");
-      setSearchRomaneio("");
-      fetchRomaneiosProdutos();
-    } catch (error: any) {
-      console.error("Erro ao criar romaneio:", error);
-      toast({
-        title: "Erro ao criar romaneio",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEnviarRomaneio = async (romaneioId: string) => {
-    if (!organizationId || !profile) return;
-    setEnviandoRomaneio(true);
-
-    try {
-      const itens = itensRomaneiosPendentes[romaneioId] || [];
-      
-      // Validar e decrementar estoque
-      for (const item of itens) {
-        const estoque = estoques.find(e => e.produto_id === item.produto_id);
-        if (!estoque || estoque.quantidade < item.quantidade) {
-          toast({
-            title: "Estoque insuficiente",
-            description: `Produto "${item.produto_nome}" não tem estoque suficiente. Disponível: ${estoque?.quantidade || 0}, Necessário: ${item.quantidade}`,
-            variant: "destructive",
-          });
-          setEnviandoRomaneio(false);
-          return;
-        }
-      }
-
-      // Decrementar estoque e registrar movimentação
-      for (const item of itens) {
-        const estoque = estoques.find(e => e.produto_id === item.produto_id);
-        const quantidadeAnterior = estoque?.quantidade || 0;
-        const quantidadeFinal = quantidadeAnterior - item.quantidade;
-
-        await supabase
-          .from("estoque_cpd_produtos")
-          .update({
-            quantidade: quantidadeFinal,
-            data_ultima_movimentacao: new Date().toISOString(),
-          })
-          .eq("produto_id", item.produto_id)
-          .eq("organization_id", organizationId);
-
-        await supabase
-          .from("movimentacoes_cpd_produtos")
-          .insert({
-            produto_id: item.produto_id,
-            produto_nome: item.produto_nome,
-            tipo: "saida_romaneio",
-            quantidade: item.quantidade,
-            quantidade_anterior: quantidadeAnterior,
-            quantidade_posterior: quantidadeFinal,
-            observacao: `Romaneio #${romaneioId.slice(0, 8)}`,
-            usuario_id: profile.id,
-            usuario_nome: profile.nome,
-            organization_id: organizationId,
-          });
-      }
-
-      // Atualizar status do romaneio
-      await supabase
-        .from("romaneios_produtos")
-        .update({
-          status: "enviado",
-          data_envio: new Date().toISOString(),
-        })
-        .eq("id", romaneioId);
-
-      toast({
-        title: "Romaneio enviado",
-        description: "Estoque debitado e romaneio marcado como enviado.",
-      });
-
-      fetchData();
-      fetchRomaneiosProdutos();
-    } catch (error: any) {
-      console.error("Erro ao enviar romaneio:", error);
-      toast({
-        title: "Erro ao enviar",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setEnviandoRomaneio(false);
-    }
-  };
-
-  const handleExcluirRomaneio = async (romaneioId: string) => {
-    if (!confirm("Excluir este romaneio pendente?")) return;
-
-    try {
-      await supabase
-        .from("romaneios_produtos")
-        .delete()
-        .eq("id", romaneioId);
-
-      toast({ title: "Romaneio excluído" });
-      fetchRomaneiosProdutos();
-    } catch (error: any) {
-      toast({
-        title: "Erro ao excluir",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
   // Estatísticas
   const stats = useMemo(() => {
     const total = produtosComEstoque.length;
@@ -929,13 +556,6 @@ export default function EstoqueProdutosCPD() {
     const semEstoque = total - comEstoque;
     return { total, comEstoque, semEstoque };
   }, [produtosComEstoque]);
-
-  // Estatísticas de demandas
-  const demandaStats = useMemo(() => {
-    const totalDemandas = demandas.length;
-    const lojasAfetadas = new Set(demandas.map(d => d.loja_id)).size;
-    return { totalDemandas, lojasAfetadas };
-  }, [demandas]);
 
   // Estatísticas de pedidos
   const pedidoStats = useMemo(() => {
@@ -955,13 +575,13 @@ export default function EstoqueProdutosCPD() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Estoque de Produtos (CPD)</h1>
             <p className="text-muted-foreground">
-              Gerenciar estoque central de produtos lacrados, lotes e simples
+              Gerenciar entrada e saída de produtos no estoque central
             </p>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="estoque" className="gap-2">
               <Package className="h-4 w-4" />
               <span className="hidden sm:inline">Estoque</span>
@@ -969,19 +589,6 @@ export default function EstoqueProdutosCPD() {
             <TabsTrigger value="entrada" className="gap-2">
               <ArrowDownToLine className="h-4 w-4" />
               <span className="hidden sm:inline">Entrada</span>
-            </TabsTrigger>
-            <TabsTrigger value="demandas" className="gap-2">
-              <Store className="h-4 w-4" />
-              <span className="hidden sm:inline">Demandas</span>
-            </TabsTrigger>
-            <TabsTrigger value="enviar" className="gap-2">
-              <Send className="h-4 w-4" />
-              <span className="hidden sm:inline">Enviar Lojas</span>
-              {romaneiosPendentes.filter(r => r.status === "pendente").length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
-                  {romaneiosPendentes.filter(r => r.status === "pendente").length}
-                </Badge>
-              )}
             </TabsTrigger>
             <TabsTrigger value="receber" className="gap-2">
               <Truck className="h-4 w-4" />
@@ -1198,310 +805,6 @@ export default function EstoqueProdutosCPD() {
                   )}
                   {tipoEntrada === "ajuste_negativo" ? "Registrar Saída" : "Registrar Entrada"}
                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Aba Demandas das Lojas */}
-          <TabsContent value="demandas" className="space-y-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Store className="h-5 w-5" />
-                      Demandas das Lojas
-                    </CardTitle>
-                    <CardDescription>
-                      Produtos que as lojas precisam receber baseado no estoque mínimo configurado
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="outline">{demandaStats.totalDemandas} itens</Badge>
-                    <Badge variant="secondary">{demandaStats.lojasAfetadas} lojas</Badge>
-                    <Button variant="outline" size="sm" onClick={fetchDemandas} disabled={loadingDemandas}>
-                      <RefreshCw className={`h-4 w-4 mr-2 ${loadingDemandas ? "animate-spin" : ""}`} />
-                      Atualizar
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {loadingDemandas ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : demandas.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <CheckCircle2 className="h-12 w-12 mb-4 text-green-500" />
-                    <p className="text-lg font-medium">Todas as lojas estão abastecidas!</p>
-                    <p className="text-sm">Nenhuma demanda pendente no momento.</p>
-                  </div>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Loja</TableHead>
-                          <TableHead>Produto</TableHead>
-                          <TableHead className="text-right">Estoque Atual</TableHead>
-                          <TableHead className="text-right">Mínimo</TableHead>
-                          <TableHead className="text-right">Necessidade</TableHead>
-                          <TableHead className="text-center">Status CPD</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {demandas.map((demanda, idx) => {
-                          const estoqueCPD = estoques.find(e => e.produto_id === demanda.produto_id)?.quantidade || 0;
-                          const suficiente = estoqueCPD >= demanda.necessidade;
-                          const parcial = estoqueCPD > 0 && estoqueCPD < demanda.necessidade;
-                          
-                          return (
-                            <TableRow key={`${demanda.loja_id}-${demanda.produto_id}-${idx}`}>
-                              <TableCell className="font-medium">{demanda.loja_nome}</TableCell>
-                              <TableCell>
-                                <div>
-                                  <p>{demanda.produto_nome}</p>
-                                  {demanda.produto_codigo && (
-                                    <p className="text-xs text-muted-foreground">{demanda.produto_codigo}</p>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">{demanda.estoque_atual}</TableCell>
-                              <TableCell className="text-right font-mono">{demanda.estoque_minimo}</TableCell>
-                              <TableCell className="text-right font-mono font-bold text-primary">
-                                {demanda.necessidade}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {suficiente ? (
-                                  <Badge className="bg-green-500">
-                                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                                    OK ({estoqueCPD})
-                                  </Badge>
-                                ) : parcial ? (
-                                  <Badge variant="secondary" className="bg-amber-500 text-white">
-                                    <AlertTriangle className="h-3 w-3 mr-1" />
-                                    Parcial ({estoqueCPD})
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="destructive">
-                                    <AlertTriangle className="h-3 w-3 mr-1" />
-                                    Sem estoque
-                                  </Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Aba Enviar para Lojas */}
-          <TabsContent value="enviar" className="space-y-4">
-            {/* Criar Romaneio */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Send className="h-5 w-5" />
-                  Criar Romaneio de Produtos
-                </CardTitle>
-                <CardDescription>
-                  Selecione produtos do estoque CPD para enviar às lojas
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Seleção de Loja */}
-                <div className="space-y-2">
-                  <Label>Loja de Destino</Label>
-                  <Select value={lojaSelecionadaRomaneio} onValueChange={setLojaSelecionadaRomaneio}>
-                    <SelectTrigger className="w-full sm:w-72">
-                      <SelectValue placeholder="Selecione a loja..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {lojas.map((loja) => (
-                        <SelectItem key={loja.id} value={loja.id}>
-                          {loja.nome}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {lojaSelecionadaRomaneio && (
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {/* Produtos Disponíveis */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-base font-semibold">Produtos Disponíveis</Label>
-                        <Badge variant="outline">{produtosParaRomaneio.length} itens</Badge>
-                      </div>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Buscar produto..."
-                          value={searchRomaneio}
-                          onChange={(e) => setSearchRomaneio(e.target.value)}
-                          className="pl-9"
-                        />
-                      </div>
-                      <div className="border rounded-lg max-h-80 overflow-y-auto">
-                        {produtosParaRomaneio.length === 0 ? (
-                          <div className="p-4 text-center text-muted-foreground">
-                            Nenhum produto com estoque disponível
-                          </div>
-                        ) : (
-                          <div className="divide-y">
-                            {produtosParaRomaneio.slice(0, 20).map((produto) => (
-                              <ProdutoRomaneioItem
-                                key={produto.id}
-                                produto={produto}
-                                onAdicionar={handleAdicionarAoCarrinho}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Carrinho */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-base font-semibold flex items-center gap-2">
-                          <ShoppingCart className="h-4 w-4" />
-                          Carrinho
-                        </Label>
-                        <Badge>{carrinhoRomaneio.length} produtos</Badge>
-                      </div>
-                      <div className="border rounded-lg min-h-48">
-                        {carrinhoRomaneio.length === 0 ? (
-                          <div className="p-8 text-center text-muted-foreground">
-                            <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p>Adicione produtos ao carrinho</p>
-                          </div>
-                        ) : (
-                          <div className="divide-y">
-                            {carrinhoRomaneio.map((item) => (
-                              <div key={item.produto_id} className="p-3 flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium">{item.produto_nome}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    {item.quantidade} {item.unidade || "un"}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleRemoverDoCarrinho(item.produto_id)}
-                                >
-                                  <X className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        onClick={handleCriarRomaneio}
-                        disabled={saving || carrinhoRomaneio.length === 0}
-                        className="w-full"
-                      >
-                        {saving ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Send className="h-4 w-4 mr-2" />
-                        )}
-                        Criar Romaneio
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Romaneios Pendentes de Envio */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <ClipboardList className="h-5 w-5" />
-                    Romaneios Pendentes de Envio
-                  </CardTitle>
-                  <Button variant="outline" size="sm" onClick={fetchRomaneiosProdutos} disabled={loadingRomaneios}>
-                    <RefreshCw className={`h-4 w-4 mr-2 ${loadingRomaneios ? "animate-spin" : ""}`} />
-                    Atualizar
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {loadingRomaneios ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : romaneiosPendentes.filter(r => r.status === "pendente").length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                    <CheckCircle2 className="h-12 w-12 mb-4 text-green-500" />
-                    <p>Nenhum romaneio pendente de envio</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {romaneiosPendentes
-                      .filter(r => r.status === "pendente")
-                      .map((romaneio) => {
-                        const itens = itensRomaneiosPendentes[romaneio.id] || [];
-                        return (
-                          <div key={romaneio.id} className="border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div>
-                                <h4 className="font-semibold flex items-center gap-2">
-                                  <Store className="h-4 w-4" />
-                                  {romaneio.loja_nome}
-                                </h4>
-                                <p className="text-sm text-muted-foreground">
-                                  {itens.length} produtos • Criado em {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                                </p>
-                              </div>
-                              <Badge>Pendente</Badge>
-                            </div>
-                            <div className="text-sm text-muted-foreground mb-3 space-y-1">
-                              {itens.map((item) => (
-                                <div key={item.id} className="flex justify-between">
-                                  <span>{item.produto_nome}</span>
-                                  <span className="font-mono">{item.quantidade} {item.unidade || "un"}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleExcluirRomaneio(romaneio.id)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-1" />
-                                Excluir
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => handleEnviarRomaneio(romaneio.id)}
-                                disabled={enviandoRomaneio}
-                              >
-                                {enviandoRomaneio ? (
-                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                ) : (
-                                  <Send className="h-4 w-4 mr-1" />
-                                )}
-                                Enviar
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>

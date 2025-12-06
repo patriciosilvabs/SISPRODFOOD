@@ -26,7 +26,7 @@ import PainelKanban from "./pages/PainelKanban";
 import EstoqueDiario from "./pages/EstoqueDiario";
 import AtenderPedidosDiarios from "./pages/AtenderPedidosDiarios";
 import ContagemPorcionados from "./pages/ContagemPorcionados";
-import RomaneioPorcionados from "./pages/RomaneioPorcionados";
+import Romaneio from "./pages/Romaneio";
 import ReceberPorcionados from "./pages/ReceberPorcionados";
 import ErrosDevolucoes from "./pages/ErrosDevolucoes";
 import ListaDeComprasIA from "./pages/ListaDeComprasIA";
@@ -137,10 +137,10 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/romaneio-porcionados"
+                  path="/romaneio"
                   element={
                     <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
-                      <RomaneioPorcionados />
+                      <Romaneio />
                     </ProtectedRoute>
                   }
                 />
