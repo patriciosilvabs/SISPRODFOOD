@@ -1134,6 +1134,11 @@ const Romaneio = () => {
       const estoque = estoquesProdutos.find(e => e.produto_id === p.id);
       const quantidade = estoque?.quantidade || 0;
       if (quantidade <= 0) return false;
+      
+      // Excluir produtos que já estão no carrinho
+      const noCarrinho = carrinhoProduto.find(c => c.produto_id === p.id);
+      if (noCarrinho) return false;
+      
       const matchSearch = searchProduto === "" ||
         p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(searchProduto.toLowerCase());
@@ -1170,7 +1175,7 @@ const Romaneio = () => {
         estoqueEmUnidades,
       };
     });
-  }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual]);
+  }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual, carrinhoProduto]);
 
   const handleAdicionarAoCarrinhoProduto = (produto: ProdutoEstoque, qtd: number) => {
     if (qtd <= 0 || qtd > produto.quantidade) return;
