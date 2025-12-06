@@ -30,6 +30,8 @@ interface Produto {
   classificacao: string | null;
   tipo_produto: string;
   ativo: boolean;
+  modo_envio?: string | null;
+  peso_por_unidade_kg?: number | null;
 }
 
 interface ProdutoFormModalProps {
@@ -74,6 +76,11 @@ const tipoProdutoOptions = [
   { value: 'simples', label: 'Simples' },
 ];
 
+const modoEnvioOptions = [
+  { value: 'peso', label: 'Por Peso (fracionado)' },
+  { value: 'unidade', label: 'Por Unidade (lacrado/fechado)' },
+];
+
 export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalProps) {
   const { organizationId } = useOrganization();
   const [loading, setLoading] = useState(false);
@@ -85,6 +92,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
     classificacao: '',
     tipo_produto: 'simples',
     ativo: true,
+    modo_envio: 'peso',
+    peso_por_unidade_kg: '',
   });
 
   useEffect(() => {
@@ -97,6 +106,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         classificacao: produto.classificacao || '',
         tipo_produto: produto.tipo_produto || 'simples',
         ativo: produto.ativo ?? true,
+        modo_envio: produto.modo_envio || 'peso',
+        peso_por_unidade_kg: produto.peso_por_unidade_kg?.toString() || '',
       });
     } else {
       setFormData({
@@ -107,6 +118,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         classificacao: '',
         tipo_produto: 'simples',
         ativo: true,
+        modo_envio: 'peso',
+        peso_por_unidade_kg: '',
       });
     }
   }, [produto, open]);
@@ -129,6 +142,11 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
       return;
     }
 
+    if (formData.modo_envio === 'unidade' && (!formData.peso_por_unidade_kg || parseFloat(formData.peso_por_unidade_kg) <= 0)) {
+      toast.error('Peso por unidade é obrigatório para produtos enviados em unidades');
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -146,6 +164,10 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         tipo_produto: formData.tipo_produto as any,
         ativo: formData.ativo,
         organization_id: organizationId,
+        modo_envio: formData.modo_envio,
+        peso_por_unidade_kg: formData.modo_envio === 'unidade' && formData.peso_por_unidade_kg 
+          ? parseFloat(formData.peso_por_unidade_kg) 
+          : null,
       };
 
       if (produto) {
@@ -301,6 +323,51 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="modo_envio">Modo de Envio *</Label>
+              <Select
+                value={formData.modo_envio}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, modo_envio: value, peso_por_unidade_kg: value === 'peso' ? '' : formData.peso_por_unidade_kg })
+                }
+              >
+                <SelectTrigger id="modo_envio">
+                  <SelectValue placeholder="Selecione o modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {modoEnvioOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {formData.modo_envio === 'unidade' 
+                  ? '📦 Este item é enviado somente em unidades fechadas. O sistema converterá o peso informado pela loja e arredondará o envio.' 
+                  : '⚖️ Envio fracionado por peso (kg, g).'}
+              </p>
+            </div>
+
+            {formData.modo_envio === 'unidade' && (
+              <div className="space-y-2">
+                <Label htmlFor="peso_por_unidade_kg">Peso por Unidade (kg) *</Label>
+                <Input
+                  id="peso_por_unidade_kg"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Ex: 1.5"
+                  value={formData.peso_por_unidade_kg}
+                  onChange={(e) => setFormData({ ...formData, peso_por_unidade_kg: e.target.value })}
+                  required={formData.modo_envio === 'unidade'}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ex: Catupiry 1,5kg = cada bisnaga pesa 1.5 kg
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <input

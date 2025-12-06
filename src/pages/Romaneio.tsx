@@ -95,6 +95,8 @@ interface Produto {
   nome: string;
   codigo: string | null;
   unidade_consumo: string | null;
+  modo_envio?: string | null;
+  peso_por_unidade_kg?: number | null;
 }
 
 interface RomaneioProduto {
@@ -125,6 +127,9 @@ interface ProdutoEstoque {
   quantidadeNecessaria?: number;
   estoqueMinimoDia?: number;
   estoqueAtualLoja?: number;
+  modo_envio?: string | null;
+  peso_por_unidade_kg?: number | null;
+  estoqueEmUnidades?: number | null;
 }
 
 // Componente para item de produto no romaneio
@@ -135,6 +140,7 @@ const ProdutoRomaneioItem = ({
   produto: ProdutoEstoque; 
   onAdicionar: (produto: ProdutoEstoque, qtd: number) => void;
 }) => {
+  const isUnidadeMode = produto.modo_envio === 'unidade';
   const [qtdTemp, setQtdTemp] = useState(produto.quantidadeNecessaria || 1);
   
   // Reset qtdTemp when quantidadeNecessaria changes
@@ -143,32 +149,61 @@ const ProdutoRomaneioItem = ({
       setQtdTemp(Math.min(produto.quantidadeNecessaria, produto.quantidade));
     }
   }, [produto.quantidadeNecessaria, produto.quantidade]);
+
+  const handleQtdChange = (value: string) => {
+    let newValue = Number(value);
+    if (isUnidadeMode) {
+      // Apenas valores inteiros para unidades
+      newValue = Math.floor(newValue);
+    }
+    setQtdTemp(Math.min(Math.max(0, newValue), produto.quantidade));
+  };
   
   return (
     <div className="p-3 flex flex-col gap-2 border-b last:border-0">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">{produto.nome}</p>
-          <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground mt-0.5">
-            <span>CPD: {produto.quantidade}</span>
-            <span>•</span>
-            <span>Loja: {produto.estoqueAtualLoja ?? '-'}</span>
-            <span>•</span>
-            <span>Mín: {produto.estoqueMinimoDia ?? '-'}</span>
-          </div>
-          {(produto.quantidadeNecessaria ?? 0) > 0 && (
-            <Badge variant="outline" className="mt-1 text-amber-600 border-amber-300 bg-amber-50">
-              A Enviar: {produto.quantidadeNecessaria}
-            </Badge>
+          
+          {isUnidadeMode ? (
+            <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground mt-0.5">
+              <span>CPD: {produto.quantidade} un</span>
+              <span>•</span>
+              <span>Loja: {produto.estoqueEmUnidades?.toFixed(2) ?? '-'} un ({produto.estoqueAtualLoja ?? 0} kg)</span>
+              <span>•</span>
+              <span>Mín: {produto.estoqueMinimoDia ?? '-'} un</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground mt-0.5">
+              <span>CPD: {produto.quantidade}</span>
+              <span>•</span>
+              <span>Loja: {produto.estoqueAtualLoja ?? '-'}</span>
+              <span>•</span>
+              <span>Mín: {produto.estoqueMinimoDia ?? '-'}</span>
+            </div>
           )}
+          
+          <div className="flex flex-wrap gap-1 mt-1">
+            {isUnidadeMode && (
+              <Badge variant="secondary" className="text-xs">
+                📦 Unidade
+              </Badge>
+            )}
+            {(produto.quantidadeNecessaria ?? 0) > 0 && (
+              <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">
+                A Enviar: {produto.quantidadeNecessaria}{isUnidadeMode ? ' un' : ''}
+              </Badge>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Input
             type="number"
             min={1}
             max={produto.quantidade}
+            step={isUnidadeMode ? 1 : 0.1}
             value={qtdTemp}
-            onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
+            onChange={(e) => handleQtdChange(e.target.value)}
             className="w-16 h-8 text-center"
           />
           <Button
@@ -349,7 +384,7 @@ const Romaneio = () => {
     try {
       const { data, error } = await supabase
         .from("produtos")
-        .select("id, nome, codigo, unidade_consumo")
+        .select("id, nome, codigo, unidade_consumo, modo_envio, peso_por_unidade_kg")
         .eq("ativo", true)
         .order("nome");
       if (error) throw error;
@@ -1047,15 +1082,30 @@ const Romaneio = () => {
       const estoqueLoja = estoqueLojaAtual.find(e => e.produto_id === p.id);
       
       const estoqueMinimoDia = minimo?.[diaSemana] || 0;
-      const estoqueAtualLoja = estoqueLoja?.quantidade || 0;
-      const quantidadeNecessaria = Math.max(0, estoqueMinimoDia - estoqueAtualLoja);
+      const estoqueAtualLojaRaw = estoqueLoja?.quantidade || 0;
+      
+      let quantidadeNecessaria: number;
+      let estoqueEmUnidades: number | null = null;
+      
+      // Lógica de conversão peso → unidades
+      if (p.modo_envio === 'unidade' && p.peso_por_unidade_kg && p.peso_por_unidade_kg > 0) {
+        // Converter peso em kg para unidades
+        estoqueEmUnidades = estoqueAtualLojaRaw / p.peso_por_unidade_kg;
+        // Calcular faltante e arredondar para cima (Math.ceil)
+        const faltante = estoqueMinimoDia - estoqueEmUnidades;
+        quantidadeNecessaria = Math.max(0, Math.ceil(faltante));
+      } else {
+        // Produtos por peso: cálculo normal sem arredondamento
+        quantidadeNecessaria = Math.max(0, estoqueMinimoDia - estoqueAtualLojaRaw);
+      }
       
       return {
         ...p,
         quantidade: estoque?.quantidade || 0,
         quantidadeNecessaria,
         estoqueMinimoDia,
-        estoqueAtualLoja
+        estoqueAtualLoja: estoqueAtualLojaRaw,
+        estoqueEmUnidades,
       };
     });
   }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual]);
