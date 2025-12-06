@@ -18,6 +18,7 @@ import Producao from "./pages/Producao";
 import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
 import GerenciarProdutos from "./pages/GerenciarProdutos";
+import ConfigurarInterface from "./pages/ConfigurarInterface";
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
 import PainelKanban from "./pages/PainelKanban";
@@ -211,6 +212,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRoles={['Admin']}>
                       <GerenciarProdutos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/configurar-interface"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <ConfigurarInterface />
                     </ProtectedRoute>
                   }
                 />

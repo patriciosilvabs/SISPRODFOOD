@@ -266,6 +266,13 @@ export const PERMISSIONS_CONFIG: PermissionSection[] = [
         description: 'Alarmes, otimização sazonal e outras configs',
         section: 'config',
         dependsOn: ['config.view']
+      },
+      {
+        key: 'config.interface',
+        label: 'Configurar Interface',
+        description: 'Personalizar visibilidade de elementos da UI',
+        section: 'config',
+        dependsOn: ['config.view']
       }
     ]
   },
@@ -347,6 +354,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/lista-de-compras-ia': ['compras.view'],
   '/central-de-relatorios': ['relatorios.producao', 'relatorios.romaneios', 'relatorios.estoque', 'relatorios.insumos', 'relatorios.consumo', 'relatorios.diagnostico'],
   '/configuracoes': ['config.view'],
+  '/configurar-interface': ['config.interface'],
   '/gerenciar-usuarios': ['config.usuarios'],
   '/gerenciar-produtos': ['config.produtos'],
   '/itens-porcionados': ['config.itens'],
