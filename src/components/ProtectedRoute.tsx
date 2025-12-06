@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ROUTE_PERMISSIONS } from '@/lib/permissions';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -74,7 +75,6 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       
       if (!isPublicRoute && !hasRouteAccess(location.pathname)) {
         // Usuário não tem permissão para esta rota - redirecionar para primeira rota permitida
-        const { ROUTE_PERMISSIONS } = require('@/lib/permissions');
         const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
           (route: string) => route !== '/' && hasRouteAccess(route)
         );
