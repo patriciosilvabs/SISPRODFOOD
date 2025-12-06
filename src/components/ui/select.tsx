@@ -78,6 +78,7 @@ const SelectContent = React.forwardRef<
         className,
       )}
       position={position}
+      onCloseAutoFocus={!usePortal ? (e) => e.preventDefault() : undefined}
       {...props}
     >
       <SelectScrollUpButton />
