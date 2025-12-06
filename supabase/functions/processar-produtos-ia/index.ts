@@ -1,11 +1,19 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.84.0';
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Schema de validação com Zod
+const ProcessarProdutosSchema = z.object({
+  texto: z.string()
+    .min(1, "Texto não pode estar vazio")
+    .max(50000, "Texto excede limite de 50.000 caracteres")
+    .transform(val => val.trim()),
+});
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -13,14 +21,22 @@ serve(async (req) => {
   }
 
   try {
-    const { texto } = await req.json();
+    // Parse e validar input com Zod
+    const rawBody = await req.json();
+    const parseResult = ProcessarProdutosSchema.safeParse(rawBody);
     
-    if (!texto || texto.trim().length === 0) {
+    if (!parseResult.success) {
+      console.error('Validation error:', parseResult.error.flatten());
       return new Response(
-        JSON.stringify({ error: 'Texto não fornecido' }),
+        JSON.stringify({ 
+          error: 'Dados inválidos', 
+          details: parseResult.error.flatten().fieldErrors 
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const { texto } = parseResult.data;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -31,7 +47,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Processando texto com IA:', texto.substring(0, 100));
+    console.log('Processando texto com IA:', texto.substring(0, 100), `(${texto.length} caracteres)`);
 
     const systemPrompt = `Você é um assistente especializado em extrair produtos de texto para um sistema de gestão.
 

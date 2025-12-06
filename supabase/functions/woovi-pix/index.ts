@@ -1,18 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface ChargeRequest {
-  organizationId: string;
-  plano: 'basico' | 'profissional' | 'enterprise';
-  valor: number; // em centavos
-  customerName?: string;
-  customerEmail?: string;
-  customerTaxID?: string; // CPF/CNPJ
-}
+// Schema de validação com Zod
+const ChargeRequestSchema = z.object({
+  organizationId: z.string().uuid("organizationId deve ser um UUID válido"),
+  plano: z.enum(['basico', 'profissional', 'enterprise'], {
+    errorMap: () => ({ message: "Plano deve ser: basico, profissional ou enterprise" })
+  }),
+  valor: z.number()
+    .int("Valor deve ser inteiro (centavos)")
+    .min(100, "Valor mínimo é R$ 1,00 (100 centavos)")
+    .max(100000000, "Valor máximo é R$ 1.000.000,00"),
+  customerName: z.string().max(100, "Nome deve ter no máximo 100 caracteres").optional(),
+  customerEmail: z.string().email("Email inválido").max(255, "Email deve ter no máximo 255 caracteres").optional(),
+  customerTaxID: z.string()
+    .regex(/^(\d{11}|\d{14})$/, "CPF (11 dígitos) ou CNPJ (14 dígitos) inválido")
+    .optional(),
+});
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -27,17 +36,32 @@ serve(async (req) => {
       throw new Error('Configuração de pagamento não encontrada');
     }
 
-    const body: ChargeRequest = await req.json();
-    console.log('Received charge request:', { ...body, customerTaxID: '***' });
-
-    // Validação básica
-    if (!body.organizationId || !body.plano || !body.valor) {
-      throw new Error('Campos obrigatórios: organizationId, plano, valor');
+    // Parse e validar input com Zod
+    const rawBody = await req.json();
+    const parseResult = ChargeRequestSchema.safeParse(rawBody);
+    
+    if (!parseResult.success) {
+      console.error('Validation error:', parseResult.error.flatten());
+      return new Response(
+        JSON.stringify({ 
+          error: 'Dados inválidos', 
+          details: parseResult.error.flatten().fieldErrors 
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
 
-    if (body.valor < 100) {
-      throw new Error('Valor mínimo é R$ 1,00 (100 centavos)');
-    }
+    const body = parseResult.data;
+    console.log('Received charge request:', { 
+      organizationId: body.organizationId, 
+      plano: body.plano, 
+      valor: body.valor,
+      customerEmail: body.customerEmail ? '***' : undefined,
+      customerTaxID: body.customerTaxID ? '***' : undefined
+    });
 
     // Gerar correlationID único
     const correlationID = crypto.randomUUID();

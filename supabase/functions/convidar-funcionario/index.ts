@@ -318,6 +318,27 @@ serve(async (req) => {
 
     console.log("Invite created successfully:", invite.id);
 
+    // Registrar log de auditoria
+    try {
+      await supabase.from('audit_logs').insert([{
+        organization_id: orgMember.organization_id,
+        user_id: user.id,
+        user_email: user.email || '',
+        action: 'user.invite',
+        entity_type: 'invite',
+        entity_id: invite.id,
+        details: {
+          invited_email: normalizedEmail,
+          roles,
+          lojas_ids,
+          inviter_name: inviterName,
+        },
+      }]);
+    } catch (auditError) {
+      console.error('Failed to create audit log:', auditError);
+      // Não falhar a operação principal por causa do log de auditoria
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
