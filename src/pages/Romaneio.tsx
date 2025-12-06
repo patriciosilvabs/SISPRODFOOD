@@ -271,6 +271,10 @@ const Romaneio = () => {
   const [savingProduto, setSavingProduto] = useState(false);
   const [estoqueMinimoSemanal, setEstoqueMinimoSemanal] = useState<any[]>([]);
   const [estoqueLojaAtual, setEstoqueLojaAtual] = useState<any[]>([]);
+  
+  // Estados para recebimento de Romaneio de Produtos
+  const [romaneiosProdutosEnviados, setRomaneiosProdutosEnviados] = useState<RomaneioProduto[]>([]);
+  const [recebimentosProduto, setRecebimentosProduto] = useState<{[itemId: string]: { quantidade_recebida: number; divergencia?: boolean; observacao_divergencia?: string }}>({});
 
   // ==================== EFFECTS ====================
 
@@ -281,6 +285,7 @@ const Romaneio = () => {
     fetchProdutos();
     fetchEstoquesProdutos();
     fetchRomaneiosProdutos();
+    fetchRomaneiosProdutosEnviados();
 
     let isMounted = true;
     
@@ -667,6 +672,58 @@ const Romaneio = () => {
       console.error("Erro ao buscar romaneios de produtos:", error);
     } finally {
       setLoadingProdutos(false);
+    }
+  };
+
+  const fetchRomaneiosProdutosEnviados = async () => {
+    if (!organizationId) return;
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      let query = supabase
+        .from("romaneios_produtos")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("status", "enviado")
+        .order("data_envio", { ascending: false });
+
+      // Se for usuário de loja, filtrar por lojas vinculadas
+      if (!isAdmin() && userLojasIds.length > 0) {
+        query = query.in('loja_id', userLojasIds);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setRomaneiosProdutosEnviados(data || []);
+      
+      // Buscar itens de cada romaneio enviado
+      for (const romaneio of data || []) {
+        const { data: itens } = await supabase
+          .from("romaneios_produtos_itens")
+          .select("*")
+          .eq("romaneio_id", romaneio.id);
+        
+        setItensRomaneiosProdutos(prev => ({
+          ...prev,
+          [romaneio.id]: itens || []
+        }));
+        
+        // Inicializar estado de recebimento
+        itens?.forEach((item: RomaneioProdutoItem) => {
+          setRecebimentosProduto(prev => ({
+            ...prev,
+            [item.id]: {
+              quantidade_recebida: item.quantidade,
+              divergencia: false,
+              observacao_divergencia: ''
+            }
+          }));
+        });
+      }
+    } catch (error: any) {
+      console.error("Erro ao buscar romaneios de produtos enviados:", error);
     }
   };
 
@@ -1194,6 +1251,7 @@ const Romaneio = () => {
       setLojaSelecionadaProduto("");
       setSearchProduto("");
       fetchRomaneiosProdutos();
+      fetchEstoquesProdutos(); // Atualizar estoque disponível após criar romaneio
     } catch (error: any) {
       console.error("Erro ao criar romaneio:", error);
       toast.error(error.message || 'Erro ao criar romaneio');
@@ -1281,6 +1339,89 @@ const Romaneio = () => {
       fetchRomaneiosProdutos();
     } catch (error: any) {
       toast.error(error.message || 'Erro ao excluir');
+    }
+  };
+
+  const handleConfirmarRecebimentoProduto = async (romaneioId: string) => {
+    if (!organizationId) return;
+    
+    try {
+      setLoadingProdutos(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
+      const romaneio = romaneiosProdutosEnviados.find(r => r.id === romaneioId);
+      if (!romaneio) throw new Error('Romaneio não encontrado');
+
+      const itens = itensRomaneiosProdutos[romaneioId] || [];
+      
+      // Atualizar cada item com quantidade recebida e verificar divergências
+      for (const item of itens) {
+        const recebimento = recebimentosProduto[item.id];
+        const qtdRecebida = recebimento?.quantidade_recebida ?? item.quantidade;
+        const divergencia = qtdRecebida !== item.quantidade;
+        
+        await supabase
+          .from('romaneios_produtos_itens')
+          .update({
+            quantidade_recebida: qtdRecebida,
+            divergencia,
+            observacao_divergencia: divergencia ? (recebimento?.observacao_divergencia || null) : null
+          })
+          .eq('id', item.id);
+
+        // Atualizar estoque da loja
+        const { data: estoqueAtual } = await supabase
+          .from('estoque_loja_produtos')
+          .select('id, quantidade')
+          .eq('produto_id', item.produto_id)
+          .eq('loja_id', romaneio.loja_id)
+          .single();
+
+        if (estoqueAtual) {
+          await supabase
+            .from('estoque_loja_produtos')
+            .update({
+              quantidade: (estoqueAtual.quantidade || 0) + qtdRecebida,
+              data_ultima_atualizacao: new Date().toISOString(),
+              data_confirmacao_recebimento: new Date().toISOString()
+            })
+            .eq('id', estoqueAtual.id);
+        } else {
+          await supabase
+            .from('estoque_loja_produtos')
+            .insert({
+              produto_id: item.produto_id,
+              loja_id: romaneio.loja_id,
+              quantidade: qtdRecebida,
+              data_ultima_atualizacao: new Date().toISOString(),
+              data_confirmacao_recebimento: new Date().toISOString(),
+              organization_id: organizationId
+            });
+        }
+      }
+
+      // Atualizar status do romaneio para recebido
+      await supabase
+        .from('romaneios_produtos')
+        .update({
+          status: 'recebido',
+          data_recebimento: new Date().toISOString(),
+          recebido_por_id: user.id,
+          recebido_por_nome: userProfile?.nome || 'Usuário',
+          observacao_recebimento: observacaoRecebimento[romaneioId] || null
+        })
+        .eq('id', romaneioId);
+
+      toast.success('Recebimento de produtos confirmado!');
+      fetchRomaneiosProdutosEnviados();
+      fetchRomaneiosProdutos();
+    } catch (error: any) {
+      console.error('Erro ao confirmar recebimento:', error);
+      toast.error(error.message || 'Erro ao confirmar recebimento');
+    } finally {
+      setLoadingProdutos(false);
     }
   };
 
@@ -1743,8 +1884,16 @@ const Romaneio = () => {
         </Card>
 
         {/* ==================== SEÇÃO: ROMANEIO DE PRODUTOS ==================== */}
-        {canManageProduction && (
-          <Card>
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Store className="h-5 w-5" />
+              Romaneio de Produtos
+            </CardTitle>
+            <CardDescription>
+              {canManageProduction ? 'Envio de produtos do estoque CPD para as lojas' : 'Recebimento de produtos enviados pelo CPD'}
+            </CardDescription>
+          </CardHeader>
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Store className="h-5 w-5" />
@@ -1753,14 +1902,24 @@ const Romaneio = () => {
               <CardDescription>Envio de produtos do estoque CPD para as lojas</CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="criar" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="criar">Criar / Enviar</TabsTrigger>
-                  <TabsTrigger value="pendentes">
-                    Pendentes
-                    {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length > 0 && (
+              <Tabs defaultValue={isLojaOnly ? 'receber-produtos' : 'criar'} className="space-y-4">
+                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                  {!isLojaOnly && <TabsTrigger value="criar">Criar / Enviar</TabsTrigger>}
+                  {!isLojaOnly && (
+                    <TabsTrigger value="pendentes">
+                      Pendentes
+                      {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
+                          {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  )}
+                  <TabsTrigger value="receber-produtos">
+                    Receber
+                    {romaneiosProdutosEnviados.length > 0 && (
                       <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
-                        {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length}
+                        {romaneiosProdutosEnviados.length}
                       </Badge>
                     )}
                   </TabsTrigger>
@@ -1864,76 +2023,189 @@ const Romaneio = () => {
                 </TabsContent>
 
                 {/* TAB: PENDENTES */}
-                <TabsContent value="pendentes" className="space-y-4">
-                  {loadingProdutos ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : romaneiosProdutosPendentes.filter(r => r.status === "pendente").length === 0 ? (
+                {!isLojaOnly && (
+                  <TabsContent value="pendentes" className="space-y-4">
+                    {loadingProdutos ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : romaneiosProdutosPendentes.filter(r => r.status === "pendente").length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                        <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
+                        <p>Nenhum romaneio pendente de envio</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {romaneiosProdutosPendentes
+                          .filter(r => r.status === "pendente")
+                          .map((romaneio) => {
+                            const itens = itensRomaneiosProdutos[romaneio.id] || [];
+                            return (
+                              <div key={romaneio.id} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div>
+                                    <h4 className="font-semibold flex items-center gap-2">
+                                      <Store className="h-4 w-4" />
+                                      {romaneio.loja_nome}
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground">
+                                      {itens.length} produtos • Criado em {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                                    </p>
+                                  </div>
+                                  <Badge>Pendente</Badge>
+                                </div>
+                                <div className="text-sm text-muted-foreground mb-3 space-y-1">
+                                  {itens.map((item) => (
+                                    <div key={item.id} className="flex justify-between">
+                                      <span>{item.produto_nome}</span>
+                                      <span className="font-mono">{item.quantidade} {item.unidade || "un"}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleExcluirRomaneioProduto(romaneio.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-1" />
+                                    Excluir
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleEnviarRomaneioProduto(romaneio.id)}
+                                    disabled={enviandoProduto}
+                                  >
+                                    {enviandoProduto ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : (
+                                      <Send className="h-4 w-4 mr-1" />
+                                    )}
+                                    Enviar
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </TabsContent>
+                )}
+
+                {/* TAB: RECEBER PRODUTOS */}
+                <TabsContent value="receber-produtos" className="space-y-4">
+                  {romaneiosProdutosEnviados.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                      <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                      <p>Nenhum romaneio pendente de envio</p>
+                      <Package className="h-12 w-12 mb-4 opacity-50" />
+                      <p>Nenhum romaneio de produtos para receber</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {romaneiosProdutosPendentes
-                        .filter(r => r.status === "pendente")
-                        .map((romaneio) => {
-                          const itens = itensRomaneiosProdutos[romaneio.id] || [];
-                          return (
-                            <div key={romaneio.id} className="border rounded-lg p-4">
-                              <div className="flex items-center justify-between mb-3">
+                      {romaneiosProdutosEnviados.map((romaneio) => {
+                        const itens = itensRomaneiosProdutos[romaneio.id] || [];
+                        return (
+                          <Card key={romaneio.id}>
+                            <CardHeader className="py-3">
+                              <div className="flex items-center justify-between">
                                 <div>
-                                  <h4 className="font-semibold flex items-center gap-2">
+                                  <CardTitle className="text-sm flex items-center gap-2">
                                     <Store className="h-4 w-4" />
                                     {romaneio.loja_nome}
-                                  </h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    {itens.length} produtos • Criado em {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                                  </CardTitle>
+                                  <p className="text-xs text-muted-foreground">
+                                    Enviado por: {romaneio.usuario_nome} • {romaneio.data_envio && format(new Date(romaneio.data_envio), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                                   </p>
                                 </div>
-                                <Badge>Pendente</Badge>
+                                <Badge variant="outline" className="text-blue-600">
+                                  <Send className="w-3 h-3 mr-1" />
+                                  Enviado
+                                </Badge>
                               </div>
-                              <div className="text-sm text-muted-foreground mb-3 space-y-1">
-                                {itens.map((item) => (
-                                  <div key={item.id} className="flex justify-between">
-                                    <span>{item.produto_nome}</span>
-                                    <span className="font-mono">{item.quantidade} {item.unidade || "un"}</span>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              {itens.map((item) => {
+                                const recebimento = recebimentosProduto[item.id];
+                                const qtdRecebida = recebimento?.quantidade_recebida ?? item.quantidade;
+                                const divergencia = qtdRecebida !== item.quantidade;
+                                
+                                return (
+                                  <div key={item.id} className="p-3 border rounded space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="font-medium text-sm">{item.produto_nome}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Enviado: {item.quantidade} {item.unidade || "un"}
+                                        </p>
+                                      </div>
+                                      {divergencia ? (
+                                        <Badge variant="outline" className="text-amber-600 border-amber-300">
+                                          ⚠️ Divergência
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-green-600 border-green-300">
+                                          ✓ OK
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-muted-foreground">Recebido:</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        step={0.1}
+                                        value={qtdRecebida}
+                                        onChange={(e) => setRecebimentosProduto(prev => ({
+                                          ...prev,
+                                          [item.id]: {
+                                            ...prev[item.id],
+                                            quantidade_recebida: parseFloat(e.target.value) || 0
+                                          }
+                                        }))}
+                                        className="w-24 h-8"
+                                      />
+                                      <span className="text-xs text-muted-foreground">{item.unidade || "un"}</span>
+                                    </div>
+                                    {divergencia && (
+                                      <Input
+                                        placeholder="Motivo da divergência..."
+                                        value={recebimento?.observacao_divergencia || ''}
+                                        onChange={(e) => setRecebimentosProduto(prev => ({
+                                          ...prev,
+                                          [item.id]: {
+                                            ...prev[item.id],
+                                            observacao_divergencia: e.target.value
+                                          }
+                                        }))}
+                                        className="h-8 text-sm"
+                                      />
+                                    )}
                                   </div>
-                                ))}
-                              </div>
-                              <div className="flex gap-2 justify-end">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleExcluirRomaneioProduto(romaneio.id)}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  Excluir
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleEnviarRomaneioProduto(romaneio.id)}
-                                  disabled={enviandoProduto}
-                                >
-                                  {enviandoProduto ? (
-                                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                  ) : (
-                                    <Send className="h-4 w-4 mr-1" />
-                                  )}
-                                  Enviar
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                                );
+                              })}
+                              <Textarea
+                                placeholder="Observação geral (opcional)"
+                                value={observacaoRecebimento[romaneio.id] || ''}
+                                onChange={(e) => setObservacaoRecebimento(prev => ({ ...prev, [romaneio.id]: e.target.value }))}
+                                className="h-16"
+                              />
+                              <Button 
+                                onClick={() => handleConfirmarRecebimentoProduto(romaneio.id)} 
+                                disabled={loadingProdutos}
+                                className="w-full"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Confirmar Recebimento
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>
               </Tabs>
             </CardContent>
           </Card>
-        )}
       </div>
     </Layout>
   );
