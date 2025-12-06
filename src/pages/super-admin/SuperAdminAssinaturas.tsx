@@ -353,8 +353,8 @@ export const SuperAdminAssinaturas = () => {
       </div>
 
       {/* Edit Dialog */}
-      <Dialog open={!!editingSub} onOpenChange={() => setEditingSub(null)}>
-        <DialogContent>
+      <Dialog open={!!editingSub} onOpenChange={() => setEditingSub(null)} modal={false}>
+        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Gerenciar Assinatura</DialogTitle>
             <DialogDescription>
