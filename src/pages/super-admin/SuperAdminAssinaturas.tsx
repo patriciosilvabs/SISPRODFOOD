@@ -355,7 +355,7 @@ export const SuperAdminAssinaturas = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editingSub} onOpenChange={() => setEditingSub(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Gerenciar Assinatura</DialogTitle>
             <DialogDescription>
