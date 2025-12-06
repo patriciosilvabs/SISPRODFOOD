@@ -839,7 +839,7 @@ const GerenciarUsuarios = () => {
           </DialogHeader>
 
           {editingUser && (
-            <ScrollArea className="flex-1 pr-4">
+            <div className="flex-1 overflow-y-auto max-h-[60vh] pr-4">
               <div className="space-y-6 py-4">
                 {/* User Info */}
                 <div className="space-y-3 p-4 bg-muted rounded-lg">
@@ -929,7 +929,7 @@ const GerenciarUsuarios = () => {
                   </Tabs>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           <DialogFooter className="pt-4 border-t">
