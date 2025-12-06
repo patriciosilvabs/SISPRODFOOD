@@ -94,7 +94,8 @@ const ResumoDaProducao = () => {
     em_porcionamento: [],
     finalizado: [],
   });
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
@@ -244,10 +245,10 @@ const ResumoDaProducao = () => {
           table: 'producao_registros'
         },
         () => {
-          // Debounce de 500ms para evitar múltiplas chamadas
+          // Debounce de 500ms para evitar múltiplas chamadas - atualização silenciosa
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
-            loadProducaoRegistros();
+            loadProducaoRegistros(true); // silent = true
           }, 500);
         }
       )
@@ -259,9 +260,13 @@ const ResumoDaProducao = () => {
     };
   }, []);
 
-  const loadProducaoRegistros = async () => {
+  const loadProducaoRegistros = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) {
+        setInitialLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       const { data, error } = await supabase
         .from('producao_registros')
         .select('*')
@@ -377,7 +382,8 @@ const ResumoDaProducao = () => {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -458,8 +464,18 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
+      // Atualização otimista: mover card localmente ANTES do realtime
+      setColumns(prev => {
+        const cardToMove = prev.a_produzir.find(r => r.id === registroId);
+        if (!cardToMove) return prev;
+        return {
+          ...prev,
+          a_produzir: prev.a_produzir.filter(r => r.id !== registroId),
+          em_preparo: [...prev.em_preparo, { ...cardToMove, status: 'em_preparo', data_inicio_preparo: new Date().toISOString() }],
+        };
+      });
       toast.success('Item movido para Em Preparo');
-      loadProducaoRegistros();
+      // Realtime listener vai sincronizar dados completos
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast.error('Erro ao atualizar status');
@@ -501,10 +517,28 @@ const ResumoDaProducao = () => {
       }
 
       console.log('🟢 Update no Supabase bem sucedido!');
+      
+      // Atualização otimista: mover card localmente
+      setColumns(prev => {
+        const cardToMove = prev.em_preparo.find(r => r.id === selectedRegistro.id);
+        if (!cardToMove) return prev;
+        return {
+          ...prev,
+          em_preparo: prev.em_preparo.filter(r => r.id !== selectedRegistro.id),
+          em_porcionamento: [...prev.em_porcionamento, { 
+            ...cardToMove, 
+            status: 'em_porcionamento',
+            peso_preparo_kg: data.peso_preparo_kg,
+            sobra_preparo_kg: data.sobra_preparo_kg,
+            data_inicio_porcionamento: new Date().toISOString() 
+          }],
+        };
+      });
+      
       toast.success(`${selectedRegistro.item_nome} avançou para porcionamento`);
-      loadProducaoRegistros();
       setModalPreparo(false);
       setSelectedRegistro(null);
+      // Realtime listener vai sincronizar dados completos
     } catch (error) {
       console.error('🔴 Erro ao concluir preparo:', error);
       toast.error('Erro ao concluir preparo');
@@ -661,6 +695,24 @@ const ResumoDaProducao = () => {
         toast.success('Produção finalizada com sucesso!');
       }
 
+      // Atualização otimista: mover card localmente
+      setColumns(prev => {
+        const cardToMove = prev.em_porcionamento.find(r => r.id === selectedRegistro.id);
+        if (!cardToMove) return prev;
+        return {
+          ...prev,
+          em_porcionamento: prev.em_porcionamento.filter(r => r.id !== selectedRegistro.id),
+          finalizado: [...prev.finalizado, { 
+            ...cardToMove, 
+            status: 'finalizado',
+            unidades_reais: data.unidades_reais,
+            peso_final_kg: data.peso_final_kg,
+            sobra_kg: data.sobra_kg,
+            data_fim: new Date().toISOString() 
+          }],
+        };
+      });
+
       // Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
       // (a_produzir é coluna gerada, não pode ser atualizada diretamente)
       const { data: contagensAtuais, error: fetchError } = await supabase
@@ -679,16 +731,19 @@ const ResumoDaProducao = () => {
         }
       }
       
-      loadProducaoRegistros();
       setModalFinalizar(false);
       setSelectedRegistro(null);
+      // Realtime listener vai sincronizar dados completos
     } catch (error) {
       console.error('Erro ao finalizar produção:', error);
       toast.error('Erro ao finalizar produção');
     }
   };
 
-  if (loading) {
+  // Mostrar loading apenas no carregamento inicial E quando não há dados
+  const totalCards = columns.a_produzir.length + columns.em_preparo.length + columns.em_porcionamento.length + columns.finalizado.length;
+  
+  if (initialLoading && totalCards === 0) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[400px]">
@@ -711,17 +766,25 @@ const ResumoDaProducao = () => {
               Gerencie o fluxo de produção através do Kanban
             </p>
           </div>
-          {alarmPlaying && (
-            <Button
-              onClick={handleStopAlarm}
-              variant="destructive"
-              size="lg"
-              className="animate-pulse"
-            >
-              <VolumeX className="h-5 w-5 mr-2" />
-              Parar Alarme
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {isRefreshing && (
+              <Badge variant="outline" className="animate-pulse text-muted-foreground">
+                <div className="inline-block h-3 w-3 mr-2 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
+                Sincronizando...
+              </Badge>
+            )}
+            {alarmPlaying && (
+              <Button
+                onClick={handleStopAlarm}
+                variant="destructive"
+                size="lg"
+                className="animate-pulse"
+              >
+                <VolumeX className="h-5 w-5 mr-2" />
+                Parar Alarme
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

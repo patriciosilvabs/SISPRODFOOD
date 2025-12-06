@@ -145,7 +145,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
 
   return (
-    <Card className={`hover:shadow-md transition-shadow ${
+    <Card className={`hover:shadow-md transition-all duration-300 ease-out animate-fade-in ${
       columnId === 'em_preparo' && timerState.isFinished ? 'ring-4 ring-red-500 animate-pulse' : ''
     } ${estaBloqueado ? 'opacity-60' : ''}`}>
       <CardContent className="p-4">
