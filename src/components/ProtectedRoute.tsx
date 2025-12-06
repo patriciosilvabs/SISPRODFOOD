@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -10,9 +11,10 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, roles, loading, isSuperAdmin } = useAuth();
+  const { user, roles, loading, isSuperAdmin, isAdmin } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess } = useSubscription();
+  const { hasRouteAccess, loading: permissionsLoading } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -57,19 +59,33 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       return;
     }
 
-    // Verificar roles após onboarding e assinatura
-    if (!loading && !orgLoading && user && !needsOnboarding && canAccess && requiredRoles && requiredRoles.length > 0) {
-      // Super Admin passa em qualquer verificação de role
-      if (isSuperAdmin()) return;
+    // Verificar permissões granulares para a rota atual
+    if (!loading && !orgLoading && !permissionsLoading && user && !needsOnboarding && canAccess) {
+      // Admin e SuperAdmin passam em qualquer verificação
+      if (isAdmin() || isSuperAdmin()) return;
       
-      const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
-      if (!hasRequiredRole) {
+      // Verificar permissão de rota usando o sistema granular
+      // Rotas que não precisam de permissão específica (dashboard, auth-related)
+      const publicRoutes = ['/', '/assinatura', '/aceitar-convite'];
+      const isPublicRoute = publicRoutes.includes(location.pathname);
+      
+      if (!isPublicRoute && !hasRouteAccess(location.pathname)) {
+        // Usuário não tem permissão para esta rota
         navigate('/');
+        return;
+      }
+      
+      // Verificação legacy de roles (para compatibilidade)
+      if (requiredRoles && requiredRoles.length > 0) {
+        const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
+        if (!hasRequiredRole) {
+          navigate('/');
+        }
       }
     }
-  }, [user, loading, orgLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isSuperAdminRoute]);
+  }, [user, loading, orgLoading, permissionsLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isAdmin, isSuperAdminRoute, hasRouteAccess]);
 
-  if (loading || orgLoading) {
+  if (loading || orgLoading || permissionsLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
