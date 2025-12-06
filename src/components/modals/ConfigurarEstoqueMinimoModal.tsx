@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { toast } from "sonner";
-import { Settings, Loader2 } from "lucide-react";
+import { Settings, Loader2, Search, Package } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface Produto {
   id: string;
   nome: string;
-  codigo: string;
+  codigo: string | null;
+  categoria: string;
 }
 
 interface EstoqueConfig {
@@ -36,6 +38,18 @@ interface ConfigurarEstoqueMinimoModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const categoriaLabels: Record<string, string> = {
+  congelado: "Congelado",
+  refrigerado: "Refrigerado",
+  ambiente: "Ambiente",
+  diversos: "Diversos",
+  material_escritorio: "Material de Escritório",
+  material_limpeza: "Material de Limpeza",
+  embalagens: "Embalagens",
+  descartaveis: "Descartáveis",
+  equipamentos: "Equipamentos"
+};
+
 export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarEstoqueMinimoModalProps) {
   const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -45,11 +59,13 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preenchimentoRapido, setPreenchimentoRapido] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string>("todas");
 
   useEffect(() => {
     if (open) {
       fetchLojas();
-      fetchProdutosClasseA();
+      fetchProdutos();
     }
   }, [open]);
 
@@ -74,13 +90,13 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     }
   };
 
-  const fetchProdutosClasseA = async () => {
+  const fetchProdutos = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("produtos")
-        .select("id, nome, codigo")
-        .eq("classificacao", "A")
+        .select("id, nome, codigo, categoria")
+        .eq("ativo", true)
         .order("nome");
 
       if (error) throw error;
@@ -103,7 +119,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
       setConfigs(initialConfigs);
     } catch (error) {
       console.error("Erro ao carregar produtos:", error);
-      toast.error("Erro ao carregar produtos classe A");
+      toast.error("Erro ao carregar produtos");
     } finally {
       setLoading(false);
     }
@@ -141,6 +157,24 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     }
   };
 
+  // Filtrar produtos localmente
+  const produtosFiltrados = useMemo(() => {
+    return produtos.filter(p => {
+      const matchSearch = searchTerm === "" || 
+        p.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCategoria = categoriaFiltro === "todas" || 
+        p.categoria === categoriaFiltro;
+      return matchSearch && matchCategoria;
+    });
+  }, [produtos, searchTerm, categoriaFiltro]);
+
+  // Obter categorias únicas dos produtos
+  const categoriasDisponiveis = useMemo(() => {
+    const cats = new Set(produtos.map(p => p.categoria));
+    return Array.from(cats).sort();
+  }, [produtos]);
+
   const handleConfigChange = (produtoId: string, dia: keyof Omit<EstoqueConfig, 'produto_id'>, valor: string) => {
     const valorNumerico = parseInt(valor) || 0;
     setConfigs(prev => ({
@@ -156,9 +190,10 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     const valor = parseInt(preenchimentoRapido) || 0;
     const updatedConfigs = { ...configs };
     
-    Object.keys(updatedConfigs).forEach(produtoId => {
-      updatedConfigs[produtoId] = {
-        produto_id: produtoId,
+    // Aplicar apenas aos produtos filtrados visíveis
+    produtosFiltrados.forEach(produto => {
+      updatedConfigs[produto.id] = {
+        produto_id: produto.id,
         segunda: valor,
         terca: valor,
         quarta: valor,
@@ -170,7 +205,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     });
     
     setConfigs(updatedConfigs);
-    toast.success(`Valor ${valor} aplicado para todos os produtos e dias`);
+    toast.success(`Valor ${valor} aplicado para ${produtosFiltrados.length} produtos visíveis`);
     setPreenchimentoRapido("");
   };
 
@@ -220,7 +255,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Settings className="h-5 w-5" />
-            Configurar Estoque Mínimo Semanal - Produtos Classe A
+            Configurar Estoque Mínimo Semanal
           </DialogTitle>
           <DialogDescription>
             Defina as quantidades mínimas de estoque para cada dia da semana por loja
@@ -245,51 +280,86 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
             </Select>
           </div>
 
-          {/* Preenchimento Rápido */}
           {lojaSelecionada && (
-            <div className="rounded-lg border border-border bg-muted/50 p-4">
-              <div className="flex items-end gap-3">
-                <div className="flex-1">
-                  <Label htmlFor="preenchimento-rapido">⚡ Preenchimento Rápido</Label>
-                  <div className="flex gap-2 mt-2">
-                    <Input
-                      id="preenchimento-rapido"
-                      type="number"
-                      min="0"
-                      value={preenchimentoRapido}
-                      onChange={(e) => setPreenchimentoRapido(e.target.value)}
-                      placeholder="Digite um valor padrão"
-                      className="max-w-xs"
-                    />
-                    <Button 
-                      onClick={aplicarPreenchimentoRapido}
-                      disabled={!preenchimentoRapido}
-                      variant="secondary"
-                    >
-                      Aplicar para Todos
-                    </Button>
+            <>
+              {/* Busca e Filtros */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou código..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={categoriaFiltro} onValueChange={setCategoriaFiltro}>
+                  <SelectTrigger className="w-full sm:w-56">
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as categorias</SelectItem>
+                    {categoriasDisponiveis.map(cat => (
+                      <SelectItem key={cat} value={cat}>
+                        {categoriaLabels[cat] || cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Badge de contagem */}
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Package className="h-3 w-3" />
+                  {produtosFiltrados.length} de {produtos.length} produtos
+                </Badge>
+              </div>
+
+              {/* Preenchimento Rápido */}
+              <div className="rounded-lg border border-border bg-muted/50 p-4">
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <Label htmlFor="preenchimento-rapido">⚡ Preenchimento Rápido (aplica aos {produtosFiltrados.length} produtos visíveis)</Label>
+                    <div className="flex gap-2 mt-2">
+                      <Input
+                        id="preenchimento-rapido"
+                        type="number"
+                        min="0"
+                        value={preenchimentoRapido}
+                        onChange={(e) => setPreenchimentoRapido(e.target.value)}
+                        placeholder="Digite um valor padrão"
+                        className="max-w-xs"
+                      />
+                      <Button 
+                        onClick={aplicarPreenchimentoRapido}
+                        disabled={!preenchimentoRapido}
+                        variant="secondary"
+                      >
+                        Aplicar para Todos
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Tabela de Produtos */}
-          {lojaSelecionada && (
-            <>
+              {/* Tabela de Produtos */}
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-              ) : produtos.length === 0 ? (
+              ) : produtosFiltrados.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Nenhum produto com classificação A encontrado
+                  {produtos.length === 0 
+                    ? "Nenhum produto ativo encontrado" 
+                    : "Nenhum produto corresponde aos filtros selecionados"
+                  }
                 </div>
               ) : (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-96">
                     <table className="w-full">
-                      <thead className="bg-muted">
+                      <thead className="bg-muted sticky top-0">
                         <tr>
                           <th className="px-4 py-3 text-left text-sm font-medium text-foreground sticky left-0 bg-muted z-10">
                             Produto
@@ -304,13 +374,16 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {produtos.map(produto => (
+                        {produtosFiltrados.map(produto => (
                           <tr key={produto.id} className="hover:bg-muted/50">
                             <td className="px-4 py-3 text-sm sticky left-0 bg-background z-10">
                               <div className="font-medium">{produto.nome}</div>
-                              {produto.codigo && (
-                                <div className="text-xs text-muted-foreground">{produto.codigo}</div>
-                              )}
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                {produto.codigo && <span>{produto.codigo}</span>}
+                                <Badge variant="outline" className="text-xs">
+                                  {categoriaLabels[produto.categoria] || produto.categoria}
+                                </Badge>
+                              </div>
                             </td>
                             {(['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'] as const).map(dia => (
                               <td key={dia} className="px-2 py-3">
