@@ -20,7 +20,8 @@ import {
   ClipboardList,
   Boxes,
   MapPin,
-  Shield
+  Shield,
+  Warehouse
 } from 'lucide-react';
 import {
   Sheet,
@@ -70,9 +71,10 @@ export const Layout = ({ children }: LayoutProps) => {
 
   // Verificações baseadas em permissões granulares
   const canSeeDashboard = hasPermission('dashboard.view');
-  const canSeeCPD = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage', 'insumos.view', 'insumos.manage']);
+  const canSeeCPD = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage', 'insumos.view', 'insumos.manage', 'estoque_cpd_produtos.view', 'estoque_cpd_produtos.manage']);
   const canSeeProducao = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage']);
   const canSeeInsumos = hasAnyPermission(['insumos.view', 'insumos.manage']);
+  const canSeeEstoqueProdutosCPD = hasAnyPermission(['estoque_cpd_produtos.view', 'estoque_cpd_produtos.manage']);
   
   const canSeeLoja = hasAnyPermission(['contagem.view', 'contagem.manage', 'estoque_loja.view', 'estoque_loja.manage', 'erros.view', 'erros.create']);
   const canSeeContagem = hasAnyPermission(['contagem.view', 'contagem.manage']);
@@ -115,6 +117,9 @@ export const Layout = ({ children }: LayoutProps) => {
           )}
           {canSeeInsumos && (
             <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
+          )}
+          {canSeeEstoqueProdutosCPD && (
+            <NavLink to="/estoque-produtos-cpd" icon={Warehouse}>Estoque de Produtos</NavLink>
           )}
         </>
       )}

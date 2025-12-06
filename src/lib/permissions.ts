@@ -71,6 +71,26 @@ export const PERMISSIONS_CONFIG: PermissionSection[] = [
     ]
   },
   {
+    key: 'estoque_cpd_produtos',
+    label: 'Estoque de Produtos (CPD)',
+    description: 'Gestão do estoque central de produtos',
+    permissions: [
+      {
+        key: 'estoque_cpd_produtos.view',
+        label: 'Visualizar Estoque de Produtos',
+        description: 'Ver estoque central de produtos no CPD',
+        section: 'estoque_cpd_produtos'
+      },
+      {
+        key: 'estoque_cpd_produtos.manage',
+        label: 'Gerenciar Estoque de Produtos',
+        description: 'Registrar entradas, saídas e ajustes de produtos',
+        section: 'estoque_cpd_produtos',
+        dependsOn: ['estoque_cpd_produtos.view']
+      }
+    ]
+  },
+  {
     key: 'contagem',
     label: 'Contagem de Porcionados',
     description: 'Contagem diária de itens porcionados',
@@ -358,6 +378,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/': ['dashboard.view'],
   '/resumo-da-producao': ['producao.resumo.view'],
   '/insumos': ['insumos.view'],
+  '/estoque-produtos-cpd': ['estoque_cpd_produtos.view'],
   '/contagem-porcionados': ['contagem.view'],
   '/estoque-diario': ['estoque_loja.view'],
   '/romaneio-porcionados': ['romaneio.view'],

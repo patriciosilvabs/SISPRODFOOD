@@ -345,6 +345,51 @@ export type Database = {
           },
         ]
       }
+      estoque_cpd_produtos: {
+        Row: {
+          created_at: string | null
+          data_ultima_movimentacao: string | null
+          id: string
+          organization_id: string | null
+          produto_id: string
+          quantidade: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_ultima_movimentacao?: string | null
+          id?: string
+          organization_id?: string | null
+          produto_id: string
+          quantidade?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_ultima_movimentacao?: string | null
+          id?: string
+          organization_id?: string | null
+          produto_id?: string
+          quantidade?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estoque_cpd_produtos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "estoque_cpd_produtos_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estoque_loja_itens: {
         Row: {
           data_ultima_movimentacao: string | null
@@ -906,6 +951,66 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      movimentacoes_cpd_produtos: {
+        Row: {
+          created_at: string | null
+          id: string
+          observacao: string | null
+          organization_id: string | null
+          produto_id: string
+          produto_nome: string
+          quantidade: number
+          quantidade_anterior: number
+          quantidade_posterior: number
+          tipo: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          observacao?: string | null
+          organization_id?: string | null
+          produto_id: string
+          produto_nome: string
+          quantidade: number
+          quantidade_anterior?: number
+          quantidade_posterior?: number
+          tipo: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          observacao?: string | null
+          organization_id?: string | null
+          produto_id?: string
+          produto_nome?: string
+          quantidade?: number
+          quantidade_anterior?: number
+          quantidade_posterior?: number
+          tipo?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movimentacoes_cpd_produtos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movimentacoes_cpd_produtos_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
             referencedColumns: ["id"]
           },
         ]

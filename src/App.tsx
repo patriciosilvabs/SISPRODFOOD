@@ -18,6 +18,7 @@ import Producao from "./pages/Producao";
 import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
 import GerenciarProdutos from "./pages/GerenciarProdutos";
+import EstoqueProdutosCPD from "./pages/EstoqueProdutosCPD";
 import ConfigurarInterface from "./pages/ConfigurarInterface";
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
@@ -116,6 +117,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
                       <Insumos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/estoque-produtos-cpd"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <EstoqueProdutosCPD />
                     </ProtectedRoute>
                   }
                 />
