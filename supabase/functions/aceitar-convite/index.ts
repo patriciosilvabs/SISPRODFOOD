@@ -11,11 +11,99 @@ interface AceitarConviteRequest {
   password?: string;
 }
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 5;
+
+// In-memory rate limit store (resets on function cold start)
+const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
+
+function getClientIp(req: Request): string {
+  // Try various headers for client IP (Cloudflare, proxies, etc.)
+  const cfConnectingIp = req.headers.get('cf-connecting-ip');
+  if (cfConnectingIp) return cfConnectingIp;
+
+  const xForwardedFor = req.headers.get('x-forwarded-for');
+  if (xForwardedFor) {
+    // Take the first IP in the chain (original client)
+    return xForwardedFor.split(',')[0].trim();
+  }
+
+  const xRealIp = req.headers.get('x-real-ip');
+  if (xRealIp) return xRealIp;
+
+  // Fallback to a generic identifier if no IP found
+  return 'unknown';
+}
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfterSeconds?: number } {
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+
+  if (!record) {
+    // First request from this IP
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return { allowed: true };
+  }
+
+  // Check if window has expired
+  if (now - record.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    // Reset window
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return { allowed: true };
+  }
+
+  // Within current window
+  if (record.count >= MAX_REQUESTS_PER_WINDOW) {
+    const retryAfterSeconds = Math.ceil((record.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+    return { allowed: false, retryAfterSeconds };
+  }
+
+  // Increment count
+  record.count++;
+  return { allowed: true };
+}
+
+// Cleanup old entries periodically (prevent memory leak)
+function cleanupRateLimitStore() {
+  const now = Date.now();
+  for (const [ip, record] of rateLimitStore.entries()) {
+    if (now - record.windowStart >= RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitStore.delete(ip);
+    }
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Get client IP and check rate limit
+  const clientIp = getClientIp(req);
+  const rateLimitResult = checkRateLimit(clientIp);
+
+  if (!rateLimitResult.allowed) {
+    console.warn(`Rate limit exceeded for IP: ${clientIp}`);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+        retryAfter: rateLimitResult.retryAfterSeconds 
+      }),
+      { 
+        status: 429, 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'Retry-After': String(rateLimitResult.retryAfterSeconds)
+        } 
+      }
+    );
+  }
+
+  // Periodic cleanup
+  cleanupRateLimitStore();
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -219,7 +307,7 @@ Deno.serve(async (req) => {
       console.error('Error updating invite status:', updateInviteError);
     }
 
-    console.log(`Invite accepted successfully for user ${user.id} in organization ${invite.organization_id}`);
+    console.log(`Invite accepted successfully for user ${user.id} in organization ${invite.organization_id} from IP ${clientIp}`);
 
     return new Response(
       JSON.stringify({
