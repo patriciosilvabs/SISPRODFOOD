@@ -69,6 +69,7 @@ export const Layout = ({ children }: LayoutProps) => {
   );
 
   // Verificações baseadas em permissões granulares
+  const canSeeDashboard = hasPermission('dashboard.view');
   const canSeeCPD = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage', 'insumos.view', 'insumos.manage']);
   const canSeeProducao = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage']);
   const canSeeInsumos = hasAnyPermission(['insumos.view', 'insumos.manage']);
@@ -98,8 +99,12 @@ export const Layout = ({ children }: LayoutProps) => {
   const navigation = (
     <nav className="space-y-1">
       {/* GERAL */}
-      <SectionLabel>Geral</SectionLabel>
-      <NavLink to="/" icon={BarChart3}>Dashboard</NavLink>
+      {canSeeDashboard && (
+        <>
+          <SectionLabel>Geral</SectionLabel>
+          <NavLink to="/" icon={BarChart3}>Dashboard</NavLink>
+        </>
+      )}
       
       {/* CPD - Centro de Produção */}
       {canSeeCPD && (
