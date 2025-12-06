@@ -1095,21 +1095,104 @@ const Romaneio = () => {
 
   // ==================== HANDLERS: PRODUTOS ====================
 
+  // Estado para romaneios pendentes/enviados da loja selecionada (para excluir do cálculo)
+  const [romaneiosPendentesLoja, setRomaneiosPendentesLoja] = useState<{produto_id: string; quantidade: number}[]>([]);
+
+  // Buscar romaneios PENDENTES e ENVIADOS para a loja selecionada
+  useEffect(() => {
+    const fetchRomaneiosPendentesLoja = async () => {
+      if (!lojaSelecionadaProduto || !organizationId) {
+        setRomaneiosPendentesLoja([]);
+        return;
+      }
+
+      try {
+        // Buscar romaneios pendentes OU enviados (não recebidos) para esta loja
+        const { data: romaneios, error } = await supabase
+          .from('romaneios_produtos')
+          .select('id')
+          .eq('loja_id', lojaSelecionadaProduto)
+          .eq('organization_id', organizationId)
+          .in('status', ['pendente', 'enviado']);
+
+        if (error) throw error;
+
+        if (!romaneios || romaneios.length === 0) {
+          setRomaneiosPendentesLoja([]);
+          return;
+        }
+
+        const romaneioIds = romaneios.map(r => r.id);
+
+        // Buscar itens desses romaneios
+        const { data: itens, error: itensError } = await supabase
+          .from('romaneios_produtos_itens')
+          .select('produto_id, quantidade')
+          .in('romaneio_id', romaneioIds);
+
+        if (itensError) throw itensError;
+
+        // Agregar por produto_id
+        const agregado: {[key: string]: number} = {};
+        itens?.forEach(item => {
+          agregado[item.produto_id] = (agregado[item.produto_id] || 0) + item.quantidade;
+        });
+
+        setRomaneiosPendentesLoja(
+          Object.entries(agregado).map(([produto_id, quantidade]) => ({ produto_id, quantidade }))
+        );
+      } catch (error) {
+        console.error('Erro ao buscar romaneios pendentes:', error);
+        setRomaneiosPendentesLoja([]);
+      }
+    };
+
+    fetchRomaneiosPendentesLoja();
+  }, [lojaSelecionadaProduto, organizationId, romaneiosProdutosPendentes, romaneiosProdutosEnviados]);
+
   const produtosParaRomaneio = useMemo(() => {
+    // Se não tem loja selecionada, não mostrar nada
+    if (!lojaSelecionadaProduto) return [];
+    
     const diaSemana = getDiaSemana();
     
     return produtos.filter(p => {
-      const estoque = estoquesProdutos.find(e => e.produto_id === p.id);
-      const quantidade = estoque?.quantidade || 0;
-      if (quantidade <= 0) return false;
+      // 1. Verificar se há estoque mínimo configurado para este produto/loja
+      const minimo = estoqueMinimoSemanal.find(m => m.produto_id === p.id);
+      const estoqueMinimoDia = minimo?.[diaSemana] || 0;
+      if (estoqueMinimoDia <= 0) return false; // Sem mínimo configurado = não precisa enviar
       
-      // Excluir produtos que já estão no carrinho
+      // 2. Buscar estoque atual da loja
+      const estoqueLoja = estoqueLojaAtual.find(e => e.produto_id === p.id);
+      const estoqueAtualLojaRaw = estoqueLoja?.quantidade || 0;
+      
+      // 3. Calcular déficit REAL
+      let deficit: number;
+      if (p.modo_envio === 'unidade' && p.peso_por_unidade_kg && p.peso_por_unidade_kg > 0) {
+        const estoqueEmUnidades = estoqueAtualLojaRaw / p.peso_por_unidade_kg;
+        deficit = Math.ceil(estoqueMinimoDia - estoqueEmUnidades);
+      } else {
+        deficit = estoqueMinimoDia - estoqueAtualLojaRaw;
+      }
+      
+      // 4. Descontar quantidade já em romaneios pendentes/enviados
+      const jaPendente = romaneiosPendentesLoja.find(r => r.produto_id === p.id);
+      if (jaPendente) {
+        deficit = deficit - jaPendente.quantidade;
+      }
+      
+      // 5. SÓ MOSTRAR se déficit > 0 (loja realmente precisa)
+      if (deficit <= 0) return false;
+      
+      // 6. Excluir produtos que já estão no carrinho
       const noCarrinho = carrinhoProduto.find(c => c.produto_id === p.id);
       if (noCarrinho) return false;
       
+      // 7. Filtro de busca
       const matchSearch = searchProduto === "" ||
         p.nome.toLowerCase().includes(searchProduto.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(searchProduto.toLowerCase());
+      
       return matchSearch;
     }).map(p => {
       const estoque = estoquesProdutos.find(e => e.produto_id === p.id);
@@ -1124,26 +1207,29 @@ const Romaneio = () => {
       
       // Lógica de conversão peso → unidades
       if (p.modo_envio === 'unidade' && p.peso_por_unidade_kg && p.peso_por_unidade_kg > 0) {
-        // Converter peso em kg para unidades
         estoqueEmUnidades = estoqueAtualLojaRaw / p.peso_por_unidade_kg;
-        // Calcular faltante e arredondar para cima (Math.ceil)
         const faltante = estoqueMinimoDia - estoqueEmUnidades;
         quantidadeNecessaria = Math.max(0, Math.ceil(faltante));
       } else {
-        // Produtos por peso: cálculo normal sem arredondamento
         quantidadeNecessaria = Math.max(0, estoqueMinimoDia - estoqueAtualLojaRaw);
+      }
+      
+      // Descontar do déficit o que já está em romaneios pendentes/enviados
+      const jaPendente = romaneiosPendentesLoja.find(r => r.produto_id === p.id);
+      if (jaPendente) {
+        quantidadeNecessaria = Math.max(0, quantidadeNecessaria - jaPendente.quantidade);
       }
       
       return {
         ...p,
-        quantidade: estoque?.quantidade || 0,
-        quantidadeNecessaria,
+        quantidade: estoque?.quantidade || 0, // Estoque CPD (apenas para validação)
+        quantidadeNecessaria, // Déficit real após descontar pendentes
         estoqueMinimoDia,
         estoqueAtualLoja: estoqueAtualLojaRaw,
         estoqueEmUnidades,
       };
     });
-  }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual, carrinhoProduto]);
+  }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual, carrinhoProduto, lojaSelecionadaProduto, romaneiosPendentesLoja]);
 
   const handleAdicionarAoCarrinhoProduto = (produto: ProdutoEstoque, qtd: number) => {
     if (qtd <= 0 || qtd > produto.quantidade) return;
