@@ -122,6 +122,9 @@ interface ProdutoEstoque {
   nome: string;
   quantidade: number;
   unidade_consumo: string | null;
+  quantidadeNecessaria?: number;
+  estoqueMinimoDia?: number;
+  estoqueAtualLoja?: number;
 }
 
 // Componente para item de produto no romaneio
@@ -132,33 +135,51 @@ const ProdutoRomaneioItem = ({
   produto: ProdutoEstoque; 
   onAdicionar: (produto: ProdutoEstoque, qtd: number) => void;
 }) => {
-  const [qtdTemp, setQtdTemp] = useState(1);
+  const [qtdTemp, setQtdTemp] = useState(produto.quantidadeNecessaria || 1);
+  
+  // Reset qtdTemp when quantidadeNecessaria changes
+  useEffect(() => {
+    if (produto.quantidadeNecessaria && produto.quantidadeNecessaria > 0) {
+      setQtdTemp(Math.min(produto.quantidadeNecessaria, produto.quantidade));
+    }
+  }, [produto.quantidadeNecessaria, produto.quantidade]);
   
   return (
-    <div className="p-3 flex items-center justify-between gap-2 border-b last:border-0">
-      <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{produto.nome}</p>
-        <p className="text-sm text-muted-foreground">
-          Estoque: {produto.quantidade} {produto.unidade_consumo || "un"}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={1}
-          max={produto.quantidade}
-          value={qtdTemp}
-          onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
-          className="w-16 h-8 text-center"
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onAdicionar(produto, qtdTemp)}
-          disabled={qtdTemp <= 0 || qtdTemp > produto.quantidade}
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+    <div className="p-3 flex flex-col gap-2 border-b last:border-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{produto.nome}</p>
+          <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground mt-0.5">
+            <span>CPD: {produto.quantidade}</span>
+            <span>•</span>
+            <span>Loja: {produto.estoqueAtualLoja ?? '-'}</span>
+            <span>•</span>
+            <span>Mín: {produto.estoqueMinimoDia ?? '-'}</span>
+          </div>
+          {(produto.quantidadeNecessaria ?? 0) > 0 && (
+            <Badge variant="outline" className="mt-1 text-amber-600 border-amber-300 bg-amber-50">
+              A Enviar: {produto.quantidadeNecessaria}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={produto.quantidade}
+            value={qtdTemp}
+            onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
+            className="w-16 h-8 text-center"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onAdicionar(produto, qtdTemp)}
+            disabled={qtdTemp <= 0 || qtdTemp > produto.quantidade}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -213,6 +234,8 @@ const Romaneio = () => {
   const [loadingProdutos, setLoadingProdutos] = useState(false);
   const [enviandoProduto, setEnviandoProduto] = useState(false);
   const [savingProduto, setSavingProduto] = useState(false);
+  const [estoqueMinimoSemanal, setEstoqueMinimoSemanal] = useState<any[]>([]);
+  const [estoqueLojaAtual, setEstoqueLojaAtual] = useState<any[]>([]);
 
   // ==================== EFFECTS ====================
 
@@ -270,6 +293,16 @@ const Romaneio = () => {
     }
   }, [romaneiosEnviados]);
 
+  // Buscar dados da loja selecionada para produtos
+  useEffect(() => {
+    if (lojaSelecionadaProduto && organizationId) {
+      fetchDadosLojaSelecionada();
+    } else {
+      setEstoqueMinimoSemanal([]);
+      setEstoqueLojaAtual([]);
+    }
+  }, [lojaSelecionadaProduto, organizationId]);
+
   // ==================== FETCH FUNCTIONS ====================
 
   const fetchUserLojas = async () => {
@@ -323,6 +356,40 @@ const Romaneio = () => {
       setProdutos(data || []);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
+    }
+  };
+
+  const getDiaSemana = () => {
+    const dias = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+    return dias[new Date().getDay()];
+  };
+
+  const fetchDadosLojaSelecionada = async () => {
+    if (!lojaSelecionadaProduto || !organizationId) return;
+    
+    try {
+      // Buscar estoque mínimo semanal da loja
+      const { data: minimoSemanal, error: minimoError } = await supabase
+        .from('produtos_estoque_minimo_semanal')
+        .select('produto_id, segunda, terca, quarta, quinta, sexta, sabado, domingo')
+        .eq('loja_id', lojaSelecionadaProduto)
+        .eq('organization_id', organizationId);
+      
+      if (minimoError) throw minimoError;
+      
+      // Buscar estoque atual da loja
+      const { data: estoqueAtual, error: estoqueError } = await supabase
+        .from('estoque_loja_produtos')
+        .select('produto_id, quantidade')
+        .eq('loja_id', lojaSelecionadaProduto)
+        .eq('organization_id', organizationId);
+      
+      if (estoqueError) throw estoqueError;
+      
+      setEstoqueMinimoSemanal(minimoSemanal || []);
+      setEstoqueLojaAtual(estoqueAtual || []);
+    } catch (error) {
+      console.error('Erro ao buscar dados da loja:', error);
     }
   };
 
@@ -964,6 +1031,8 @@ const Romaneio = () => {
   // ==================== HANDLERS: PRODUTOS ====================
 
   const produtosParaRomaneio = useMemo(() => {
+    const diaSemana = getDiaSemana();
+    
     return produtos.filter(p => {
       const estoque = estoquesProdutos.find(e => e.produto_id === p.id);
       const quantidade = estoque?.quantidade || 0;
@@ -974,12 +1043,22 @@ const Romaneio = () => {
       return matchSearch;
     }).map(p => {
       const estoque = estoquesProdutos.find(e => e.produto_id === p.id);
+      const minimo = estoqueMinimoSemanal.find(m => m.produto_id === p.id);
+      const estoqueLoja = estoqueLojaAtual.find(e => e.produto_id === p.id);
+      
+      const estoqueMinimoDia = minimo?.[diaSemana] || 0;
+      const estoqueAtualLoja = estoqueLoja?.quantidade || 0;
+      const quantidadeNecessaria = Math.max(0, estoqueMinimoDia - estoqueAtualLoja);
+      
       return {
         ...p,
-        quantidade: estoque?.quantidade || 0
+        quantidade: estoque?.quantidade || 0,
+        quantidadeNecessaria,
+        estoqueMinimoDia,
+        estoqueAtualLoja
       };
     });
-  }, [produtos, estoquesProdutos, searchProduto]);
+  }, [produtos, estoquesProdutos, searchProduto, estoqueMinimoSemanal, estoqueLojaAtual]);
 
   const handleAdicionarAoCarrinhoProduto = (produto: ProdutoEstoque, qtd: number) => {
     if (qtd <= 0 || qtd > produto.quantidade) return;
