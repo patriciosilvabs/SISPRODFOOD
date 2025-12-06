@@ -282,14 +282,19 @@ const Romaneio = () => {
     fetchEstoquesProdutos();
     fetchRomaneiosProdutos();
 
+    let isMounted = true;
+    
     const channel = supabase
       .channel('estoque-cpd-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'estoque_cpd' }, () => {
-        if (selectedLoja) fetchItensDisponiveis();
+        if (isMounted && selectedLoja) fetchItensDisponiveis();
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      isMounted = false;
+      channel.unsubscribe().then(() => supabase.removeChannel(channel));
+    };
   }, []);
 
   useEffect(() => {

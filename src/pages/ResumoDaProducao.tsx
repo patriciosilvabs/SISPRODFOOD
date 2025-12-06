@@ -229,10 +229,10 @@ const ResumoDaProducao = () => {
   };
 
   useEffect(() => {
-    loadProducaoRegistros();
-
-    // Debounce timeout ref
+    let isMounted = true;
     let reloadTimeout: NodeJS.Timeout | null = null;
+
+    loadProducaoRegistros();
 
     // Configurar realtime para atualizações automáticas com debounce
     const channel = supabase
@@ -245,18 +245,20 @@ const ResumoDaProducao = () => {
           table: 'producao_registros'
         },
         () => {
+          if (!isMounted) return;
           // Debounce de 500ms para evitar múltiplas chamadas - atualização silenciosa
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
-            loadProducaoRegistros(true); // silent = true
+            if (isMounted) loadProducaoRegistros(true); // silent = true
           }, 500);
         }
       )
       .subscribe();
 
     return () => {
+      isMounted = false;
       if (reloadTimeout) clearTimeout(reloadTimeout);
-      supabase.removeChannel(channel);
+      channel.unsubscribe().then(() => supabase.removeChannel(channel));
     };
   }, []);
 
