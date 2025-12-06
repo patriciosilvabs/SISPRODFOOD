@@ -263,6 +263,7 @@ export type Database = {
           id: string
           lojas_ids: string[] | null
           organization_id: string
+          permissions: string[] | null
           roles: string[]
           status: string
           token: string
@@ -277,6 +278,7 @@ export type Database = {
           id?: string
           lojas_ids?: string[] | null
           organization_id: string
+          permissions?: string[] | null
           roles?: string[]
           status?: string
           token?: string
@@ -291,6 +293,7 @@ export type Database = {
           id?: string
           lojas_ids?: string[] | null
           organization_id?: string
+          permissions?: string[] | null
           roles?: string[]
           status?: string
           token?: string

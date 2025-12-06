@@ -310,6 +310,7 @@ serve(async (req) => {
         email: normalizedEmail,
         roles,
         lojas_ids,
+        permissions, // Salvar permissões granulares
         convidado_por_id: user.id,
         convidado_por_nome: inviterName,
         token,
