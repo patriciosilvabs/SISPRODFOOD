@@ -239,7 +239,7 @@ const Romaneio = () => {
   const [loadingPorcionados, setLoadingPorcionados] = useState(false);
   const [romaneiosEnviados, setRomaneiosEnviados] = useState<Romaneio[]>([]);
   const [romaneiosHistorico, setRomaneiosHistorico] = useState<Romaneio[]>([]);
-  const [romaneiosPendentes, setRomaneiosPendentes] = useState<Romaneio[]>([]);
+  
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
   
@@ -281,7 +281,6 @@ const Romaneio = () => {
   useEffect(() => {
     fetchLojas();
     fetchUserLojas();
-    fetchRomaneiosPendentes();
     fetchProdutos();
     fetchEstoquesProdutos();
     fetchRomaneiosProdutos();
@@ -596,21 +595,6 @@ const Romaneio = () => {
     }
   };
 
-  const fetchRomaneiosPendentes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('romaneios')
-        .select(`*, romaneio_itens (item_nome, quantidade, peso_total_kg)`)
-        .eq('status', 'pendente')
-        .order('data_criacao', { ascending: false });
-
-      if (error) throw error;
-      setRomaneiosPendentes(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar romaneios pendentes:', error);
-    }
-  };
-
   const fetchRomaneiosAvulsos = async () => {
     if (!primaryLoja) return;
     
@@ -776,44 +760,6 @@ const Romaneio = () => {
     }
   };
 
-  const handleEnviarRomaneio = async (romaneioId: string) => {
-    try {
-      setLoadingPorcionados(true);
-
-      const { data: romaneioItens, error: itensError } = await supabase
-        .from('romaneio_itens')
-        .select('item_porcionado_id, quantidade, item_nome')
-        .eq('romaneio_id', romaneioId);
-
-      if (itensError) throw itensError;
-
-      for (const item of romaneioItens || []) {
-        const { data: estoque } = await supabase.from('estoque_cpd').select('quantidade').eq('item_porcionado_id', item.item_porcionado_id).single();
-        const estoqueAtual = estoque?.quantidade || 0;
-        
-        if (estoqueAtual < item.quantidade) {
-          toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
-          return;
-        }
-      }
-
-      for (const item of romaneioItens || []) {
-        await supabase.rpc('decrementar_estoque_cpd', { p_item_id: item.item_porcionado_id, p_quantidade: item.quantidade });
-      }
-
-      await supabase.from('romaneios').update({ status: 'enviado', data_envio: new Date().toISOString() }).eq('id', romaneioId);
-
-      toast.success('Romaneio enviado!');
-      fetchRomaneiosPendentes();
-      fetchRomaneiosEnviados();
-      fetchItensDisponiveis();
-    } catch (error) {
-      toast.error('Erro ao enviar romaneio');
-    } finally {
-      setLoadingPorcionados(false);
-    }
-  };
-
   const addItem = (item: ItemDisponivel) => {
     const existe = itensSelecionados.find(i => i.item_id === item.item_id);
     if (existe) {
@@ -850,14 +796,29 @@ const Romaneio = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Validar estoque antes de criar
+      for (const item of itensSelecionados) {
+        const { data: estoque } = await supabase.from('estoque_cpd').select('quantidade').eq('item_porcionado_id', item.item_id).single();
+        const estoqueAtual = estoque?.quantidade || 0;
+        
+        if (estoqueAtual < item.quantidade) {
+          toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
+          setLoadingPorcionados(false);
+          return;
+        }
+      }
+
       const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
       const loja = lojas.find(l => l.id === selectedLoja);
+      const agora = new Date().toISOString();
 
+      // Criar romaneio JÁ COMO ENVIADO (fluxo unificado)
       const { data: romaneio, error: romaneioError } = await supabase.from('romaneios').insert({
         loja_id: selectedLoja,
         loja_nome: loja?.nome || '',
-        status: 'pendente',
-        data_criacao: new Date().toISOString(),
+        status: 'enviado',
+        data_criacao: agora,
+        data_envio: agora,
         usuario_id: user.id,
         usuario_nome: userProfile?.nome || 'Usuário',
         organization_id: organizationId
@@ -876,9 +837,16 @@ const Romaneio = () => {
 
       await supabase.from('romaneio_itens').insert(itens);
 
-      toast.success('Romaneio criado!');
+      // DEBITAR ESTOQUE CPD IMEDIATAMENTE
+      for (const item of itensSelecionados) {
+        await supabase.rpc('decrementar_estoque_cpd', { p_item_id: item.item_id, p_quantidade: item.quantidade });
+      }
+
+      toast.success(`Romaneio enviado para ${loja?.nome}!`);
       setItensSelecionados([]);
-      fetchRomaneiosPendentes();
+      setSelectedLoja('');
+      fetchRomaneiosEnviados();
+      fetchRomaneiosHistorico();
       fetchItensDisponiveis();
     } catch (error) {
       toast.error('Erro ao criar romaneio');
@@ -894,7 +862,7 @@ const Romaneio = () => {
       await supabase.from('romaneio_itens').delete().eq('romaneio_id', romaneioId);
       await supabase.from('romaneios').delete().eq('id', romaneioId);
       toast.success('Romaneio excluído');
-      fetchRomaneiosPendentes();
+      fetchRomaneiosHistorico();
       fetchItensDisponiveis();
     } catch (error) {
       toast.error('Erro ao excluir');
@@ -1500,9 +1468,8 @@ const Romaneio = () => {
             <CardDescription>Gestão de remessas de itens porcionados do CPD para as lojas</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue={isLojaOnly ? 'receber' : 'gerar'} className="space-y-4">
-              <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-3' : 'grid-cols-5'}`}>
-                {!isLojaOnly && <TabsTrigger value="gerar">Gerar</TabsTrigger>}
+            <Tabs defaultValue={isLojaOnly ? 'receber' : 'enviar'} className="space-y-4">
+              <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-3' : 'grid-cols-4'}`}>
                 {!isLojaOnly && <TabsTrigger value="enviar">Enviar</TabsTrigger>}
                 <TabsTrigger value="receber">Receber</TabsTrigger>
                 <TabsTrigger value="historico">Histórico</TabsTrigger>
@@ -1512,9 +1479,9 @@ const Romaneio = () => {
                 </TabsTrigger>
               </TabsList>
 
-              {/* TAB: GERAR */}
+              {/* TAB: ENVIAR (fluxo unificado - criar e enviar em 1 passo) */}
               {!isLojaOnly && (
-                <TabsContent value="gerar" className="space-y-4">
+                <TabsContent value="enviar" className="space-y-4">
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
                       <Select value={selectedLoja} onValueChange={setSelectedLoja}>
@@ -1532,8 +1499,12 @@ const Romaneio = () => {
                       onClick={handleCriarRomaneio} 
                       disabled={!selectedLoja || itensSelecionados.length === 0 || loadingPorcionados}
                     >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Criar Romaneio
+                      {loadingPorcionados ? (
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-1" />
+                      )}
+                      Enviar Romaneio
                     </Button>
                   </div>
 
@@ -1596,46 +1567,6 @@ const Romaneio = () => {
                 </TabsContent>
               )}
 
-              {/* TAB: ENVIAR */}
-              {!isLojaOnly && (
-                <TabsContent value="enviar" className="space-y-4">
-                  {romaneiosPendentes.length === 0 ? (
-                    <div className="py-8 text-center text-muted-foreground">
-                      <Send className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                      <p>Nenhum romaneio pendente de envio</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {romaneiosPendentes.map(romaneio => (
-                        <div key={romaneio.id} className="border rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <p className="font-medium">{romaneio.loja_nome}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {romaneio.romaneio_itens.length} itens • {format(new Date(romaneio.data_criacao), "dd/MM HH:mm")}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="outline" onClick={() => handleExcluirRomaneio(romaneio.id)}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" onClick={() => handleEnviarRomaneio(romaneio.id)} disabled={loadingPorcionados}>
-                                <Send className="w-4 h-4 mr-1" />
-                                Enviar
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {romaneio.romaneio_itens.map((item, i) => (
-                              <span key={i}>{item.item_nome}: {item.quantidade}un{i < romaneio.romaneio_itens.length - 1 ? ' • ' : ''}</span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-              )}
 
               {/* TAB: RECEBER */}
               <TabsContent value="receber" className="space-y-4">
@@ -1938,27 +1869,10 @@ const Romaneio = () => {
               {canManageProduction ? 'Envio de produtos do estoque CPD para as lojas' : 'Recebimento de produtos enviados pelo CPD'}
             </CardDescription>
           </CardHeader>
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Store className="h-5 w-5" />
-                Romaneio de Produtos
-              </CardTitle>
-              <CardDescription>Envio de produtos do estoque CPD para as lojas</CardDescription>
-            </CardHeader>
             <CardContent>
-              <Tabs defaultValue={isLojaOnly ? 'receber-produtos' : 'criar'} className="space-y-4">
-                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                  {!isLojaOnly && <TabsTrigger value="criar">Criar / Enviar</TabsTrigger>}
-                  {!isLojaOnly && (
-                    <TabsTrigger value="pendentes">
-                      Pendentes
-                      {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length > 0 && (
-                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
-                          {romaneiosProdutosPendentes.filter(r => r.status === "pendente").length}
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                  )}
+              <Tabs defaultValue={isLojaOnly ? 'receber-produtos' : 'enviar-produtos'} className="space-y-4">
+                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {!isLojaOnly && <TabsTrigger value="enviar-produtos">Enviar</TabsTrigger>}
                   <TabsTrigger value="receber-produtos">
                     Receber
                     {romaneiosProdutosEnviados.length > 0 && (
@@ -1969,8 +1883,9 @@ const Romaneio = () => {
                   </TabsTrigger>
                 </TabsList>
 
-                {/* TAB: CRIAR */}
-                <TabsContent value="criar" className="space-y-4">
+                {/* TAB: ENVIAR PRODUTOS */}
+                {!isLojaOnly && (
+                <TabsContent value="enviar-produtos" className="space-y-4">
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
                       <Select value={lojaSelecionadaProduto} onValueChange={setLojaSelecionadaProduto}>
@@ -1993,9 +1908,9 @@ const Romaneio = () => {
                       {savingProduto ? (
                         <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                       ) : (
-                        <Plus className="h-4 w-4 mr-1" />
+                        <Send className="h-4 w-4 mr-1" />
                       )}
-                      Criar Romaneio
+                      Enviar Romaneio
                     </Button>
                   </div>
 
@@ -2065,75 +1980,6 @@ const Romaneio = () => {
                     </div>
                   )}
                 </TabsContent>
-
-                {/* TAB: PENDENTES */}
-                {!isLojaOnly && (
-                  <TabsContent value="pendentes" className="space-y-4">
-                    {loadingProdutos ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : romaneiosProdutosPendentes.filter(r => r.status === "pendente").length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                        <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                        <p>Nenhum romaneio pendente de envio</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {romaneiosProdutosPendentes
-                          .filter(r => r.status === "pendente")
-                          .map((romaneio) => {
-                            const itens = itensRomaneiosProdutos[romaneio.id] || [];
-                            return (
-                              <div key={romaneio.id} className="border rounded-lg p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                  <div>
-                                    <h4 className="font-semibold flex items-center gap-2">
-                                      <Store className="h-4 w-4" />
-                                      {romaneio.loja_nome}
-                                    </h4>
-                                    <p className="text-sm text-muted-foreground">
-                                      {itens.length} produtos • Criado em {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                                    </p>
-                                  </div>
-                                  <Badge>Pendente</Badge>
-                                </div>
-                                <div className="text-sm text-muted-foreground mb-3 space-y-1">
-                                  {itens.map((item) => (
-                                    <div key={item.id} className="flex justify-between">
-                                      <span>{item.produto_nome}</span>
-                                      <span className="font-mono">{item.quantidade} {item.unidade || "un"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="flex gap-2 justify-end">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleExcluirRomaneioProduto(romaneio.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-1" />
-                                    Excluir
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleEnviarRomaneioProduto(romaneio.id)}
-                                    disabled={enviandoProduto}
-                                  >
-                                    {enviandoProduto ? (
-                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                    ) : (
-                                      <Send className="h-4 w-4 mr-1" />
-                                    )}
-                                    Enviar
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </TabsContent>
                 )}
 
                 {/* TAB: RECEBER PRODUTOS */}
