@@ -994,6 +994,47 @@ export type Database = {
         }
         Relationships: []
       }
+      permission_presets: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          is_system: boolean
+          nome: string
+          organization_id: string | null
+          permissions: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          is_system?: boolean
+          nome: string
+          organization_id?: string | null
+          permissions?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          is_system?: boolean
+          nome?: string
+          organization_id?: string | null
+          permissions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "permission_presets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       planos_assinatura: {
         Row: {
           ativo: boolean | null
@@ -1696,6 +1737,48 @@ export type Database = {
           },
         ]
       }
+      user_permissions: {
+        Row: {
+          created_at: string
+          granted: boolean
+          id: string
+          organization_id: string
+          permission_key: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          organization_id: string
+          permission_key: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted?: boolean
+          id?: string
+          organization_id?: string
+          permission_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_permissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -1733,6 +1816,11 @@ export type Database = {
         Returns: undefined
       }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
+      get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
+      has_permission: {
+        Args: { _permission_key: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
