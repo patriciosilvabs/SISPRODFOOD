@@ -35,6 +35,7 @@ import { Search, Users, Shield, ShieldOff, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface User {
   id: string;
@@ -50,6 +51,7 @@ interface User {
 
 export const SuperAdminUsuarios = () => {
   const { user: currentUser } = useAuth();
+  const auditLog = useAuditLog();
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,6 +165,13 @@ export const SuperAdminUsuarios = () => {
 
       if (error) throw error;
 
+      // Log de auditoria
+      await auditLog.log('superadmin.promote', 'user', promotingUser.id, {
+        target_email: promotingUser.email,
+        target_name: promotingUser.nome,
+        previous_roles: promotingUser.roles,
+      });
+
       toast.success(`${promotingUser.nome} promovido a Super Admin`);
       setPromotingUser(null);
       fetchUsers();
@@ -190,6 +199,13 @@ export const SuperAdminUsuarios = () => {
         .eq('role', 'SuperAdmin');
 
       if (error) throw error;
+
+      // Log de auditoria
+      await auditLog.log('superadmin.demote', 'user', demotingUser.id, {
+        target_email: demotingUser.email,
+        target_name: demotingUser.nome,
+        previous_roles: demotingUser.roles,
+      });
 
       toast.success(`${demotingUser.nome} removido de Super Admin`);
       setDemotingUser(null);

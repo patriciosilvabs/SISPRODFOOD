@@ -49,6 +49,7 @@ import { ptBR } from 'date-fns/locale';
 import { PermissionsEditor } from '@/components/permissions/PermissionsEditor';
 import { PERMISSIONS_CONFIG } from '@/lib/permissions';
 import { UIPermissionsConfig } from '@/lib/ui-permissions-config';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface Profile {
   id: string;
@@ -101,6 +102,7 @@ const roleLabels: Record<string, { label: string; color: string; description: st
 const GerenciarUsuarios = () => {
   const { user: currentUser, isAdmin: currentUserIsAdmin } = useAuth();
   const { organizationId } = useOrganization();
+  const auditLog = useAuditLog();
   const [usuarios, setUsuarios] = useState<UsuarioCompleto[]>([]);
   const [convitesPendentes, setConvitesPendentes] = useState<ConvitePendente[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -372,6 +374,16 @@ const GerenciarUsuarios = () => {
         if (lojasError) throw lojasError;
       }
 
+      // Log de auditoria
+      await auditLog.log('role.assign', 'user', editingUser.id, {
+        target_email: editingUser.email,
+        target_name: editingUser.nome,
+        role: isAdminRole ? 'Admin' : 'Custom',
+        previous_roles: editingUser.roles,
+        new_permissions: selectedPermissions,
+        new_lojas: selectedLojas,
+      });
+
       toast.success('Usuário atualizado com sucesso!');
       setEditModalOpen(false);
       fetchData();
@@ -410,6 +422,14 @@ const GerenciarUsuarios = () => {
         .from('lojas_acesso')
         .delete()
         .eq('user_id', deletingUser.id);
+
+      // Log de auditoria
+      await auditLog.log('user.remove', 'user', deletingUser.id, {
+        target_email: deletingUser.email,
+        target_name: deletingUser.nome,
+        removed_roles: deletingUser.roles,
+        removed_permissions: deletingUser.permissions,
+      });
 
       toast.success('Permissões do usuário removidas com sucesso');
       setDeleteDialogOpen(false);
