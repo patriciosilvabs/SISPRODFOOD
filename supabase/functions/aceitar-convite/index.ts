@@ -294,6 +294,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Add granular permissions if specified
+    if (invite.permissions && invite.permissions.length > 0) {
+      console.log('Adding granular permissions:', invite.permissions);
+      for (const permissionKey of invite.permissions) {
+        const { data: existingPerm } = await supabaseAdmin
+          .from('user_permissions')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('permission_key', permissionKey)
+          .eq('organization_id', invite.organization_id)
+          .maybeSingle();
+
+        if (!existingPerm) {
+          const { error: permError } = await supabaseAdmin
+            .from('user_permissions')
+            .insert({
+              user_id: user.id,
+              organization_id: invite.organization_id,
+              permission_key: permissionKey,
+              granted: true,
+            });
+
+          if (permError) {
+            console.error('Error adding permission:', permissionKey, permError);
+          }
+        }
+      }
+    }
+
     // Update invite status to accepted
     const { error: updateInviteError } = await supabaseAdmin
       .from('convites_pendentes')
