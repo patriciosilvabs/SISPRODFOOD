@@ -1212,6 +1212,7 @@ const Romaneio = () => {
     try {
       const loja = lojas.find(l => l.id === lojaSelecionadaProduto);
       
+      // Validar estoque antes de criar
       for (const item of carrinhoProduto) {
         const estoque = estoquesProdutos.find(e => e.produto_id === item.produto_id);
         if (!estoque || estoque.quantidade < item.quantidade) {
@@ -1221,6 +1222,9 @@ const Romaneio = () => {
         }
       }
 
+      const agora = new Date().toISOString();
+
+      // Criar romaneio já com status "enviado"
       const { data: romaneioData, error: romaneioError } = await supabase
         .from("romaneios_produtos")
         .insert({
@@ -1229,6 +1233,8 @@ const Romaneio = () => {
           usuario_id: profile.id,
           usuario_nome: profile.nome,
           organization_id: organizationId,
+          status: "enviado",
+          data_envio: agora,
         })
         .select()
         .single();
@@ -1250,13 +1256,46 @@ const Romaneio = () => {
 
       if (itensError) throw itensError;
 
-      toast.success(`Romaneio para ${loja?.nome} criado com ${carrinhoProduto.length} produtos`);
+      // DEBITAR ESTOQUE CPD IMEDIATAMENTE
+      for (const item of carrinhoProduto) {
+        const estoque = estoquesProdutos.find(e => e.produto_id === item.produto_id);
+        const quantidadeAnterior = estoque?.quantidade || 0;
+        const quantidadeFinal = quantidadeAnterior - item.quantidade;
+
+        // Atualizar estoque CPD
+        await supabase
+          .from("estoque_cpd_produtos")
+          .update({
+            quantidade: quantidadeFinal,
+            data_ultima_movimentacao: agora,
+          })
+          .eq("produto_id", item.produto_id)
+          .eq("organization_id", organizationId);
+
+        // Registrar movimentação
+        await supabase
+          .from("movimentacoes_cpd_produtos")
+          .insert({
+            produto_id: item.produto_id,
+            produto_nome: item.produto_nome,
+            tipo: "saida_romaneio",
+            quantidade: item.quantidade,
+            quantidade_anterior: quantidadeAnterior,
+            quantidade_posterior: quantidadeFinal,
+            observacao: `Romaneio para ${loja?.nome}`,
+            usuario_id: profile.id,
+            usuario_nome: profile.nome,
+            organization_id: organizationId,
+          });
+      }
+
+      toast.success(`Romaneio enviado para ${loja?.nome} com ${carrinhoProduto.length} produtos`);
 
       setCarrinhoProduto([]);
       setLojaSelecionadaProduto("");
       setSearchProduto("");
       fetchRomaneiosProdutos();
-      fetchEstoquesProdutos(); // Atualizar estoque disponível após criar romaneio
+      fetchEstoquesProdutos();
     } catch (error: any) {
       console.error("Erro ao criar romaneio:", error);
       toast.error(error.message || 'Erro ao criar romaneio');
