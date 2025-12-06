@@ -814,12 +814,12 @@ const GerenciarUsuarios = () => {
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="permissions" className="mt-4">
-                    <ScrollArea className="max-h-[45vh]">
+                    <div className="max-h-[45vh] overflow-y-auto pr-2">
                       <PermissionsEditor 
                         selectedPermissions={invitePermissions}
                         onChange={setInvitePermissions}
                       />
-                    </ScrollArea>
+                    </div>
                   </TabsContent>
                   <TabsContent value="lojas" className="mt-4">
                     <div className="space-y-3">
