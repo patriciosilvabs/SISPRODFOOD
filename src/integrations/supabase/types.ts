@@ -1745,6 +1745,7 @@ export type Database = {
           organization_id: string
           pagina_id: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           config?: Json
@@ -1753,6 +1754,7 @@ export type Database = {
           organization_id: string
           pagina_id: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           config?: Json
@@ -1761,6 +1763,7 @@ export type Database = {
           organization_id?: string
           pagina_id?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
