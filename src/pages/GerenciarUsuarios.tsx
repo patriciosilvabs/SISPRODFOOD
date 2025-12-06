@@ -48,6 +48,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { PermissionsEditor } from '@/components/permissions/PermissionsEditor';
 import { PERMISSIONS_CONFIG } from '@/lib/permissions';
+import { UIPermissionsConfig } from '@/lib/ui-permissions-config';
 
 interface Profile {
   id: string;
@@ -111,6 +112,7 @@ const GerenciarUsuarios = () => {
   const [isAdminRole, setIsAdminRole] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
+  const [selectedUIPermissions, setSelectedUIPermissions] = useState<Record<string, UIPermissionsConfig>>({});
   const [saving, setSaving] = useState(false);
   
   // Delete dialog state
@@ -123,6 +125,7 @@ const GerenciarUsuarios = () => {
   const [inviteIsAdmin, setInviteIsAdmin] = useState(false);
   const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [inviteLojas, setInviteLojas] = useState<string[]>([]);
+  const [inviteUIPermissions, setInviteUIPermissions] = useState<Record<string, UIPermissionsConfig>>({});
   const [sendingInvite, setSendingInvite] = useState(false);
   
   // Cancel invite dialog state
@@ -261,6 +264,7 @@ const GerenciarUsuarios = () => {
     setIsAdminRole(usuario.isAdmin);
     setSelectedPermissions(usuario.permissions);
     setSelectedLojas(usuario.lojas.map(l => l.id));
+    setSelectedUIPermissions({});
     setEditModalOpen(true);
   };
 
@@ -323,7 +327,33 @@ const GerenciarUsuarios = () => {
         if (permError) throw permError;
       }
 
-      // 3. Atualizar lojas
+      // 4. Atualizar UI permissions por usuário
+      if (!isAdminRole && Object.keys(selectedUIPermissions).length > 0) {
+        // Deletar UI permissions existentes do usuário
+        await supabase
+          .from('ui_permissions')
+          .delete()
+          .eq('user_id', editingUser.id)
+          .eq('organization_id', organizationId);
+
+        // Inserir novas UI permissions
+        const uiPermissionsToInsert = Object.entries(selectedUIPermissions).map(([paginaId, config]) => ({
+          user_id: editingUser.id,
+          organization_id: organizationId,
+          pagina_id: paginaId,
+          config: JSON.parse(JSON.stringify(config)),
+        }));
+
+        if (uiPermissionsToInsert.length > 0) {
+          const { error: uiPermError } = await supabase
+            .from('ui_permissions')
+            .insert(uiPermissionsToInsert);
+
+          if (uiPermError) console.error('Erro ao salvar UI permissions:', uiPermError);
+        }
+      }
+
+      // 5. Atualizar lojas
       await supabase
         .from('lojas_acesso')
         .delete()
@@ -894,6 +924,10 @@ const GerenciarUsuarios = () => {
                       <PermissionsEditor 
                         selectedPermissions={selectedPermissions}
                         onChange={setSelectedPermissions}
+                        userId={editingUser?.id}
+                        organizationId={organizationId || undefined}
+                        onUIPermissionsChange={setSelectedUIPermissions}
+                        initialUIPermissions={selectedUIPermissions}
                       />
                     </TabsContent>
                     <TabsContent value="lojas" className="mt-4">

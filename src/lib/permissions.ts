@@ -342,6 +342,17 @@ export const expandPermissionsWithDependencies = (permissions: string[]): string
   return Array.from(expanded);
 };
 
+// Mapeamento de seções de permissão para páginas de UI
+export const SECTION_TO_UI_PAGE: Record<string, string> = {
+  'contagem': 'contagem_porcionados',
+  'producao': 'resumo_producao',
+  'insumos': 'estoque_insumos',
+  'estoque_loja': 'estoque_loja',
+  'romaneio': 'romaneio',
+  'erros': 'erros_devolucoes',
+  'relatorios': 'central_relatorios'
+};
+
 // Mapeamento de rotas para permissões necessárias
 export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/': ['dashboard.view'],
