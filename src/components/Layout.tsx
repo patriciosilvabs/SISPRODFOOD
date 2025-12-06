@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useUserLoja } from '@/hooks/useUserLoja';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -36,6 +37,7 @@ export const Layout = ({ children }: LayoutProps) => {
   const { profile, signOut, isAdmin, hasRole, isSuperAdmin } = useAuth();
   const { subscriptionStatus, daysRemaining, isTrialExpired } = useSubscription();
   const { primaryLoja } = useUserLoja();
+  const { hasPermission, hasAnyPermission, loading: permissionsLoading } = usePermissions();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -66,6 +68,33 @@ export const Layout = ({ children }: LayoutProps) => {
     </div>
   );
 
+  // Verificações baseadas em permissões granulares
+  const canSeeCPD = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage', 'insumos.view', 'insumos.manage']);
+  const canSeeProducao = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage']);
+  const canSeeInsumos = hasAnyPermission(['insumos.view', 'insumos.manage']);
+  
+  const canSeeLoja = hasAnyPermission(['contagem.view', 'contagem.manage', 'estoque_loja.view', 'estoque_loja.manage', 'erros.view', 'erros.create']);
+  const canSeeContagem = hasAnyPermission(['contagem.view', 'contagem.manage']);
+  const canSeeEstoqueLoja = hasAnyPermission(['estoque_loja.view', 'estoque_loja.manage']);
+  const canSeeErros = hasAnyPermission(['erros.view', 'erros.create']);
+  
+  const canSeeLogistica = hasAnyPermission(['romaneio.view', 'romaneio.create', 'romaneio.send', 'romaneio.receive', 'romaneio.history']);
+  
+  const canSeeRelatorios = hasAnyPermission([
+    'relatorios.producao', 'relatorios.romaneios', 'relatorios.estoque', 
+    'relatorios.insumos', 'relatorios.consumo', 'relatorios.diagnostico'
+  ]);
+  
+  const canSeeAdmin = hasAnyPermission([
+    'config.view', 'config.insumos', 'config.itens', 'config.produtos', 
+    'config.lojas', 'config.usuarios', 'config.sistema', 'compras.view', 'compras.manage'
+  ]);
+  const canSeeCompras = hasAnyPermission(['compras.view', 'compras.manage']);
+  const canSeeConfig = hasAnyPermission([
+    'config.view', 'config.insumos', 'config.itens', 'config.produtos', 
+    'config.lojas', 'config.usuarios', 'config.sistema'
+  ]);
+
   const navigation = (
     <nav className="space-y-1">
       {/* GERAL */}
@@ -73,26 +102,36 @@ export const Layout = ({ children }: LayoutProps) => {
       <NavLink to="/" icon={BarChart3}>Dashboard</NavLink>
       
       {/* CPD - Centro de Produção */}
-      {(isAdmin() || hasRole('Produção')) && (
+      {canSeeCPD && (
         <>
           <SectionLabel>CPD - Produção</SectionLabel>
-          <NavLink to="/resumo-da-producao" icon={Factory}>Resumo da Produção</NavLink>
-          <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
+          {canSeeProducao && (
+            <NavLink to="/resumo-da-producao" icon={Factory}>Resumo da Produção</NavLink>
+          )}
+          {canSeeInsumos && (
+            <NavLink to="/insumos" icon={Package}>Estoque de Insumos</NavLink>
+          )}
         </>
       )}
       
       {/* LOJA */}
-      {(isAdmin() || hasRole('Loja')) && (
+      {canSeeLoja && (
         <>
           <SectionLabel>Loja</SectionLabel>
-          <NavLink to="/contagem-porcionados" icon={ClipboardList}>Contagem Porcionados</NavLink>
-          <NavLink to="/estoque-diario" icon={Boxes}>Estoque da Loja</NavLink>
-          <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
+          {canSeeContagem && (
+            <NavLink to="/contagem-porcionados" icon={ClipboardList}>Contagem Porcionados</NavLink>
+          )}
+          {canSeeEstoqueLoja && (
+            <NavLink to="/estoque-diario" icon={Boxes}>Estoque da Loja</NavLink>
+          )}
+          {canSeeErros && (
+            <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>
+          )}
         </>
       )}
       
       {/* LOGÍSTICA - Compartilhado entre CPD e Loja */}
-      {(isAdmin() || hasRole('Produção') || hasRole('Loja')) && (
+      {canSeeLogistica && (
         <>
           <SectionLabel>Logística</SectionLabel>
           <NavLink to="/romaneio-porcionados" icon={Truck}>Romaneio</NavLink>
@@ -100,15 +139,23 @@ export const Layout = ({ children }: LayoutProps) => {
       )}
       
       {/* RELATÓRIOS */}
-      <SectionLabel>Relatórios</SectionLabel>
-      <NavLink to="/central-de-relatorios" icon={Clock}>Central de Relatórios</NavLink>
+      {canSeeRelatorios && (
+        <>
+          <SectionLabel>Relatórios</SectionLabel>
+          <NavLink to="/central-de-relatorios" icon={Clock}>Central de Relatórios</NavLink>
+        </>
+      )}
       
       {/* ADMINISTRAÇÃO */}
-      {isAdmin() && (
+      {canSeeAdmin && (
         <>
           <SectionLabel>Administração</SectionLabel>
-          <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
-          <NavLink to="/configuracoes" icon={Settings}>Configurações</NavLink>
+          {canSeeCompras && (
+            <NavLink to="/lista-de-compras-ia" icon={ShoppingCart}>Lista de Compras IA</NavLink>
+          )}
+          {canSeeConfig && (
+            <NavLink to="/configuracoes" icon={Settings}>Configurações</NavLink>
+          )}
         </>
       )}
 
