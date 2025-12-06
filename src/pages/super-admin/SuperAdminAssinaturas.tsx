@@ -372,7 +372,7 @@ export const SuperAdminAssinaturas = () => {
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent usePortal={false}>
+                <SelectContent>
                   <SelectItem value="trial">Trial</SelectItem>
                   <SelectItem value="active">Ativa</SelectItem>
                   <SelectItem value="expired">Expirada</SelectItem>
@@ -389,7 +389,7 @@ export const SuperAdminAssinaturas = () => {
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um plano" />
                 </SelectTrigger>
-                <SelectContent usePortal={false}>
+                <SelectContent>
                   {plans.map(plan => (
                     <SelectItem key={plan.id} value={plan.slug}>
                       {plan.nome} - {(plan.preco_centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -398,26 +398,22 @@ export const SuperAdminAssinaturas = () => {
                 </SelectContent>
               </Select>
             </div>
-            {editForm.subscription_status === 'trial' && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Fim do Trial</label>
-                <Input
-                  type="date"
-                  value={editForm.trial_end_date}
-                  onChange={(e) => setEditForm({ ...editForm, trial_end_date: e.target.value })}
-                />
-              </div>
-            )}
-            {editForm.subscription_status === 'active' && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Expiração da Assinatura</label>
-                <Input
-                  type="date"
-                  value={editForm.subscription_expires_at}
-                  onChange={(e) => setEditForm({ ...editForm, subscription_expires_at: e.target.value })}
-                />
-              </div>
-            )}
+            <div className={editForm.subscription_status !== 'trial' ? 'hidden' : 'space-y-2'}>
+              <label className="text-sm font-medium">Fim do Trial</label>
+              <Input
+                type="date"
+                value={editForm.trial_end_date}
+                onChange={(e) => setEditForm({ ...editForm, trial_end_date: e.target.value })}
+              />
+            </div>
+            <div className={editForm.subscription_status !== 'active' ? 'hidden' : 'space-y-2'}>
+              <label className="text-sm font-medium">Expiração da Assinatura</label>
+              <Input
+                type="date"
+                value={editForm.subscription_expires_at}
+                onChange={(e) => setEditForm({ ...editForm, subscription_expires_at: e.target.value })}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSub(null)}>
