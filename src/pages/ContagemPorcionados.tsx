@@ -343,171 +343,20 @@ const ContagemPorcionados = () => {
 
       if (error) throw error;
 
-      // Atualizar registro de produção agregando TODAS as lojas
-      if (itemData) {
-        // 1. Buscar TODAS as contagens de TODAS as lojas para este item (apenas do dia atual)
-        const hoje = new Date().toISOString().split('T')[0];
-        const { data: todasContagens } = await supabase
-          .from('contagem_porcionados')
-          .select('loja_id, a_produzir, ideal_amanha, final_sobra')
-          .eq('item_porcionado_id', itemId)
-          .gt('a_produzir', 0)
-          .gte('updated_at', `${hoje}T00:00:00`)
-          .lte('updated_at', `${hoje}T23:59:59`);
+      // Chamar função SECURITY DEFINER para criar/atualizar registro de produção
+      // Esta função pode ser chamada por qualquer usuário autenticado (incluindo Loja)
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('criar_ou_atualizar_producao_registro', {
+          p_item_id: itemId,
+          p_organization_id: organizationId,
+          p_usuario_id: user.id,
+          p_usuario_nome: profile?.nome || user.email || 'Usuário',
+        });
 
-        if (todasContagens && todasContagens.length > 0) {
-          // 2. Calcular demanda total das lojas
-          const demandaLojas = todasContagens.reduce((sum, c) => {
-            const aProduzir = Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0));
-            return sum + aProduzir;
-          }, 0);
-
-          // 3. Buscar reserva configurada para o dia
-          const diaAtual = getTomorrowDayKey();
-          const { data: reservaData } = await supabase
-            .from('itens_reserva_diaria')
-            .select('*')
-            .eq('item_porcionado_id', itemId)
-            .maybeSingle();
-
-          const reservaDia = reservaData?.[diaAtual] || 0;
-
-          // 4. Calcular necessidade total (demanda + reserva)
-          const necessidadeTotal = demandaLojas + reservaDia;
-
-          // 5. Buscar nomes das lojas
-          const lojasIds = todasContagens.map(c => c.loja_id);
-          const { data: lojasData } = await supabase
-            .from('lojas')
-            .select('id, nome')
-            .in('id', lojasIds);
-
-          // 6. Construir detalhes por loja (apenas demanda real das lojas)
-          const detalhesLojas = todasContagens.map(c => {
-            const aProduzir = Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0));
-            return {
-              loja_id: c.loja_id,
-              loja_nome: lojasData?.find(l => l.id === c.loja_id)?.nome || 'Loja',
-              quantidade: aProduzir,
-            };
-          });
-
-          // 7. Calcular unidades_programadas com arredondamento para traços
-          let unidadesProgramadas = necessidadeTotal;
-          let pesoProgramadoTotal = 0;
-          let sobraReserva = 0;
-
-          if (itemData.unidade_medida === 'traco' && itemData.equivalencia_traco && itemData.consumo_por_traco_g) {
-            // Para itens em traço: arredondar para traços inteiros
-            const tracos = Math.ceil(necessidadeTotal / itemData.equivalencia_traco);
-            unidadesProgramadas = tracos * itemData.equivalencia_traco;
-            sobraReserva = unidadesProgramadas - necessidadeTotal;
-            pesoProgramadoTotal = (tracos * itemData.consumo_por_traco_g) / 1000; // g para kg
-          } else {
-            // Para itens normais: usar peso unitário
-            const pesoUnitarioKg = (itemData.peso_unitario_g || 0) / 1000;
-            pesoProgramadoTotal = unidadesProgramadas * pesoUnitarioKg;
-          }
-
-          // 8. Verificar se já existe registro "a_produzir" para este item (SEM lote_producao_id)
-          // Se usa_traco_massa, deletar registros antigos e recriar
-          // Se não usa_traco_massa, usar lógica de upsert existente
-          const usaTracoMassa = itemData.usa_traco_massa && itemData.unidade_medida === 'traco';
-          
-          if (usaTracoMassa && itemData.equivalencia_traco && itemData.consumo_por_traco_g) {
-            // FILA DE TRAÇOS: Criar N registros separados
-            const tracosNecessarios = Math.ceil(necessidadeTotal / itemData.equivalencia_traco);
-            const loteId = crypto.randomUUID();
-            const dataReferencia = new Date().toISOString().split('T')[0];
-            
-            // Deletar registros existentes "a_produzir" deste item (lote antigo)
-            await supabase
-              .from('producao_registros')
-              .delete()
-              .eq('item_id', itemId)
-              .eq('status', 'a_produzir');
-            
-            // Criar N registros (um por traço)
-            for (let seq = 1; seq <= tracosNecessarios; seq++) {
-              const unidadesPorTraco = itemData.equivalencia_traco;
-              const pesoPorTraco = itemData.consumo_por_traco_g / 1000; // g para kg
-              
-              const producaoTracoData = {
-                item_id: itemId,
-                item_nome: itemData.nome,
-                status: 'a_produzir',
-                unidades_programadas: unidadesPorTraco,
-                peso_programado_kg: pesoPorTraco,
-                demanda_lojas: seq === 1 ? demandaLojas : null, // Só no primeiro
-                reserva_configurada: seq === 1 ? reservaDia : null, // Só no primeiro
-                sobra_reserva: seq === tracosNecessarios ? sobraReserva : 0, // Só no último
-                detalhes_lojas: seq === 1 ? detalhesLojas : [], // Só no primeiro
-                usuario_id: user.id,
-                usuario_nome: profile?.nome || user.email || 'Usuário',
-                organization_id: organizationId,
-                // Campos da fila de traços
-                sequencia_traco: seq,
-                lote_producao_id: loteId,
-                bloqueado_por_traco_anterior: seq > 1, // Primeiro desbloqueado, demais bloqueados
-                timer_status: 'aguardando',
-                data_referencia: dataReferencia,
-              };
-              
-              const { error: insertError } = await supabase
-                .from('producao_registros')
-                .insert(producaoTracoData);
-              
-              if (insertError) {
-                console.error(`Erro ao criar traço ${seq}:`, insertError);
-              }
-            }
-          } else {
-            // LÓGICA ORIGINAL: Um único registro de produção
-            const { data: registroExistente } = await supabase
-              .from('producao_registros')
-              .select('id')
-              .eq('item_id', itemId)
-              .eq('status', 'a_produzir')
-              .is('lote_producao_id', null)
-              .maybeSingle();
-
-            const producaoData = {
-              item_id: itemId,
-              item_nome: itemData.nome,
-              status: 'a_produzir',
-              unidades_programadas: unidadesProgramadas,
-              peso_programado_kg: pesoProgramadoTotal,
-              demanda_lojas: demandaLojas,
-              reserva_configurada: reservaDia,
-              sobra_reserva: sobraReserva,
-              detalhes_lojas: detalhesLojas,
-              usuario_id: user.id,
-              usuario_nome: profile?.nome || user.email || 'Usuário',
-              organization_id: organizationId,
-            };
-
-            if (registroExistente) {
-              // Atualizar registro existente
-              const { error: updateError } = await supabase
-                .from('producao_registros')
-                .update(producaoData)
-                .eq('id', registroExistente.id);
-
-              if (updateError) {
-                console.error('Erro ao atualizar registro de produção:', updateError);
-              }
-            } else {
-              // Criar novo registro
-              const { error: insertError } = await supabase
-                .from('producao_registros')
-                .insert(producaoData);
-
-              if (insertError) {
-                console.error('Erro ao criar registro de produção:', insertError);
-              }
-            }
-          }
-        }
+      if (rpcError) {
+        console.error('Erro ao criar registro de produção:', rpcError);
+      } else {
+        console.log('Resultado da criação de produção:', rpcResult);
       }
 
       toast.success('Contagem salva com sucesso');
