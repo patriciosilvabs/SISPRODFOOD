@@ -11,7 +11,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck, PackageCheck } from 'lucide-react';
+import { Save, Package, AlertCircle, CheckCircle, AlertTriangle, Truck, PackageCheck, FileText, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SaveButton } from '@/components/ui/save-button';
 
@@ -55,6 +58,29 @@ interface ProdutoEstoque extends Produto {
   status: 'critico' | 'atencao' | 'ok';
 }
 
+interface RomaneioProduto {
+  id: string;
+  loja_id: string;
+  loja_nome: string;
+  status: string;
+  data_criacao: string;
+  data_envio: string | null;
+  usuario_nome: string;
+  observacao: string | null;
+}
+
+interface RomaneioProdutoItem {
+  id: string;
+  romaneio_id: string;
+  produto_id: string;
+  produto_nome: string;
+  quantidade: number;
+  unidade: string | null;
+  quantidade_recebida: number | null;
+  divergencia: boolean;
+  observacao_divergencia: string | null;
+}
+
 const DIAS_SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'] as const;
 
 const EstoqueDiario = () => {
@@ -78,6 +104,14 @@ const EstoqueDiario = () => {
   const [quantidadesRecebidas, setQuantidadesRecebidas] = useState<{ [key: string]: number }>({});
   const [originalEstoques, setOriginalEstoques] = useState<{ [key: string]: number }>({});
   const [hasDirtyEstoque, setHasDirtyEstoque] = useState(false);
+
+  // Estados para Romaneios de Produtos
+  const [romaneiosParaReceber, setRomaneiosParaReceber] = useState<RomaneioProduto[]>([]);
+  const [itensRomaneioParaReceber, setItensRomaneioParaReceber] = useState<{ [key: string]: RomaneioProdutoItem[] }>({});
+  const [loadingRomaneios, setLoadingRomaneios] = useState(false);
+  const [receivingRomaneio, setReceivingRomaneio] = useState(false);
+  const [quantidadesRecebidasRomaneio, setQuantidadesRecebidasRomaneio] = useState<{ [key: string]: number }>({});
+  const [observacoesRomaneio, setObservacoesRomaneio] = useState<{ [key: string]: string }>({});
 
   // Obter dia da semana atual
   const diaAtual = useMemo(() => {
@@ -225,6 +259,128 @@ const EstoqueDiario = () => {
 
     fetchDados();
   }, [lojaSelecionada]);
+
+  // Buscar romaneios de produtos para receber
+  const fetchRomaneiosProdutos = async () => {
+    if (!lojaSelecionada || !organizationId) return;
+    setLoadingRomaneios(true);
+    try {
+      const { data, error } = await supabase
+        .from("romaneios_produtos")
+        .select("*")
+        .eq("loja_id", lojaSelecionada)
+        .eq("status", "enviado")
+        .order("data_envio", { ascending: false });
+
+      if (error) throw error;
+      setRomaneiosParaReceber(data || []);
+
+      // Buscar itens de cada romaneio
+      for (const romaneio of data || []) {
+        const { data: itens } = await supabase
+          .from("romaneios_produtos_itens")
+          .select("*")
+          .eq("romaneio_id", romaneio.id);
+        
+        setItensRomaneioParaReceber(prev => ({
+          ...prev,
+          [romaneio.id]: itens || []
+        }));
+        
+        // Inicializar quantidades recebidas
+        (itens || []).forEach(item => {
+          setQuantidadesRecebidasRomaneio(prev => ({
+            ...prev,
+            [item.id]: item.quantidade
+          }));
+        });
+      }
+    } catch (error: any) {
+      console.error("Erro ao buscar romaneios:", error);
+    } finally {
+      setLoadingRomaneios(false);
+    }
+  };
+
+  useEffect(() => {
+    if (lojaSelecionada) {
+      fetchRomaneiosProdutos();
+    }
+  }, [lojaSelecionada, organizationId]);
+
+  // Confirmar recebimento de romaneio de produtos
+  const handleConfirmarRecebimentoRomaneio = async (romaneioId: string) => {
+    if (!user || !organizationId) return;
+    setReceivingRomaneio(true);
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user.id)
+        .single();
+
+      const usuarioNome = profile?.nome || user.email || 'Usuário';
+      const itens = itensRomaneioParaReceber[romaneioId] || [];
+
+      // Atualizar cada item com quantidade recebida
+      for (const item of itens) {
+        const qtdRecebida = quantidadesRecebidasRomaneio[item.id] ?? item.quantidade;
+        const divergencia = qtdRecebida !== item.quantidade;
+        const obs = observacoesRomaneio[item.id] || null;
+
+        await supabase
+          .from("romaneios_produtos_itens")
+          .update({
+            quantidade_recebida: qtdRecebida,
+            divergencia,
+            observacao_divergencia: divergencia ? obs : null,
+          })
+          .eq("id", item.id);
+
+        // Atualizar estoque da loja
+        const { data: estoqueAtual } = await supabase
+          .from("estoque_loja_produtos")
+          .select("quantidade")
+          .eq("loja_id", lojaSelecionada)
+          .eq("produto_id", item.produto_id)
+          .single();
+
+        const novaQuantidade = (estoqueAtual?.quantidade || 0) + qtdRecebida;
+
+        await supabase
+          .from("estoque_loja_produtos")
+          .upsert({
+            loja_id: lojaSelecionada,
+            produto_id: item.produto_id,
+            quantidade: novaQuantidade,
+            usuario_id: user.id,
+            usuario_nome: usuarioNome,
+            data_ultima_atualizacao: new Date().toISOString(),
+            organization_id: organizationId,
+          }, { onConflict: "loja_id,produto_id" });
+      }
+
+      // Atualizar status do romaneio
+      await supabase
+        .from("romaneios_produtos")
+        .update({
+          status: "recebido",
+          data_recebimento: new Date().toISOString(),
+          recebido_por_id: user.id,
+          recebido_por_nome: usuarioNome,
+        })
+        .eq("id", romaneioId);
+
+      toast.success("Romaneio recebido com sucesso!");
+      fetchRomaneiosProdutos();
+    } catch (error: any) {
+      console.error("Erro ao confirmar recebimento:", error);
+      toast.error("Erro ao confirmar recebimento");
+    } finally {
+      setReceivingRomaneio(false);
+    }
+  };
 
   // Calcular produtos com estoque
   const produtosComEstoque = useMemo((): ProdutoEstoque[] => {
@@ -673,10 +829,10 @@ const EstoqueDiario = () => {
         </div>
 
         <Tabs defaultValue="contagem" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="contagem" className="gap-2">
               <Package className="h-4 w-4" />
-              Reposição de Estoque
+              Reposição
             </TabsTrigger>
             <TabsTrigger value="envio" className="gap-2">
               <Truck className="h-4 w-4" />
@@ -685,6 +841,15 @@ const EstoqueDiario = () => {
             <TabsTrigger value="receber" className="gap-2">
               <PackageCheck className="h-4 w-4" />
               Receber Reposição
+            </TabsTrigger>
+            <TabsTrigger value="receber-romaneio" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Romaneios
+              {romaneiosParaReceber.length > 0 && (
+                <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
+                  {romaneiosParaReceber.length}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -1120,6 +1285,106 @@ const EstoqueDiario = () => {
                   </Button>
                 </div>
               </>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* Aba Receber Romaneio de Produtos */}
+      <TabsContent value="receber-romaneio">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Romaneios de Produtos para Receber
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingRomaneios ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : romaneiosParaReceber.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
+                <p className="text-lg font-medium">Nenhum romaneio pendente!</p>
+                <p className="text-sm">Todos os romaneios foram recebidos.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {romaneiosParaReceber.map((romaneio) => {
+                  const itens = itensRomaneioParaReceber[romaneio.id] || [];
+                  return (
+                    <div key={romaneio.id} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h4 className="font-semibold">Romaneio #{romaneio.id.slice(0, 8)}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Enviado em {romaneio.data_envio ? format(new Date(romaneio.data_envio), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "-"}
+                          </p>
+                        </div>
+                        <Badge variant="secondary">Enviado</Badge>
+                      </div>
+                      
+                      <table className="w-full border-collapse mb-4">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-2">Produto</th>
+                            <th className="text-center p-2">Enviado</th>
+                            <th className="text-center p-2">Recebido</th>
+                            <th className="text-center p-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itens.map((item) => {
+                            const qtdRecebida = quantidadesRecebidasRomaneio[item.id] ?? item.quantidade;
+                            const divergencia = qtdRecebida !== item.quantidade;
+                            return (
+                              <tr key={item.id} className="border-b">
+                                <td className="p-2">{item.produto_nome}</td>
+                                <td className="p-2 text-center">{item.quantidade} {item.unidade || "un"}</td>
+                                <td className="p-2">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={qtdRecebida}
+                                    onChange={(e) => setQuantidadesRecebidasRomaneio(prev => ({
+                                      ...prev,
+                                      [item.id]: Number(e.target.value)
+                                    }))}
+                                    className="w-20 mx-auto text-center"
+                                  />
+                                </td>
+                                <td className="p-2 text-center">
+                                  {divergencia ? (
+                                    <Badge variant="destructive">Divergência</Badge>
+                                  ) : (
+                                    <Badge className="bg-green-500">OK</Badge>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      <div className="flex justify-end">
+                        <Button
+                          onClick={() => handleConfirmarRecebimentoRomaneio(romaneio.id)}
+                          disabled={receivingRomaneio}
+                        >
+                          {receivingRomaneio ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <PackageCheck className="h-4 w-4 mr-2" />
+                          )}
+                          Confirmar Recebimento
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>
