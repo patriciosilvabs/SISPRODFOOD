@@ -20,9 +20,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { 
   PERMISSIONS_CONFIG, 
   expandPermissionsWithDependencies,
-  getPermissionDependencies
+  getPermissionDependencies,
+  SECTION_TO_UI_PAGE
 } from '@/lib/permissions';
-import { Wand2, Check, ChevronDown } from 'lucide-react';
+import { UI_PAGES_CONFIG, getPageConfigById, UIPermissionsConfig, getDefaultConfig } from '@/lib/ui-permissions-config';
+import { Wand2, Check, Columns3 } from 'lucide-react';
 
 interface PermissionPreset {
   id: string;
@@ -36,15 +38,24 @@ interface PermissionsEditorProps {
   selectedPermissions: string[];
   onChange: (permissions: string[]) => void;
   disabled?: boolean;
+  userId?: string;
+  organizationId?: string;
+  onUIPermissionsChange?: (uiPermissions: Record<string, UIPermissionsConfig>) => void;
+  initialUIPermissions?: Record<string, UIPermissionsConfig>;
 }
 
 export const PermissionsEditor = ({ 
   selectedPermissions, 
   onChange,
-  disabled = false
+  disabled = false,
+  userId,
+  organizationId,
+  onUIPermissionsChange,
+  initialUIPermissions = {}
 }: PermissionsEditorProps) => {
   const [presets, setPresets] = useState<PermissionPreset[]>([]);
   const [loadingPresets, setLoadingPresets] = useState(true);
+  const [uiPermissions, setUIPermissions] = useState<Record<string, UIPermissionsConfig>>(initialUIPermissions);
 
   useEffect(() => {
     const fetchPresets = async () => {
@@ -71,17 +82,42 @@ export const PermissionsEditor = ({
     fetchPresets();
   }, []);
 
+  // Carregar UI permissions existentes do usuário
+  useEffect(() => {
+    const fetchUIPermissions = async () => {
+      if (!userId || !organizationId) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('ui_permissions')
+          .select('pagina_id, config')
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
+
+        if (!error && data) {
+          const permissions: Record<string, UIPermissionsConfig> = {};
+          data.forEach(item => {
+            permissions[item.pagina_id] = item.config as unknown as UIPermissionsConfig;
+          });
+          setUIPermissions(permissions);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar UI permissions:', err);
+      }
+    };
+
+    fetchUIPermissions();
+  }, [userId, organizationId]);
+
   const handlePermissionToggle = (permissionKey: string, checked: boolean) => {
     if (disabled) return;
 
     let newPermissions = [...selectedPermissions];
 
     if (checked) {
-      // Adicionar permissão e suas dependências
       const deps = getPermissionDependencies(permissionKey);
       newPermissions = [...new Set([...newPermissions, permissionKey, ...deps])];
     } else {
-      // Remover permissão
       newPermissions = newPermissions.filter(p => p !== permissionKey);
     }
 
@@ -99,10 +135,8 @@ export const PermissionsEditor = ({
     let newPermissions = [...selectedPermissions];
 
     if (checked) {
-      // Adicionar todas as permissões da seção
       newPermissions = [...new Set([...newPermissions, ...sectionPermKeys])];
     } else {
-      // Remover todas as permissões da seção
       newPermissions = newPermissions.filter(p => !sectionPermKeys.includes(p));
     }
 
@@ -115,9 +149,107 @@ export const PermissionsEditor = ({
     const preset = presets.find(p => p.id === presetId);
     if (!preset) return;
 
-    // Expandir permissões do preset com dependências
     const expanded = expandPermissionsWithDependencies(preset.permissions);
     onChange(expanded);
+  };
+
+  const handleUIColumnToggle = (pageId: string, columnId: string, checked: boolean) => {
+    if (disabled) return;
+
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return;
+
+    const currentConfig = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    
+    const newConfig: UIPermissionsConfig = {
+      ...currentConfig,
+      colunas: {
+        ...currentConfig.colunas,
+        [columnId]: { ativo: checked }
+      }
+    };
+
+    const newUIPermissions = {
+      ...uiPermissions,
+      [pageId]: newConfig
+    };
+
+    setUIPermissions(newUIPermissions);
+    onUIPermissionsChange?.(newUIPermissions);
+  };
+
+  const handleUISecaoToggle = (pageId: string, secaoId: string, checked: boolean) => {
+    if (disabled) return;
+
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return;
+
+    const currentConfig = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    
+    const newConfig: UIPermissionsConfig = {
+      ...currentConfig,
+      secoes: {
+        ...currentConfig.secoes,
+        [secaoId]: { ativo: checked }
+      }
+    };
+
+    const newUIPermissions = {
+      ...uiPermissions,
+      [pageId]: newConfig
+    };
+
+    setUIPermissions(newUIPermissions);
+    onUIPermissionsChange?.(newUIPermissions);
+  };
+
+  const handleUIAcaoToggle = (pageId: string, acaoId: string, checked: boolean) => {
+    if (disabled) return;
+
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return;
+
+    const currentConfig = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    
+    const newConfig: UIPermissionsConfig = {
+      ...currentConfig,
+      acoes: {
+        ...currentConfig.acoes,
+        [acaoId]: { ativo: checked }
+      }
+    };
+
+    const newUIPermissions = {
+      ...uiPermissions,
+      [pageId]: newConfig
+    };
+
+    setUIPermissions(newUIPermissions);
+    onUIPermissionsChange?.(newUIPermissions);
+  };
+
+  const isColumnActive = (pageId: string, columnId: string): boolean => {
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return true;
+
+    const config = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    return config.colunas[columnId]?.ativo ?? true;
+  };
+
+  const isSecaoActive = (pageId: string, secaoId: string): boolean => {
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return true;
+
+    const config = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    return config.secoes[secaoId]?.ativo ?? true;
+  };
+
+  const isAcaoActive = (pageId: string, acaoId: string): boolean => {
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return true;
+
+    const config = uiPermissions[pageId] || getDefaultConfig(pageConfig);
+    return config.acoes[acaoId]?.ativo ?? true;
   };
 
   const isSectionFullySelected = (sectionKey: string): boolean => {
@@ -138,6 +270,126 @@ export const PermissionsEditor = ({
     const section = PERMISSIONS_CONFIG.find(s => s.key === sectionKey);
     if (!section) return 0;
     return section.permissions.filter(p => selectedPermissions.includes(p.key)).length;
+  };
+
+  const sectionHasViewPermission = (sectionKey: string): boolean => {
+    const viewPermission = `${sectionKey}.view`;
+    const resumoViewPermission = `${sectionKey}.resumo.view`;
+    return selectedPermissions.includes(viewPermission) || selectedPermissions.includes(resumoViewPermission);
+  };
+
+  const renderUIPermissionsForSection = (sectionKey: string) => {
+    const pageId = SECTION_TO_UI_PAGE[sectionKey];
+    if (!pageId) return null;
+
+    const pageConfig = getPageConfigById(pageId);
+    if (!pageConfig) return null;
+
+    const hasViewAccess = sectionHasViewPermission(sectionKey);
+
+    return (
+      <div className={`mt-4 p-3 rounded-lg border border-dashed ${hasViewAccess ? 'border-primary/30 bg-primary/5' : 'border-muted bg-muted/30 opacity-50'}`}>
+        <div className="flex items-center gap-2 mb-3">
+          <Columns3 className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Visibilidade de Colunas</span>
+          {!hasViewAccess && (
+            <Badge variant="outline" className="text-xs">
+              Requer permissão de visualização
+            </Badge>
+          )}
+        </div>
+
+        {/* Colunas */}
+        {pageConfig.colunas.length > 0 && (
+          <div className="space-y-2">
+            <span className="text-xs text-muted-foreground font-medium">Colunas:</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {pageConfig.colunas.map(coluna => (
+                <div 
+                  key={coluna.id}
+                  className="flex items-center gap-2 p-2 rounded bg-background/50"
+                >
+                  <Checkbox
+                    id={`col-${pageId}-${coluna.id}`}
+                    checked={isColumnActive(pageId, coluna.id)}
+                    onCheckedChange={(checked) => 
+                      handleUIColumnToggle(pageId, coluna.id, !!checked)
+                    }
+                    disabled={disabled || !hasViewAccess}
+                  />
+                  <Label 
+                    htmlFor={`col-${pageId}-${coluna.id}`}
+                    className="text-xs cursor-pointer"
+                  >
+                    {coluna.nome}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Seções */}
+        {pageConfig.secoes.length > 0 && (
+          <div className="space-y-2 mt-3">
+            <span className="text-xs text-muted-foreground font-medium">Seções:</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {pageConfig.secoes.map(secao => (
+                <div 
+                  key={secao.id}
+                  className="flex items-center gap-2 p-2 rounded bg-background/50"
+                >
+                  <Checkbox
+                    id={`sec-${pageId}-${secao.id}`}
+                    checked={isSecaoActive(pageId, secao.id)}
+                    onCheckedChange={(checked) => 
+                      handleUISecaoToggle(pageId, secao.id, !!checked)
+                    }
+                    disabled={disabled || !hasViewAccess}
+                  />
+                  <Label 
+                    htmlFor={`sec-${pageId}-${secao.id}`}
+                    className="text-xs cursor-pointer"
+                  >
+                    {secao.nome}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Ações */}
+        {pageConfig.acoes.length > 0 && (
+          <div className="space-y-2 mt-3">
+            <span className="text-xs text-muted-foreground font-medium">Ações:</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {pageConfig.acoes.map(acao => (
+                <div 
+                  key={acao.id}
+                  className="flex items-center gap-2 p-2 rounded bg-background/50"
+                >
+                  <Checkbox
+                    id={`acao-${pageId}-${acao.id}`}
+                    checked={isAcaoActive(pageId, acao.id)}
+                    onCheckedChange={(checked) => 
+                      handleUIAcaoToggle(pageId, acao.id, !!checked)
+                    }
+                    disabled={disabled || !hasViewAccess}
+                  />
+                  <Label 
+                    htmlFor={`acao-${pageId}-${acao.id}`}
+                    className="text-xs cursor-pointer"
+                  >
+                    {acao.nome}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -252,6 +504,9 @@ export const PermissionsEditor = ({
                   </div>
                 ))}
               </div>
+
+              {/* UI Permissions para esta seção */}
+              {renderUIPermissionsForSection(section.key)}
             </AccordionContent>
           </AccordionItem>
         ))}
