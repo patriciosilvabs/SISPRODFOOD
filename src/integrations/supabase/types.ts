@@ -1283,6 +1283,7 @@ export type Database = {
       }
       produtos: {
         Row: {
+          ativo: boolean
           categoria: Database["public"]["Enums"]["categoria_produto"]
           classificacao: string | null
           codigo: string | null
@@ -1290,10 +1291,12 @@ export type Database = {
           id: string
           nome: string
           organization_id: string | null
+          tipo_produto: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo: string | null
           updated_at: string | null
         }
         Insert: {
+          ativo?: boolean
           categoria: Database["public"]["Enums"]["categoria_produto"]
           classificacao?: string | null
           codigo?: string | null
@@ -1301,10 +1304,12 @@ export type Database = {
           id?: string
           nome: string
           organization_id?: string | null
+          tipo_produto?: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo?: string | null
           updated_at?: string | null
         }
         Update: {
+          ativo?: boolean
           categoria?: Database["public"]["Enums"]["categoria_produto"]
           classificacao?: string | null
           codigo?: string | null
@@ -1312,6 +1317,7 @@ export type Database = {
           id?: string
           nome?: string
           organization_id?: string | null
+          tipo_produto?: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo?: string | null
           updated_at?: string | null
         }
@@ -1895,6 +1901,7 @@ export type Database = {
         | "descartaveis"
         | "equipamentos"
       tipo_movimento: "entrada" | "saida"
+      tipo_produto: "lacrado" | "porcionado" | "lote" | "simples"
       unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco"
     }
     CompositeTypes: {
@@ -2036,6 +2043,7 @@ export const Constants = {
         "equipamentos",
       ],
       tipo_movimento: ["entrada", "saida"],
+      tipo_produto: ["lacrado", "porcionado", "lote", "simples"],
       unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco"],
     },
   },
