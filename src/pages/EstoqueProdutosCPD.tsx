@@ -128,6 +128,53 @@ interface RomaneioProdutoItem {
   unidade: string | null;
 }
 
+// Componente separado para evitar useState dentro de .map() (React Error #310)
+interface ProdutoEstoque {
+  id: string;
+  nome: string;
+  quantidade: number;
+  unidade_consumo: string | null;
+}
+
+const ProdutoRomaneioItem = ({ 
+  produto, 
+  onAdicionar 
+}: { 
+  produto: ProdutoEstoque; 
+  onAdicionar: (produto: ProdutoEstoque, qtd: number) => void;
+}) => {
+  const [qtdTemp, setQtdTemp] = useState(1);
+  
+  return (
+    <div className="p-3 flex items-center justify-between gap-2">
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">{produto.nome}</p>
+        <p className="text-sm text-muted-foreground">
+          Estoque: {produto.quantidade} {produto.unidade_consumo || "un"}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={1}
+          max={produto.quantidade}
+          value={qtdTemp}
+          onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
+          className="w-16 h-8 text-center"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onAdicionar(produto, qtdTemp)}
+          disabled={qtdTemp <= 0 || qtdTemp > produto.quantidade}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 const CATEGORIAS = [
   { value: "todas", label: "Todas as categorias" },
   { value: "congelado", label: "Congelado" },
@@ -1385,37 +1432,13 @@ export default function EstoqueProdutosCPD() {
                           </div>
                         ) : (
                           <div className="divide-y">
-                            {produtosParaRomaneio.slice(0, 20).map((produto) => {
-                              const [qtdTemp, setQtdTemp] = useState(1);
-                              return (
-                                <div key={produto.id} className="p-3 flex items-center justify-between gap-2">
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">{produto.nome}</p>
-                                    <p className="text-sm text-muted-foreground">
-                                      Estoque: {produto.quantidade} {produto.unidade_consumo || "un"}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Input
-                                      type="number"
-                                      min={1}
-                                      max={produto.quantidade}
-                                      value={qtdTemp}
-                                      onChange={(e) => setQtdTemp(Math.min(Number(e.target.value), produto.quantidade))}
-                                      className="w-16 h-8 text-center"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleAdicionarAoCarrinho(produto, qtdTemp)}
-                                      disabled={qtdTemp <= 0 || qtdTemp > produto.quantidade}
-                                    >
-                                      <Plus className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            {produtosParaRomaneio.slice(0, 20).map((produto) => (
+                              <ProdutoRomaneioItem
+                                key={produto.id}
+                                produto={produto}
+                                onAdicionar={handleAdicionarAoCarrinho}
+                              />
+                            ))}
                           </div>
                         )}
                       </div>
