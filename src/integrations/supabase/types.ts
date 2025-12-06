@@ -1570,8 +1570,10 @@ export type Database = {
           codigo: string | null
           created_at: string | null
           id: string
+          modo_envio: string | null
           nome: string
           organization_id: string | null
+          peso_por_unidade_kg: number | null
           tipo_produto: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo: string | null
           updated_at: string | null
@@ -1583,8 +1585,10 @@ export type Database = {
           codigo?: string | null
           created_at?: string | null
           id?: string
+          modo_envio?: string | null
           nome: string
           organization_id?: string | null
+          peso_por_unidade_kg?: number | null
           tipo_produto?: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo?: string | null
           updated_at?: string | null
@@ -1596,8 +1600,10 @@ export type Database = {
           codigo?: string | null
           created_at?: string | null
           id?: string
+          modo_envio?: string | null
           nome?: string
           organization_id?: string | null
+          peso_por_unidade_kg?: number | null
           tipo_produto?: Database["public"]["Enums"]["tipo_produto"]
           unidade_consumo?: string | null
           updated_at?: string | null
