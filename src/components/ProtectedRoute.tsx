@@ -64,6 +64,9 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       // Admin e SuperAdmin passam em qualquer verificação
       if (isAdmin() || isSuperAdmin()) return;
       
+      // Rotas super admin já são protegidas pela verificação de role acima - pular permissões granulares
+      if (isSuperAdminRoute) return;
+      
       // Verificar permissão de rota usando o sistema granular
       // Rotas que não precisam de permissão específica (dashboard, auth-related)
       const publicRoutes = ['/', '/assinatura', '/aceitar-convite'];
