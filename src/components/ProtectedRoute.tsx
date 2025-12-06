@@ -88,7 +88,25 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     }
   }, [user, loading, orgLoading, permissionsLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isAdmin, isSuperAdminRoute, hasRouteAccess]);
 
-  if (loading || orgLoading || permissionsLoading) {
+  // Loading básico (auth e org)
+  if (loading || orgLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <p className="mt-4 text-muted-foreground">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Super Admin e Admin não precisam esperar permissões granulares - renderizar imediatamente
+  if (user && (isSuperAdmin() || isAdmin())) {
+    return <>{children}</>;
+  }
+
+  // Outros usuários precisam esperar loading de permissões
+  if (permissionsLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">

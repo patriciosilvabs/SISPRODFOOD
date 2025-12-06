@@ -25,15 +25,15 @@ export const usePermissions = (): UsePermissionsReturn => {
   const [loading, setLoading] = useState(true);
 
   const fetchPermissions = useCallback(async () => {
-    if (!user?.id) {
-      setPermissions([]);
+    // Admin e SuperAdmin têm todas as permissões - retornar imediatamente sem fazer fetch
+    if (isAdmin() || isSuperAdmin()) {
+      setPermissions(['*']); // Wildcard para acesso total
       setLoading(false);
       return;
     }
 
-    // Admin e SuperAdmin têm todas as permissões
-    if (isAdmin() || isSuperAdmin()) {
-      setPermissions(['*']); // Wildcard para acesso total
+    if (!user?.id) {
+      setPermissions([]);
       setLoading(false);
       return;
     }
