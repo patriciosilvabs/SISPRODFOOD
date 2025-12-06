@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { SuperAdminLayout } from '@/components/SuperAdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,7 +65,7 @@ export const SuperAdminAssinaturas = () => {
     trial_end_date: '',
     subscription_expires_at: '',
   });
-  const dialogContentRef = useRef<HTMLDivElement>(null);
+  
 
   useEffect(() => {
     fetchData();
@@ -355,7 +355,7 @@ export const SuperAdminAssinaturas = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editingSub} onOpenChange={() => setEditingSub(null)}>
-        <DialogContent ref={dialogContentRef} className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gerenciar Assinatura</DialogTitle>
             <DialogDescription>
@@ -372,7 +372,7 @@ export const SuperAdminAssinaturas = () => {
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent container={dialogContentRef.current}>
+                <SelectContent usePortal={false}>
                   <SelectItem value="trial">Trial</SelectItem>
                   <SelectItem value="active">Ativa</SelectItem>
                   <SelectItem value="expired">Expirada</SelectItem>
@@ -389,7 +389,7 @@ export const SuperAdminAssinaturas = () => {
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um plano" />
                 </SelectTrigger>
-                <SelectContent container={dialogContentRef.current}>
+                <SelectContent usePortal={false}>
                   {plans.map(plan => (
                     <SelectItem key={plan.id} value={plan.slug}>
                       {plan.nome} - {(plan.preco_centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
