@@ -28,6 +28,8 @@ interface Produto {
   categoria: string;
   unidade_consumo: string | null;
   classificacao: string | null;
+  tipo_produto: string;
+  ativo: boolean;
 }
 
 interface ProdutoFormModalProps {
@@ -65,6 +67,13 @@ const classificacaoOptions = [
   { value: 'C', label: 'C - Baixo consumo/valor' },
 ];
 
+const tipoProdutoOptions = [
+  { value: 'lacrado', label: 'Lacrado' },
+  { value: 'porcionado', label: 'Porcionado' },
+  { value: 'lote', label: 'Lote' },
+  { value: 'simples', label: 'Simples' },
+];
+
 export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalProps) {
   const { organizationId } = useOrganization();
   const [loading, setLoading] = useState(false);
@@ -74,6 +83,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
     categoria: '',
     unidade_consumo: '',
     classificacao: '',
+    tipo_produto: 'simples',
+    ativo: true,
   });
 
   useEffect(() => {
@@ -84,6 +95,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         categoria: produto.categoria,
         unidade_consumo: produto.unidade_consumo || '',
         classificacao: produto.classificacao || '',
+        tipo_produto: produto.tipo_produto || 'simples',
+        ativo: produto.ativo ?? true,
       });
     } else {
       setFormData({
@@ -92,6 +105,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         categoria: '',
         unidade_consumo: '',
         classificacao: '',
+        tipo_produto: 'simples',
+        ativo: true,
       });
     }
   }, [produto, open]);
@@ -128,6 +143,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         categoria: formData.categoria as any,
         unidade_consumo: formData.unidade_consumo.trim() || null,
         classificacao: formData.classificacao || null,
+        tipo_produto: formData.tipo_produto as any,
+        ativo: formData.ativo,
         organization_id: organizationId,
       };
 
@@ -262,6 +279,40 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tipo_produto">Tipo de Produto *</Label>
+              <Select
+                value={formData.tipo_produto}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, tipo_produto: value })
+                }
+              >
+                <SelectTrigger id="tipo_produto">
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tipoProdutoOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <input
+                type="checkbox"
+                id="ativo"
+                checked={formData.ativo}
+                onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
+                className="h-4 w-4 rounded border-input"
+              />
+              <Label htmlFor="ativo" className="cursor-pointer">
+                Produto ativo
+              </Label>
             </div>
           </div>
 

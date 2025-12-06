@@ -33,6 +33,8 @@ interface Produto {
   categoria: string;
   unidade_consumo: string | null;
   classificacao: string | null;
+  tipo_produto: string;
+  ativo: boolean;
   created_at: string;
   updated_at: string | null;
 }
@@ -49,11 +51,19 @@ const categoriaLabels: Record<string, string> = {
   'equipamentos': 'Equipamentos',
 };
 
+const tipoProdutoLabels: Record<string, string> = {
+  'lacrado': 'Lacrado',
+  'porcionado': 'Porcionado',
+  'lote': 'Lote',
+  'simples': 'Simples',
+};
+
 const GerenciarProdutos = () => {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoriaFilter, setCategoriaFilter] = useState<string>('todas');
+  const [statusFilter, setStatusFilter] = useState<string>('ativos');
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
@@ -67,7 +77,7 @@ const GerenciarProdutos = () => {
 
   useEffect(() => {
     filterProdutos();
-  }, [produtos, categoriaFilter, searchQuery]);
+  }, [produtos, categoriaFilter, statusFilter, searchQuery]);
 
   const fetchProdutos = async () => {
     console.log('🔍 fetchProdutos chamado');
@@ -94,6 +104,13 @@ const GerenciarProdutos = () => {
 
   const filterProdutos = () => {
     let filtered = produtos;
+
+    // Filtro por status (ativo/inativo)
+    if (statusFilter === 'ativos') {
+      filtered = filtered.filter(p => p.ativo);
+    } else if (statusFilter === 'inativos') {
+      filtered = filtered.filter(p => !p.ativo);
+    }
 
     if (categoriaFilter !== 'todas') {
       filtered = filtered.filter(p => p.categoria === categoriaFilter);
@@ -186,8 +203,18 @@ const GerenciarProdutos = () => {
                   />
                 </div>
               </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-[160px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="ativos">Ativos</SelectItem>
+                  <SelectItem value="inativos">Inativos</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
-                <SelectTrigger className="w-full sm:w-[280px]">
+                <SelectTrigger className="w-full sm:w-[240px]">
                   <SelectValue placeholder="Filtrar por categoria" />
                 </SelectTrigger>
                 <SelectContent>
@@ -223,23 +250,28 @@ const GerenciarProdutos = () => {
                     <TableRow>
                       <TableHead>Nome do Produto</TableHead>
                       <TableHead>Código</TableHead>
+                      <TableHead>Tipo</TableHead>
                       <TableHead>Categoria</TableHead>
-                      <TableHead>Unid. Consumo</TableHead>
                       <TableHead className="text-center">Classificação</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredProdutos.map((produto) => (
-                      <TableRow key={produto.id}>
+                      <TableRow key={produto.id} className={!produto.ativo ? 'opacity-60' : ''}>
                         <TableCell className="font-medium">{produto.nome}</TableCell>
                         <TableCell>{produto.codigo || '-'}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center px-2 py-1 rounded-md bg-accent text-accent-foreground text-xs">
+                            {tipoProdutoLabels[produto.tipo_produto] || produto.tipo_produto}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs">
                             {categoriaLabels[produto.categoria] || produto.categoria}
                           </span>
                         </TableCell>
-                        <TableCell>{produto.unidade_consumo || '-'}</TableCell>
                         <TableCell className="text-center">
                           {produto.classificacao ? (
                             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-semibold">
@@ -248,6 +280,15 @@ const GerenciarProdutos = () => {
                           ) : (
                             '-'
                           )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            produto.ativo 
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                          }`}>
+                            {produto.ativo ? 'Ativo' : 'Inativo'}
+                          </span>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
