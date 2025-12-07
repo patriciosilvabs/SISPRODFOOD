@@ -280,10 +280,22 @@ const GerenciarUsuarios = () => {
     try {
       setSaving(true);
 
-      // 1. Atualizar is_admin em organization_members
+      // 1. Detectar perfil e mapear para role correto
+      const detectedProfile = getDetectedProfile(selectedLojas, isAdminRole);
+      let newRole: 'Admin' | 'Produção' | 'Loja' = 'Loja';
+      if (isAdminRole) {
+        newRole = 'Admin';
+      } else if (detectedProfile === 'cpd') {
+        newRole = 'Produção';
+      }
+
+      // 2. Atualizar is_admin E role em organization_members
       await supabase
         .from('organization_members')
-        .update({ is_admin: isAdminRole })
+        .update({ 
+          is_admin: isAdminRole,
+          role: newRole 
+        })
         .eq('user_id', editingUser.id)
         .eq('organization_id', organizationId);
 
@@ -397,7 +409,17 @@ const GerenciarUsuarios = () => {
 
     try {
       setSendingInvite(true);
-      const roles = inviteIsAdmin ? ['Admin'] : [];
+      
+      // Detectar perfil e mapear para role correto
+      const detectedProfile = getDetectedProfile(inviteLojas, inviteIsAdmin);
+      let role: string = 'Loja';
+      if (inviteIsAdmin) {
+        role = 'Admin';
+      } else if (detectedProfile === 'cpd') {
+        role = 'Produção';
+      }
+      
+      const roles = [role];
 
       const { data, error } = await supabase.functions.invoke('convidar-funcionario', {
         body: {
