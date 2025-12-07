@@ -11,6 +11,7 @@ type AuditAction =
   | 'permission.revoke'
   | 'user.invite' 
   | 'user.remove'
+  | 'user.update'
   | 'invite.cancel'
   | 'superadmin.promote'
   | 'superadmin.demote';

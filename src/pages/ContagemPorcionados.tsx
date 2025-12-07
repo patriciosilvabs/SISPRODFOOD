@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { useUIPermissions } from '@/hooks/useUIPermissions';
 import { Sparkles, Eye, ChevronDown, ChevronUp, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -67,7 +66,6 @@ interface EstoqueIdeal {
 const ContagemPorcionados = () => {
   const { user, roles, isAdmin, hasRole } = useAuth();
   const { organizationId } = useOrganization();
-  const { isColunaActive, isAcaoActive, loading: uiLoading } = useUIPermissions('contagem_porcionados');
   
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
@@ -92,28 +90,6 @@ const ContagemPorcionados = () => {
 
   // Verificar se usuário é apenas Loja (sem Admin ou Produção)
   const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
-
-  // Colunas visíveis baseadas nas permissões
-  const showSobra = isColunaActive('sobra');
-  const showPeso = isColunaActive('peso');
-  const showIdeal = isColunaActive('ideal');
-  const showAProduzir = isColunaActive('a_produzir');
-  const showAcao = isColunaActive('acao');
-
-  // Calcular grid dinâmico baseado nas colunas visíveis
-  const gridConfig = useMemo(() => {
-    const cols = [
-      { id: 'item', visible: true, span: 3 },
-      { id: 'sobra', visible: showSobra, span: 2 },
-      { id: 'peso', visible: showPeso, span: 2 },
-      { id: 'ideal', visible: showIdeal, span: 2 },
-      { id: 'a_produzir', visible: showAProduzir, span: 2 },
-      { id: 'acao', visible: showAcao, span: 1 },
-    ];
-    const visibleCols = cols.filter(c => c.visible);
-    const totalSpan = visibleCols.reduce((sum, c) => sum + c.span, 0);
-    return { cols: visibleCols, totalSpan };
-  }, [showSobra, showPeso, showIdeal, showAProduzir, showAcao]);
 
   useEffect(() => {
     if (user) {
@@ -507,7 +483,7 @@ const ContagemPorcionados = () => {
     }
   };
 
-  if (loading || uiLoading) {
+  if (loading) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[400px]">
@@ -560,15 +536,14 @@ const ContagemPorcionados = () => {
 
                 <CollapsibleContent>
                   <div className="border-t">
-                    {/* Cabeçalho dinâmico */}
-                    <div className={`grid gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground`} 
-                         style={{ gridTemplateColumns: `repeat(${gridConfig.totalSpan}, minmax(0, 1fr))` }}>
+                    {/* Cabeçalho */}
+                    <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
                       <div className="col-span-3">Item</div>
-                      {showSobra && <div className="col-span-2 text-center">Sobra</div>}
-                      {showPeso && <div className="col-span-2 text-center">Peso</div>}
-                      {showIdeal && <div className="col-span-2 text-center">Ideal</div>}
-                      {showAProduzir && <div className="col-span-2 text-center">A Produzir</div>}
-                      {showAcao && <div className="col-span-1 text-center">Ação</div>}
+                      <div className="col-span-2 text-center">Sobra</div>
+                      <div className="col-span-2 text-center">Peso</div>
+                      <div className="col-span-2 text-center">Ideal</div>
+                      <div className="col-span-2 text-center">A Produzir</div>
+                      <div className="col-span-1 text-center">Ação</div>
                     </div>
 
                     {/* Itens */}
@@ -583,8 +558,7 @@ const ContagemPorcionados = () => {
 
                       return (
                         <div key={item.id} 
-                             className="grid gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20"
-                             style={{ gridTemplateColumns: `repeat(${gridConfig.totalSpan}, minmax(0, 1fr))` }}>
+                             className="grid grid-cols-12 gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20">
                           <div className="col-span-3">
                             <span className="font-medium text-sm">{item.nome}</span>
                             {contagem && (
@@ -594,66 +568,56 @@ const ContagemPorcionados = () => {
                             )}
                           </div>
 
-                          {showSobra && (
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                value={finalSobra}
-                                onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
-                                className="h-8 text-center text-sm"
-                                placeholder="0"
-                              />
-                            </div>
-                          )}
+                          <div className="col-span-2">
+                            <Input
+                              type="number"
+                              value={finalSobra}
+                              onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
+                              className="h-8 text-center text-sm"
+                              placeholder="0"
+                            />
+                          </div>
 
-                          {showPeso && (
-                            <div className="col-span-2">
-                              <WeightInputInline
-                                value={pesoTotal}
-                                onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                                placeholder="0"
-                              />
-                            </div>
-                          )}
+                          <div className="col-span-2">
+                            <WeightInputInline
+                              value={pesoTotal}
+                              onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                              placeholder="0"
+                            />
+                          </div>
 
-                          {showIdeal && (
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                value={idealAmanha}
-                                onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
-                                className="h-8 text-center text-sm"
-                                placeholder="0"
-                              />
-                            </div>
-                          )}
+                          <div className="col-span-2">
+                            <Input
+                              type="number"
+                              value={idealAmanha}
+                              onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
+                              className="h-8 text-center text-sm"
+                              placeholder="0"
+                            />
+                          </div>
 
-                          {showAProduzir && (
-                            <div className="col-span-2">
-                              <div className={`text-center font-bold text-sm py-1.5 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                                {aProduzir} un
-                              </div>
+                          <div className="col-span-2">
+                            <div className={`text-center font-bold text-sm py-1.5 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                              {aProduzir} un
                             </div>
-                          )}
+                          </div>
 
-                          {showAcao && (
-                            <div className="col-span-1 flex gap-1 justify-center">
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                              </Button>
-                              <SaveButton
-                                isDirty={isRowDirty(loja.id, item.id)}
-                                isSaving={savingKeys.has(`${loja.id}-${item.id}`)}
-                                onClick={() => handleSave(loja.id, item.id)}
-                                className="h-8 px-2 text-xs"
-                              />
-                            </div>
-                          )}
+                          <div className="col-span-1 flex gap-1 justify-center">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <SaveButton
+                              isDirty={isRowDirty(loja.id, item.id)}
+                              isSaving={savingKeys.has(`${loja.id}-${item.id}`)}
+                              onClick={() => handleSave(loja.id, item.id)}
+                              className="h-8 px-2 text-xs"
+                            />
+                          </div>
                         </div>
                       );
                     })}
