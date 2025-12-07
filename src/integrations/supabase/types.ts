@@ -2336,6 +2336,7 @@ export type Database = {
         Returns: undefined
       }
       get_cpd_loja_id: { Args: { p_organization_id: string }; Returns: string }
+      get_current_date: { Args: never; Returns: string }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_profile: { Args: { _user_id: string }; Returns: string }

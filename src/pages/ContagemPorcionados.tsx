@@ -144,16 +144,15 @@ const ContagemPorcionados = () => {
       if (itensError) throw itensError;
 
       // Carregar contagens APENAS do dia atual (REGRA OBRIGATÓRIA)
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-      const amanha = new Date(hoje);
-      amanha.setDate(amanha.getDate() + 1);
+      // Usar data do SERVIDOR para funcionar em qualquer timezone
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const hoje = dataServidor || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       
       const { data: contagensData, error: contagensError } = await supabase
         .from('contagem_porcionados')
         .select('*')
-        .gte('updated_at', hoje.toISOString())
-        .lt('updated_at', amanha.toISOString())
+        .gte('updated_at', `${hoje}T00:00:00+00:00`)
+        .lt('updated_at', `${hoje}T23:59:59.999+00:00`)
         .order('updated_at', { ascending: false });
       
       if (contagensError) throw contagensError;
