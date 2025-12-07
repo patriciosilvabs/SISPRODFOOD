@@ -91,67 +91,6 @@ export const PERMISSIONS_CONFIG: PermissionSection[] = [
     ]
   },
   {
-    key: 'pedidos_compra',
-    label: 'Pedidos de Compra',
-    description: 'Gestão de pedidos de compra e conferência de recebimento',
-    permissions: [
-      {
-        key: 'pedidos_compra.view',
-        label: 'Visualizar Pedidos de Compra',
-        description: 'Ver pedidos de compra e histórico',
-        section: 'pedidos_compra'
-      },
-      {
-        key: 'pedidos_compra.manage',
-        label: 'Gerenciar Pedidos de Compra',
-        description: 'Criar e editar pedidos de compra',
-        section: 'pedidos_compra',
-        dependsOn: ['pedidos_compra.view']
-      },
-      {
-        key: 'pedidos_compra.receber',
-        label: 'Conferir Recebimento',
-        description: 'Conferir e registrar recebimento de mercadorias',
-        section: 'pedidos_compra',
-        dependsOn: ['pedidos_compra.view']
-      }
-    ]
-  },
-  {
-    key: 'romaneios_produtos',
-    label: 'Romaneio de Produtos',
-    description: 'Gestão de romaneios de produtos para lojas',
-    permissions: [
-      {
-        key: 'romaneios_produtos.view',
-        label: 'Visualizar Romaneios de Produtos',
-        description: 'Ver romaneios de produtos existentes',
-        section: 'romaneios_produtos'
-      },
-      {
-        key: 'romaneios_produtos.criar',
-        label: 'Criar Romaneios de Produtos',
-        description: 'Criar novos romaneios de produtos',
-        section: 'romaneios_produtos',
-        dependsOn: ['romaneios_produtos.view']
-      },
-      {
-        key: 'romaneios_produtos.enviar',
-        label: 'Enviar Romaneios de Produtos',
-        description: 'Confirmar envio de romaneios de produtos',
-        section: 'romaneios_produtos',
-        dependsOn: ['romaneios_produtos.view']
-      },
-      {
-        key: 'romaneios_produtos.receber',
-        label: 'Receber Romaneios de Produtos',
-        description: 'Confirmar recebimento de romaneios na loja',
-        section: 'romaneios_produtos',
-        dependsOn: ['romaneios_produtos.view']
-      }
-    ]
-  },
-  {
     key: 'contagem',
     label: 'Contagem de Porcionados',
     description: 'Contagem diária de itens porcionados',
