@@ -78,6 +78,9 @@ const Auth = () => {
     }
   };
 
+  // URL de produção fixa para garantir que o link sempre funcione
+  const PRODUCTION_URL = 'https://id-preview--dc0b8f1a-0f27-4079-a37f-ebfc55c7280c.lovable.app';
+
   const handleForgotPassword = async () => {
     const email = loginForm.getValues('email');
     
@@ -93,11 +96,24 @@ const Auth = () => {
 
     setResetLoading(true);
     try {
+      // Gerar o link de recuperação usando Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${PRODUCTION_URL}/reset-password`,
       });
 
       if (error) throw error;
+
+      // Enviar email customizado via Edge Function
+      try {
+        await supabase.functions.invoke('send-recovery-email', {
+          body: {
+            email,
+            resetLink: `${PRODUCTION_URL}/reset-password`,
+          },
+        });
+      } catch (emailError) {
+        console.warn('Custom email failed, using default Supabase email:', emailError);
+      }
 
       toast({
         title: "Email enviado!",
