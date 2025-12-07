@@ -143,10 +143,17 @@ const ContagemPorcionados = () => {
       
       if (itensError) throw itensError;
 
-      // Carregar contagens
+      // Carregar contagens APENAS do dia atual (REGRA OBRIGATÓRIA)
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const amanha = new Date(hoje);
+      amanha.setDate(amanha.getDate() + 1);
+      
       const { data: contagensData, error: contagensError } = await supabase
         .from('contagem_porcionados')
         .select('*')
+        .gte('updated_at', hoje.toISOString())
+        .lt('updated_at', amanha.toISOString())
         .order('updated_at', { ascending: false });
       
       if (contagensError) throw contagensError;
@@ -511,6 +518,9 @@ const ContagemPorcionados = () => {
           {lojas.map((loja) => {
             const contagensLoja = contagens[loja.id] || [];
             const isOpen = openLojas.has(loja.id);
+            
+            // Verificar se a loja tem lançamento válido hoje
+            const temLancamentoHoje = contagensLoja.length > 0;
 
             return (
               <Collapsible
@@ -522,9 +532,14 @@ const ContagemPorcionados = () => {
                 <CollapsibleTrigger className="w-full">
                   <div className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors">
                     <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-green-500" />
+                      <div className={`h-2 w-2 rounded-full ${temLancamentoHoje ? 'bg-green-500' : 'bg-orange-400'}`} />
                       <span className="font-semibold">{loja.nome}</span>
                       <span className="text-xs text-muted-foreground">({loja.responsavel})</span>
+                      {!temLancamentoHoje && (
+                        <span className="inline-flex items-center rounded-full bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
+                          ⚠️ Sem lançamento hoje
+                        </span>
+                      )}
                     </div>
                     {isOpen ? (
                       <ChevronUp className="h-4 w-4 text-muted-foreground" />
