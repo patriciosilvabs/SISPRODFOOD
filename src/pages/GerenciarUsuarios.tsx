@@ -46,7 +46,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuditLog } from '@/hooks/useAuditLog';
-import { SYSTEM_PAGES, PAGE_SECTIONS, getProfileLabel, UserProfile } from '@/lib/page-access-config';
+import { SYSTEM_PAGES, PAGE_SECTIONS, PROFILE_DEFAULT_PAGES, getProfileLabel, UserProfile } from '@/lib/page-access-config';
 
 interface Profile {
   id: string;
@@ -479,8 +479,6 @@ const GerenciarUsuarios = () => {
                 const isInOverride = page.route in overrides;
                 const overrideValue = overrides[page.route];
                 
-                // Importar defaults
-                const { PROFILE_DEFAULT_PAGES } = require('@/lib/page-access-config');
                 const defaultPages = PROFILE_DEFAULT_PAGES[profile] || [];
                 const isDefaultEnabled = defaultPages.includes(page.route);
                 
