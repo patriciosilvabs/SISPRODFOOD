@@ -1520,7 +1520,7 @@ const Romaneio = () => {
             size="sm" 
             onClick={handleRefresh} 
             disabled={loadingPorcionados}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="!bg-green-600 hover:!bg-green-700 text-white"
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingPorcionados ? 'animate-spin' : ''}`} />
             Atualizar
