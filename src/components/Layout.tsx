@@ -21,7 +21,8 @@ import {
   Boxes,
   MapPin,
   Shield,
-  Warehouse
+  Warehouse,
+  Store
 } from 'lucide-react';
 import {
   Sheet,
