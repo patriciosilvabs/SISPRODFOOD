@@ -322,9 +322,7 @@ const GerenciarUsuarios = () => {
 
       await auditLog.log('user.update', 'user', editingUser.id, {
         target_email: editingUser.email,
-        is_admin: isAdminRole,
         lojas: selectedLojas,
-        page_overrides: pageOverrides,
       });
 
       toast.success('Usuário atualizado com sucesso!');
