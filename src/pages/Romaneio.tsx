@@ -1516,7 +1516,12 @@ const Romaneio = () => {
             <Truck className="h-6 w-6 text-primary" />
             <h1 className="text-2xl font-bold">Romaneio</h1>
           </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loadingPorcionados}>
+          <Button 
+            size="sm" 
+            onClick={handleRefresh} 
+            disabled={loadingPorcionados}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingPorcionados ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
