@@ -358,12 +358,22 @@ const ResumoDaProducao = () => {
               quantidadeNecessaria = (registro.unidades_programadas || 0) * extra.quantidade;
             }
             
+            // Estoque disponível (sempre em kg)
+            const estoqueDisponivelKg = extra.insumos.quantidade_em_estoque || 0;
+            const unidadeExtra = (extra.unidade as string)?.toLowerCase() || 'kg';
+            
+            // Converter quantidade necessária para kg se estiver em gramas
+            let quantidadeNecessariaKg = quantidadeNecessaria;
+            if (unidadeExtra === 'g') {
+              quantidadeNecessariaKg = quantidadeNecessaria / 1000;
+            }
+            
             return {
               nome: extra.nome,
               quantidade_necessaria: quantidadeNecessaria,
               unidade: extra.unidade,
-              estoque_disponivel: extra.insumos.quantidade_em_estoque || 0,
-              estoque_suficiente: quantidadeNecessaria <= (extra.insumos.quantidade_em_estoque || 0)
+              estoque_disponivel: estoqueDisponivelKg,
+              estoque_suficiente: quantidadeNecessariaKg <= estoqueDisponivelKg
             };
           });
         }
