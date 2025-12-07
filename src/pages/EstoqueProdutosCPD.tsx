@@ -638,7 +638,7 @@ export default function EstoqueProdutosCPD() {
                       <Badge variant="destructive">{stats.semEstoque} sem estoque</Badge>
                     )}
                   </div>
-                  <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+                   <Button size="sm" onClick={fetchData} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
                     <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
                     Atualizar
                   </Button>
