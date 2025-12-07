@@ -44,30 +44,15 @@ export const usePageAccess = (): UsePageAccessReturn => {
 
   // Calcular se é SuperAdmin usando roles array (estável)
   const userIsSuperAdmin = roles.includes('SuperAdmin');
-  
-  // Debug logs
-  console.log('[usePageAccess] Estado:', { 
-    authLoading, 
-    userId: user?.id, 
-    roles, 
-    userIsSuperAdmin, 
-    organizationId,
-    profile,
-    loading 
-  });
 
   const fetchAccess = useCallback(async (forceRefresh = false) => {
-    console.log('[usePageAccess] fetchAccess chamado:', { authLoading, userIsSuperAdmin, forceRefresh });
-    
     // Aguardar AuthContext terminar de carregar
     if (authLoading) {
-      console.log('[usePageAccess] Aguardando auth carregar...');
       return;
     }
     
     // SuperAdmin tem acesso total
     if (userIsSuperAdmin) {
-      console.log('[usePageAccess] SuperAdmin detectado - acesso total');
       setProfile('admin');
       setOverrides([]);
       setLoading(false);
