@@ -61,11 +61,7 @@ interface Romaneio {
   }>;
 }
 
-interface ItemLojaEstoque {
-  item_id: string;
-  item_nome: string;
-  quantidade_disponivel: number;
-}
+// Interface removida - não é mais usada para romaneio avulso
 
 interface RomaneioAvulso {
   id: string;
@@ -243,10 +239,12 @@ const Romaneio = () => {
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
   
-  // Romaneio Avulso
+  // Romaneio Avulso (livre digitação)
   const [lojaDestinoAvulso, setLojaDestinoAvulso] = useState<string>('');
-  const [itensLojaEstoque, setItensLojaEstoque] = useState<ItemLojaEstoque[]>([]);
-  const [itensSelecionadosAvulso, setItensSelecionadosAvulso] = useState<ItemSelecionado[]>([]);
+  const [itensAvulsoLivre, setItensAvulsoLivre] = useState<{ id: string; descricao: string; quantidade: number }[]>([]);
+  const [novoItemDescricao, setNovoItemDescricao] = useState('');
+  const [novoItemQuantidade, setNovoItemQuantidade] = useState<number>(1);
+  const [observacaoAvulso, setObservacaoAvulso] = useState('');
   const [romaneiosAvulsosPendentes, setRomaneiosAvulsosPendentes] = useState<RomaneioAvulso[]>([]);
   const [romaneiosAvulsosReceber, setRomaneiosAvulsosReceber] = useState<RomaneioAvulso[]>([]);
   
@@ -313,11 +311,7 @@ const Romaneio = () => {
     }
   }, [userLojasIds, filtroStatus]);
 
-  useEffect(() => {
-    if (primaryLoja) {
-      fetchItensLojaEstoque();
-    }
-  }, [primaryLoja]);
+  // Removido: não precisa mais buscar itens do estoque para romaneio avulso
 
   useEffect(() => {
     const novosRecebimentos: typeof recebimentos = {};
@@ -522,29 +516,7 @@ const Romaneio = () => {
     }
   };
 
-  const fetchItensLojaEstoque = async () => {
-    if (!primaryLoja) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('estoque_loja_itens')
-        .select(`item_porcionado_id, quantidade, itens_porcionados!inner(nome)`)
-        .eq('loja_id', primaryLoja.loja_id)
-        .gt('quantidade', 0);
-
-      if (error) throw error;
-
-      const itens: ItemLojaEstoque[] = (data || []).map((item: any) => ({
-        item_id: item.item_porcionado_id,
-        item_nome: item.itens_porcionados.nome,
-        quantidade_disponivel: item.quantidade || 0
-      }));
-
-      setItensLojaEstoque(itens);
-    } catch (error) {
-      console.error('Erro ao buscar estoque da loja:', error);
-    }
-  };
+  // Removida função fetchItensLojaEstoque - não é mais necessária para romaneio avulso
 
   const fetchRomaneiosEnviados = async () => {
     try {
@@ -869,35 +841,33 @@ const Romaneio = () => {
     }
   };
 
-  // ==================== HANDLERS: AVULSO ====================
+  // ==================== HANDLERS: ROMANEIO AVULSO (LIVRE DIGITAÇÃO) ====================
 
-  const addItemAvulso = (item: ItemLojaEstoque) => {
-    const existe = itensSelecionadosAvulso.find(i => i.item_id === item.item_id);
-    if (existe) {
-      toast.error('Item já adicionado');
+  const handleAdicionarItemAvulsoLivre = () => {
+    if (!novoItemDescricao.trim()) {
+      toast.error('Informe a descrição do item');
       return;
     }
-    setItensSelecionadosAvulso([...itensSelecionadosAvulso, {
-      item_id: item.item_id,
-      item_nome: item.item_nome,
-      quantidade: item.quantidade_disponivel,
-      peso_total_kg: 0,
-      producao_registro_ids: []
+    if (novoItemQuantidade <= 0) {
+      toast.error('Informe uma quantidade válida');
+      return;
+    }
+    
+    setItensAvulsoLivre([...itensAvulsoLivre, {
+      id: crypto.randomUUID(),
+      descricao: novoItemDescricao.trim(),
+      quantidade: novoItemQuantidade
     }]);
+    setNovoItemDescricao('');
+    setNovoItemQuantidade(1);
   };
 
-  const removeItemAvulso = (itemId: string) => {
-    setItensSelecionadosAvulso(itensSelecionadosAvulso.filter(i => i.item_id !== itemId));
-  };
-
-  const updateQuantidadeAvulso = (itemId: string, quantidade: number) => {
-    setItensSelecionadosAvulso(itensSelecionadosAvulso.map(i => 
-      i.item_id === itemId ? { ...i, quantidade: Math.max(1, quantidade) } : i
-    ));
+  const handleRemoverItemAvulsoLivre = (id: string) => {
+    setItensAvulsoLivre(itensAvulsoLivre.filter(i => i.id !== id));
   };
 
   const handleCriarRomaneioAvulso = async () => {
-    if (!primaryLoja || !lojaDestinoAvulso || itensSelecionadosAvulso.length === 0) {
+    if (!primaryLoja || !lojaDestinoAvulso || itensAvulsoLivre.length === 0) {
       toast.error('Selecione uma loja destino e adicione itens');
       return;
     }
@@ -914,93 +884,47 @@ const Romaneio = () => {
 
       const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
       const lojaDestino = lojas.find(l => l.id === lojaDestinoAvulso);
+      const agora = new Date().toISOString();
 
+      // Criar romaneio JÁ COMO ENVIADO (não precisa etapa separada)
       const { data: romaneio, error: romaneioError } = await supabase.from('romaneios_avulsos').insert({
         loja_origem_id: primaryLoja.loja_id,
         loja_origem_nome: primaryLoja.loja_nome,
         loja_destino_id: lojaDestinoAvulso,
         loja_destino_nome: lojaDestino?.nome || '',
-        status: 'pendente',
-        data_criacao: new Date().toISOString(),
+        status: 'enviado',
+        data_criacao: agora,
+        data_envio: agora,
         usuario_criacao_id: user.id,
         usuario_criacao_nome: userProfile?.nome || 'Usuário',
+        observacao: observacaoAvulso || null,
         organization_id: organizationId
       }).select().single();
 
       if (romaneioError) throw romaneioError;
 
-      const itens = itensSelecionadosAvulso.map(item => ({
+      // Inserir itens com item_porcionado_id = null (livre digitação)
+      const itens = itensAvulsoLivre.map(item => ({
         romaneio_avulso_id: romaneio.id,
-        item_porcionado_id: item.item_id,
-        item_nome: item.item_nome,
+        item_porcionado_id: null,  // SEM VÍNCULO com itens cadastrados
+        item_nome: item.descricao,
         quantidade: item.quantidade,
-        peso_kg: item.peso_total_kg,
+        peso_kg: null,
         organization_id: organizationId
       }));
 
       await supabase.from('romaneios_avulsos_itens').insert(itens);
 
-      toast.success('Romaneio avulso criado!');
-      setItensSelecionadosAvulso([]);
+      // NÃO DEBITA ESTOQUE - é livre digitação
+
+      toast.success(`Romaneio avulso enviado para ${lojaDestino?.nome}!`);
+      setItensAvulsoLivre([]);
       setLojaDestinoAvulso('');
+      setObservacaoAvulso('');
       fetchRomaneiosAvulsos();
     } catch (error) {
       console.error('Erro ao criar romaneio avulso:', error);
       toast.error('Erro ao criar romaneio avulso');
-    } finally {
-      setLoadingPorcionados(false);
-    }
-  };
-
-  const handleEnviarRomaneioAvulso = async (romaneioId: string) => {
-    if (!primaryLoja) return;
-    
-    try {
-      setLoadingPorcionados(true);
-
-      const { data: itens, error: itensError } = await supabase
-        .from('romaneios_avulsos_itens')
-        .select('item_porcionado_id, quantidade, item_nome')
-        .eq('romaneio_avulso_id', romaneioId);
-
-      if (itensError) throw itensError;
-
-      for (const item of itens || []) {
-        const { data: estoque } = await supabase
-          .from('estoque_loja_itens')
-          .select('quantidade')
-          .eq('item_porcionado_id', item.item_porcionado_id)
-          .eq('loja_id', primaryLoja.loja_id)
-          .single();
-
-        const estoqueAtual = estoque?.quantidade || 0;
-        
-        if (estoqueAtual < item.quantidade) {
-          toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
-          return;
-        }
-
-        await supabase
-          .from('estoque_loja_itens')
-          .update({ 
-            quantidade: estoqueAtual - item.quantidade,
-            data_ultima_movimentacao: new Date().toISOString()
-          })
-          .eq('item_porcionado_id', item.item_porcionado_id)
-          .eq('loja_id', primaryLoja.loja_id);
-      }
-
-      await supabase.from('romaneios_avulsos').update({ 
-        status: 'enviado', 
-        data_envio: new Date().toISOString() 
-      }).eq('id', romaneioId);
-
-      toast.success('Romaneio avulso enviado!');
-      fetchRomaneiosAvulsos();
-      fetchItensLojaEstoque();
-    } catch (error) {
-      console.error('Erro ao enviar romaneio avulso:', error);
-      toast.error('Erro ao enviar romaneio avulso');
     } finally {
       setLoadingPorcionados(false);
     }
@@ -1018,11 +942,12 @@ const Romaneio = () => {
 
       const { data: itens, error: itensError } = await supabase
         .from('romaneios_avulsos_itens')
-        .select('id, item_porcionado_id, quantidade, item_nome')
+        .select('id, quantidade')
         .eq('romaneio_avulso_id', romaneioId);
 
       if (itensError) throw itensError;
 
+      // Atualizar quantidade recebida nos itens
       for (const item of itens || []) {
         const recebimento = recebimentos[item.id];
         const qtdRecebida = recebimento?.quantidade_recebida ?? item.quantidade;
@@ -1031,35 +956,9 @@ const Romaneio = () => {
           quantidade_recebida: qtdRecebida,
           peso_recebido_kg: recebimento?.peso_recebido_kg || null
         }).eq('id', item.id);
-
-        const { data: estoqueAtual } = await supabase
-          .from('estoque_loja_itens')
-          .select('quantidade')
-          .eq('item_porcionado_id', item.item_porcionado_id)
-          .eq('loja_id', primaryLoja.loja_id)
-          .single();
-
-        if (estoqueAtual) {
-          await supabase
-            .from('estoque_loja_itens')
-            .update({ 
-              quantidade: (estoqueAtual.quantidade || 0) + qtdRecebida,
-              data_ultima_movimentacao: new Date().toISOString()
-            })
-            .eq('item_porcionado_id', item.item_porcionado_id)
-            .eq('loja_id', primaryLoja.loja_id);
-        } else {
-          await supabase
-            .from('estoque_loja_itens')
-            .insert({
-              item_porcionado_id: item.item_porcionado_id,
-              loja_id: primaryLoja.loja_id,
-              quantidade: qtdRecebida,
-              data_ultima_movimentacao: new Date().toISOString(),
-              organization_id: organizationId
-            });
-        }
       }
+
+      // NÃO CREDITA ESTOQUE - é livre digitação
 
       await supabase.from('romaneios_avulsos').update({
         status: 'recebido',
@@ -1071,7 +970,6 @@ const Romaneio = () => {
 
       toast.success('Romaneio avulso recebido!');
       fetchRomaneiosAvulsos();
-      fetchItensLojaEstoque();
     } catch (error) {
       console.error('Erro ao receber romaneio avulso:', error);
       toast.error('Erro ao receber romaneio avulso');
@@ -1563,7 +1461,7 @@ const Romaneio = () => {
                 <TabsTrigger value="historico">Histórico</TabsTrigger>
                 <TabsTrigger value="avulso">
                   <ArrowRightLeft className="w-4 h-4 mr-1" />
-                  Avulso
+                  Romaneio Avulso
                 </TabsTrigger>
               </TabsList>
 
@@ -1822,7 +1720,7 @@ const Romaneio = () => {
                 )}
               </TabsContent>
 
-              {/* TAB: AVULSO */}
+              {/* TAB: ROMANEIO AVULSO (LIVRE DIGITAÇÃO) */}
               <TabsContent value="avulso" className="space-y-4">
                 {!primaryLoja ? (
                   <div className="py-8 text-center text-muted-foreground">
@@ -1831,113 +1729,111 @@ const Romaneio = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="flex-1">
-                        <Select value={lojaDestinoAvulso} onValueChange={setLojaDestinoAvulso}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione a loja destino" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {lojas.filter(l => l.id !== primaryLoja.loja_id).map(loja => (
-                              <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    {/* Seleção de Loja Destino */}
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1">
+                          <label className="text-sm font-medium mb-1 block">Loja Destino</label>
+                          <Select value={lojaDestinoAvulso} onValueChange={setLojaDestinoAvulso}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione a loja destino" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {lojas.filter(l => l.id !== primaryLoja.loja_id).map(loja => (
+                                <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {lojaDestinoAvulso && (
+                          <Badge variant="secondary" className="h-fit self-end py-2">
+                            De: {primaryLoja.loja_nome} → Para: {lojas.find(l => l.id === lojaDestinoAvulso)?.nome}
+                          </Badge>
+                        )}
                       </div>
-                      <Button 
-                        onClick={handleCriarRomaneioAvulso} 
-                        disabled={!lojaDestinoAvulso || itensSelecionadosAvulso.length === 0 || loadingPorcionados}
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Criar Romaneio
-                      </Button>
                     </div>
 
                     {lojaDestinoAvulso && (
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Seu Estoque ({primaryLoja.loja_nome})</h4>
-                          <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {itensLojaEstoque.length === 0 ? (
-                              <p className="text-sm text-muted-foreground text-center py-4">Nenhum item no estoque</p>
-                            ) : (
-                              itensLojaEstoque.map(item => (
-                                <div key={item.item_id} className="flex items-center justify-between p-2 border rounded hover:bg-muted/50">
-                                  <div>
-                                    <p className="font-medium text-sm">{item.item_nome}</p>
-                                    <p className="text-xs text-muted-foreground">{item.quantidade_disponivel} un</p>
-                                  </div>
-                                  <Button size="sm" variant="ghost" onClick={() => addItemAvulso(item)}>
-                                    <Plus className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
+                      <>
+                        {/* Formulário de Livre Digitação */}
+                        <Card>
+                          <CardHeader className="py-3">
+                            <CardTitle className="text-sm">Adicionar Item</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <div className="flex-1">
+                                <Input
+                                  placeholder="Descrição do item (ex: 10 pratos, 5 cadeiras, 1 caixa de talheres)"
+                                  value={novoItemDescricao}
+                                  onChange={(e) => setNovoItemDescricao(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && handleAdicionarItemAvulsoLivre()}
+                                />
+                              </div>
+                              <div className="w-24">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={novoItemQuantidade}
+                                  onChange={(e) => setNovoItemQuantidade(parseInt(e.target.value) || 1)}
+                                  placeholder="Qtd"
+                                  className="text-center"
+                                />
+                              </div>
+                              <Button onClick={handleAdicionarItemAvulsoLivre} variant="outline">
+                                <Plus className="w-4 h-4 mr-1" />
+                                Adicionar
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
 
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Itens a Transferir ({itensSelecionadosAvulso.length})</h4>
-                          <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {itensSelecionadosAvulso.length === 0 ? (
-                              <p className="text-sm text-muted-foreground text-center py-4">Clique + para adicionar</p>
+                        {/* Lista de Itens a Transferir */}
+                        <Card>
+                          <CardHeader className="py-3">
+                            <CardTitle className="text-sm">Itens a Transferir ({itensAvulsoLivre.length})</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-2 max-h-64 overflow-y-auto">
+                            {itensAvulsoLivre.length === 0 ? (
+                              <p className="text-sm text-muted-foreground text-center py-4">Adicione itens usando o formulário acima</p>
                             ) : (
-                              itensSelecionadosAvulso.map(item => (
-                                <div key={item.item_id} className="flex items-center gap-2 p-2 border rounded">
+                              itensAvulsoLivre.map(item => (
+                                <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
                                   <div className="flex-1">
-                                    <p className="font-medium text-sm">{item.item_nome}</p>
+                                    <p className="font-medium text-sm">{item.descricao}</p>
                                   </div>
-                                  <Input
-                                    type="number"
-                                    value={item.quantidade || ''}
-                                    onChange={(e) => updateQuantidadeAvulso(item.item_id, parseInt(e.target.value) || 0)}
-                                    className="w-20 h-8 text-center"
-                                    min={1}
-                                  />
-                                  <span className="text-xs text-muted-foreground">un</span>
-                                  <Button size="sm" variant="ghost" onClick={() => removeItemAvulso(item.item_id)}>
+                                  <Badge variant="secondary">{item.quantidade}</Badge>
+                                  <Button size="sm" variant="ghost" onClick={() => handleRemoverItemAvulsoLivre(item.id)}>
                                     <Trash2 className="w-4 h-4 text-destructive" />
                                   </Button>
                                 </div>
                               ))
                             )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                          </CardContent>
+                        </Card>
 
-                    {romaneiosAvulsosPendentes.length > 0 && (
-                      <div className="mt-6">
-                        <h4 className="text-sm font-medium mb-2">Pendentes de Envio</h4>
-                        <div className="space-y-3">
-                          {romaneiosAvulsosPendentes.map(romaneio => (
-                            <div key={romaneio.id} className="border rounded p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium">Para: {romaneio.loja_destino_nome}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {romaneio.itens.length} itens • {format(new Date(romaneio.data_criacao), "dd/MM HH:mm")}
-                                  </p>
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button size="sm" variant="outline" onClick={() => handleExcluirRomaneioAvulso(romaneio.id)}>
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                  <Button size="sm" onClick={() => handleEnviarRomaneioAvulso(romaneio.id)} disabled={loadingPorcionados}>
-                                    <Send className="w-4 h-4 mr-1" />
-                                    Enviar
-                                  </Button>
-                                </div>
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {romaneio.itens.map((item, i) => (
-                                  <span key={i}>{item.item_nome}: {item.quantidade}un{i < romaneio.itens.length - 1 ? ' • ' : ''}</span>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                        {/* Observação */}
+                        <Textarea
+                          placeholder="Observação (opcional)"
+                          value={observacaoAvulso}
+                          onChange={(e) => setObservacaoAvulso(e.target.value)}
+                          className="h-20"
+                        />
+
+                        {/* Botão Enviar */}
+                        <Button 
+                          onClick={handleCriarRomaneioAvulso} 
+                          disabled={itensAvulsoLivre.length === 0 || loadingPorcionados}
+                          className="w-full"
+                        >
+                          {loadingPorcionados ? (
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                          ) : (
+                            <Send className="w-4 h-4 mr-1" />
+                          )}
+                          Enviar Romaneio Avulso
+                        </Button>
+                      </>
                     )}
                   </>
                 )}
