@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.aceitar-convite]
 verify_jwt = false
+
+[functions.send-recovery-email]
+verify_jwt = false
