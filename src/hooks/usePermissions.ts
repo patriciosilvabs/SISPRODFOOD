@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -19,13 +19,13 @@ interface UsePermissionsReturn {
 }
 
 export const usePermissions = (): UsePermissionsReturn => {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, roles } = useAuth();
   const { organizationId } = useOrganization();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Calcular uma vez como valor booleano para evitar loops
-  const isSuperAdminUser = isSuperAdmin();
+  // Calcular uma vez como valor booleano memoizado para evitar loops
+  const isSuperAdminUser = useMemo(() => roles.includes('SuperAdmin'), [roles]);
 
   const fetchPermissions = useCallback(async () => {
     // Apenas SuperAdmin tem bypass total - Admin depende dos checkboxes

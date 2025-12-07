@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { usePermissions } from '@/hooks/usePermissions';
-import { ROUTE_PERMISSIONS } from '@/lib/permissions';
+import { hasRoutePermission, ROUTE_PERMISSIONS } from '@/lib/permissions';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -12,32 +12,33 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, roles, loading, isSuperAdmin } = useAuth();
+  const { user, roles, loading } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
-  const { hasRouteAccess, permissions, loading: permissionsLoading } = usePermissions();
+  const { permissions, loading: permissionsLoading } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Memoize static values to prevent infinite loops in useEffect
-  const userIsSuperAdmin = useMemo(() => isSuperAdmin(), [user]);
+  // Memoize static values - usar roles diretamente, não função
+  const userIsSuperAdmin = useMemo(() => roles.includes('SuperAdmin'), [roles]);
   const currentPath = location.pathname;
   const isSuperAdminRoute = currentPath.startsWith('/super-admin');
   
-  // Calcular rota permitida de forma estável
+  // Calcular rota permitida usando função pura (não hook)
   const routeAccessAllowed = useMemo(() => {
     if (userIsSuperAdmin) return true;
     if (permissions.includes('*')) return true;
-    return hasRouteAccess(currentPath);
-  }, [userIsSuperAdmin, permissions, currentPath, hasRouteAccess]);
+    return hasRoutePermission(currentPath, permissions, userIsSuperAdmin);
+  }, [userIsSuperAdmin, permissions, currentPath]);
   
-  // Calcular primeira rota permitida de forma estável (para redirecionamento)
+  // Calcular primeira rota permitida usando função pura
   const firstAllowedRoute = useMemo(() => {
     if (userIsSuperAdmin || permissions.includes('*')) return '/dashboard';
-    return Object.keys(ROUTE_PERMISSIONS).find(
-      (route: string) => route !== '/' && hasRouteAccess(route)
-    ) || '/assinatura';
-  }, [userIsSuperAdmin, permissions, hasRouteAccess]);
+    const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
+      (route: string) => route !== '/' && hasRoutePermission(route, permissions, userIsSuperAdmin)
+    );
+    return allowedRoute || '/assinatura';
+  }, [userIsSuperAdmin, permissions]);
 
   useEffect(() => {
     // Redirecionar para auth se não estiver logado
