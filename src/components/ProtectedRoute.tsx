@@ -96,6 +96,11 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
 
     // Verificar acesso à página
     if (!needsOnboarding && canAccess) {
+      // Guard: se accessiblePages está vazio, aguardar carregamento real
+      if (accessiblePages.length === 0) {
+        return;
+      }
+      
       const publicRoutes = ['/assinatura', '/aceitar-convite'];
       const isPublicRoute = publicRoutes.includes(currentPath);
       

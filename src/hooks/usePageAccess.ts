@@ -150,7 +150,8 @@ export const usePageAccess = (): UsePageAccessReturn => {
 
   return {
     profile,
-    loading,
+    // Só considerar loading=false quando profile foi determinado (exceto SuperAdmin)
+    loading: loading || (!userIsSuperAdmin && profile === null),
     hasPageAccess,
     accessiblePages,
     refreshAccess: fetchAccess,
