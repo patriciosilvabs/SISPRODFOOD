@@ -23,7 +23,8 @@ import ConfigurarInterface from "./pages/ConfigurarInterface";
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
 import PainelKanban from "./pages/PainelKanban";
-import EstoqueDiario from "./pages/EstoqueDiario";
+import EstoqueLoja from "./pages/EstoqueLoja";
+import ReposicaoLoja from "./pages/ReposicaoLoja";
 import AtenderPedidosDiarios from "./pages/AtenderPedidosDiarios";
 import ContagemPorcionados from "./pages/ContagemPorcionados";
 import Romaneio from "./pages/Romaneio";
@@ -97,10 +98,18 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/estoque-diario"
+                  path="/estoque-loja"
                   element={
                     <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
-                      <EstoqueDiario />
+                      <EstoqueLoja />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reposicao-loja"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <ReposicaoLoja />
                     </ProtectedRoute>
                   }
                 />

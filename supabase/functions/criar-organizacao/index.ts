@@ -26,6 +26,8 @@ const ALL_PERMISSIONS = [
   'contagem.manage',
   'estoque_loja.view',
   'estoque_loja.manage',
+  'reposicao_loja.view',
+  'reposicao_loja.enviar',
   'romaneio.view',
   'romaneio.create',
   'romaneio.send',
