@@ -494,10 +494,10 @@ const EstoqueLoja = () => {
               Informe o estoque atual de produtos da sua loja
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setRefreshKey(prev => prev + 1)} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Atualizar
-          </Button>
+            <Button size="sm" onClick={() => setRefreshKey(prev => prev + 1)} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
         </div>
 
         <Tabs defaultValue="estoque" className="w-full">
