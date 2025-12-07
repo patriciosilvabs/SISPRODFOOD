@@ -411,10 +411,10 @@ const ReposicaoLoja = () => {
               Visualize demandas consolidadas e envie reposição para as lojas
             </p>
           </div>
-          <Button variant="outline" onClick={fetchDados} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Atualizar
-          </Button>
+              <Button onClick={fetchDados} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Atualizar
+              </Button>
         </div>
 
         <Card>
