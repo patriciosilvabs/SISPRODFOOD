@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -17,39 +17,46 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   const { accessiblePages, loading: pageAccessLoading } = usePageAccess();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Ref para evitar navegação duplicada
+  const hasCheckedAccess = useRef(false);
+  const lastCheckedPath = useRef<string | null>(null);
 
-  // Memoize static values
-  const userIsSuperAdmin = useMemo(() => roles.includes('SuperAdmin'), [roles]);
+  const userIsSuperAdmin = roles.includes('SuperAdmin');
   const currentPath = location.pathname;
   const isSuperAdminRoute = currentPath.startsWith('/super-admin');
 
-  // Calcular primeira rota permitida
-  const firstAllowedRoute = useMemo(() => {
-    if (userIsSuperAdmin) return '/dashboard';
-    if (accessiblePages.length > 0) {
-      return accessiblePages.includes('/') ? '/' : accessiblePages[0];
+  // Reset flag quando path muda
+  useEffect(() => {
+    if (lastCheckedPath.current !== currentPath) {
+      hasCheckedAccess.current = false;
+      lastCheckedPath.current = currentPath;
     }
-    return '/assinatura';
-  }, [userIsSuperAdmin, accessiblePages]);
+  }, [currentPath]);
 
   useEffect(() => {
+    // Aguardar loading terminar
+    const isLoading = loading || orgLoading;
+    if (isLoading) {
+      return;
+    }
+
     // Redirecionar para auth se não estiver logado
-    if (!loading && !user) {
+    if (!user) {
       navigate('/auth');
       return;
     }
 
     // Super Admin tem acesso total
-    if (!loading && user && userIsSuperAdmin) {
+    if (userIsSuperAdmin) {
       if (currentPath === '/onboarding' || currentPath === '/assinatura') {
         navigate('/super-admin');
-        return;
       }
       return;
     }
 
     // Se é rota de super admin mas usuário não é super admin
-    if (!loading && user && isSuperAdminRoute && !userIsSuperAdmin) {
+    if (isSuperAdminRoute) {
       navigate('/');
       return;
     }
@@ -61,40 +68,60 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     } catch {
       // localStorage may not be accessible
     }
-    if (!loading && !orgLoading && user && needsOnboarding && !hasPendingInvite && currentPath !== '/onboarding') {
+    if (needsOnboarding && !hasPendingInvite && currentPath !== '/onboarding') {
       navigate('/onboarding');
       return;
     }
 
+    // Aguardar subscription loading
+    if (subscriptionLoading) {
+      return;
+    }
+
     // Redirecionar para assinatura se trial expirou
-    if (!loading && !orgLoading && !subscriptionLoading && user && !needsOnboarding && !canAccess && currentPath !== '/assinatura') {
+    if (!needsOnboarding && !canAccess && currentPath !== '/assinatura') {
       navigate('/assinatura');
       return;
     }
 
-    // Verificar acesso à página usando novo sistema de perfis
-    if (!loading && !orgLoading && !pageAccessLoading && user && !needsOnboarding && canAccess) {
-      if (userIsSuperAdmin) return;
-      if (isSuperAdminRoute) return;
-      
-      // Rotas públicas não precisam de verificação
+    // Aguardar page access loading
+    if (pageAccessLoading) {
+      return;
+    }
+
+    // Evitar verificação duplicada para mesmo path
+    if (hasCheckedAccess.current) {
+      return;
+    }
+
+    // Verificar acesso à página
+    if (!needsOnboarding && canAccess) {
       const publicRoutes = ['/assinatura', '/aceitar-convite'];
       const isPublicRoute = publicRoutes.includes(currentPath);
       
       if (!isPublicRoute && !accessiblePages.includes(currentPath)) {
-        navigate(firstAllowedRoute);
+        hasCheckedAccess.current = true;
+        // Calcular rota alvo inline
+        const targetRoute = accessiblePages.length > 0 
+          ? (accessiblePages.includes('/') ? '/' : accessiblePages[0])
+          : '/assinatura';
+        navigate(targetRoute);
         return;
       }
       
-      // Verificação legacy de roles (para compatibilidade)
+      // Verificação legacy de roles
       if (requiredRoles && requiredRoles.length > 0) {
         const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
         if (!hasRequiredRole && !accessiblePages.includes(currentPath)) {
+          hasCheckedAccess.current = true;
           navigate('/');
+          return;
         }
       }
+      
+      hasCheckedAccess.current = true;
     }
-  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, firstAllowedRoute, accessiblePages]);
+  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, accessiblePages]);
 
   // Loading
   if (loading || orgLoading) {
