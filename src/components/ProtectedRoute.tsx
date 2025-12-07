@@ -15,15 +15,29 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   const { user, roles, loading, isSuperAdmin } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
-  const { hasRouteAccess, loading: permissionsLoading } = usePermissions();
+  const { hasRouteAccess, permissions, loading: permissionsLoading } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Memoize static values to prevent infinite loops in useEffect
   const userIsSuperAdmin = useMemo(() => isSuperAdmin(), [user]);
-  const isSuperAdminRoute = location.pathname.startsWith('/super-admin');
   const currentPath = location.pathname;
-  const routeAccessAllowed = useMemo(() => hasRouteAccess(currentPath), [hasRouteAccess, currentPath]);
+  const isSuperAdminRoute = currentPath.startsWith('/super-admin');
+  
+  // Calcular rota permitida de forma estável
+  const routeAccessAllowed = useMemo(() => {
+    if (userIsSuperAdmin) return true;
+    if (permissions.includes('*')) return true;
+    return hasRouteAccess(currentPath);
+  }, [userIsSuperAdmin, permissions, currentPath, hasRouteAccess]);
+  
+  // Calcular primeira rota permitida de forma estável (para redirecionamento)
+  const firstAllowedRoute = useMemo(() => {
+    if (userIsSuperAdmin || permissions.includes('*')) return '/dashboard';
+    return Object.keys(ROUTE_PERMISSIONS).find(
+      (route: string) => route !== '/' && hasRouteAccess(route)
+    ) || '/assinatura';
+  }, [userIsSuperAdmin, permissions, hasRouteAccess]);
 
   useEffect(() => {
     // Redirecionar para auth se não estiver logado
@@ -84,10 +98,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       
       if (!isPublicRoute && !routeAccessAllowed) {
         // Usuário não tem permissão para esta rota - redirecionar para primeira rota permitida
-        const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
-          (route: string) => route !== '/' && hasRouteAccess(route)
-        );
-        navigate(allowedRoute || '/assinatura');
+        navigate(firstAllowedRoute);
         return;
       }
       
@@ -99,7 +110,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
         }
       }
     }
-  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, routeAccessAllowed, hasRouteAccess]);
+  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, routeAccessAllowed, firstAllowedRoute]);
 
   // Loading básico (auth e org)
   if (loading || orgLoading) {
