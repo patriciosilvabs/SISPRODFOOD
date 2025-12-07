@@ -240,6 +240,8 @@ const Romaneio = () => {
   const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
   
   // Romaneio Avulso (livre digitação)
+  const [todasLojas, setTodasLojas] = useState<Loja[]>([]); // Todas as lojas para seleção de destino
+  const [lojaOrigemAvulso, setLojaOrigemAvulso] = useState<string>(''); // Seleção manual de origem (para CPD/Admin)
   const [lojaDestinoAvulso, setLojaDestinoAvulso] = useState<string>('');
   const [itensAvulsoLivre, setItensAvulsoLivre] = useState<{ id: string; descricao: string; quantidade: number }[]>([]);
   const [novoItemDescricao, setNovoItemDescricao] = useState('');
@@ -278,6 +280,7 @@ const Romaneio = () => {
 
   useEffect(() => {
     fetchLojas();
+    fetchTodasLojas(); // Buscar todas as lojas para romaneio avulso
     fetchUserLojas();
     fetchProdutos();
     fetchEstoquesProdutos();
@@ -380,6 +383,17 @@ const Romaneio = () => {
       }
     } catch (error) {
       toast.error('Erro ao carregar lojas');
+    }
+  };
+
+  // Buscar TODAS as lojas da organização para romaneio avulso
+  const fetchTodasLojas = async () => {
+    try {
+      const { data, error } = await supabase.from('lojas').select('*').order('nome');
+      if (error) throw error;
+      setTodasLojas(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar todas as lojas:', error);
     }
   };
 
@@ -568,32 +582,47 @@ const Romaneio = () => {
   };
 
   const fetchRomaneiosAvulsos = async () => {
-    if (!primaryLoja) return;
-    
     try {
-      const { data: pendentes } = await supabase
-        .from('romaneios_avulsos')
-        .select(`*, romaneios_avulsos_itens (id, item_nome, quantidade, peso_kg)`)
-        .eq('loja_origem_id', primaryLoja.loja_id)
-        .eq('status', 'pendente')
-        .order('data_criacao', { ascending: false });
+      // Se tem loja principal, buscar romaneios onde é origem
+      if (primaryLoja) {
+        const { data: pendentes } = await supabase
+          .from('romaneios_avulsos')
+          .select(`*, romaneios_avulsos_itens (id, item_nome, quantidade, peso_kg)`)
+          .eq('loja_origem_id', primaryLoja.loja_id)
+          .eq('status', 'pendente')
+          .order('data_criacao', { ascending: false });
 
-      setRomaneiosAvulsosPendentes((pendentes || []).map((r: any) => ({
-        ...r,
-        itens: r.romaneios_avulsos_itens || []
-      })));
+        setRomaneiosAvulsosPendentes((pendentes || []).map((r: any) => ({
+          ...r,
+          itens: r.romaneios_avulsos_itens || []
+        })));
 
-      const { data: paraReceber } = await supabase
-        .from('romaneios_avulsos')
-        .select(`*, romaneios_avulsos_itens (id, item_nome, quantidade, peso_kg, quantidade_recebida)`)
-        .eq('loja_destino_id', primaryLoja.loja_id)
-        .eq('status', 'enviado')
-        .order('data_envio', { ascending: false });
+        const { data: paraReceber } = await supabase
+          .from('romaneios_avulsos')
+          .select(`*, romaneios_avulsos_itens (id, item_nome, quantidade, peso_kg, quantidade_recebida)`)
+          .eq('loja_destino_id', primaryLoja.loja_id)
+          .eq('status', 'enviado')
+          .order('data_envio', { ascending: false });
 
-      setRomaneiosAvulsosReceber((paraReceber || []).map((r: any) => ({
-        ...r,
-        itens: r.romaneios_avulsos_itens || []
-      })));
+        setRomaneiosAvulsosReceber((paraReceber || []).map((r: any) => ({
+          ...r,
+          itens: r.romaneios_avulsos_itens || []
+        })));
+      } else if (isAdmin()) {
+        // Admin/CPD pode ver todos os romaneios avulsos pendentes
+        const { data: pendentes } = await supabase
+          .from('romaneios_avulsos')
+          .select(`*, romaneios_avulsos_itens (id, item_nome, quantidade, peso_kg)`)
+          .eq('status', 'pendente')
+          .order('data_criacao', { ascending: false });
+
+        setRomaneiosAvulsosPendentes((pendentes || []).map((r: any) => ({
+          ...r,
+          itens: r.romaneios_avulsos_itens || []
+        })));
+        
+        setRomaneiosAvulsosReceber([]);
+      }
     } catch (error) {
       console.error('Erro ao buscar romaneios avulsos:', error);
     }
@@ -867,13 +896,17 @@ const Romaneio = () => {
   };
 
   const handleCriarRomaneioAvulso = async () => {
-    if (!primaryLoja || !lojaDestinoAvulso || itensAvulsoLivre.length === 0) {
-      toast.error('Selecione uma loja destino e adicione itens');
+    // Determinar origem: se tem primaryLoja usa ela, senão usa a selecionada manualmente
+    const origemId = primaryLoja?.loja_id || lojaOrigemAvulso;
+    const origemNome = primaryLoja?.loja_nome || todasLojas.find(l => l.id === lojaOrigemAvulso)?.nome;
+    
+    if (!origemId || !lojaDestinoAvulso || itensAvulsoLivre.length === 0) {
+      toast.error('Selecione origem, destino e adicione itens');
       return;
     }
 
-    if (lojaDestinoAvulso === primaryLoja.loja_id) {
-      toast.error('A loja destino deve ser diferente da sua loja');
+    if (lojaDestinoAvulso === origemId) {
+      toast.error('A loja destino deve ser diferente da origem');
       return;
     }
 
@@ -883,13 +916,13 @@ const Romaneio = () => {
       if (!user) return;
 
       const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
-      const lojaDestino = lojas.find(l => l.id === lojaDestinoAvulso);
+      const lojaDestino = todasLojas.find(l => l.id === lojaDestinoAvulso);
       const agora = new Date().toISOString();
 
       // Criar romaneio JÁ COMO ENVIADO (não precisa etapa separada)
       const { data: romaneio, error: romaneioError } = await supabase.from('romaneios_avulsos').insert({
-        loja_origem_id: primaryLoja.loja_id,
-        loja_origem_nome: primaryLoja.loja_nome,
+        loja_origem_id: origemId,
+        loja_origem_nome: origemNome || '',
         loja_destino_id: lojaDestinoAvulso,
         loja_destino_nome: lojaDestino?.nome || '',
         status: 'enviado',
@@ -920,6 +953,7 @@ const Romaneio = () => {
       toast.success(`Romaneio avulso enviado para ${lojaDestino?.nome}!`);
       setItensAvulsoLivre([]);
       setLojaDestinoAvulso('');
+      setLojaOrigemAvulso('');
       setObservacaoAvulso('');
       fetchRomaneiosAvulsos();
     } catch (error) {
@@ -1722,119 +1756,138 @@ const Romaneio = () => {
 
               {/* TAB: ROMANEIO AVULSO (LIVRE DIGITAÇÃO) */}
               <TabsContent value="avulso" className="space-y-4">
-                {!primaryLoja ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                    <p>Você precisa estar vinculado a uma loja para usar o romaneio avulso</p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Seleção de Loja Destino */}
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="flex-1">
-                          <label className="text-sm font-medium mb-1 block">Loja Destino</label>
-                          <Select value={lojaDestinoAvulso} onValueChange={setLojaDestinoAvulso}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione a loja destino" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {lojas.filter(l => l.id !== primaryLoja.loja_id).map(loja => (
-                                <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                {/* Seleção de Origem e Destino */}
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Origem: Se tem primaryLoja, mostra fixo. Senão, dropdown */}
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Origem</label>
+                      {primaryLoja ? (
+                        <div className="h-10 px-3 py-2 border rounded-md bg-muted flex items-center">
+                          <Store className="w-4 h-4 mr-2 text-muted-foreground" />
+                          {primaryLoja.loja_nome}
                         </div>
-                        {lojaDestinoAvulso && (
-                          <Badge variant="secondary" className="h-fit self-end py-2">
-                            De: {primaryLoja.loja_nome} → Para: {lojas.find(l => l.id === lojaDestinoAvulso)?.nome}
-                          </Badge>
-                        )}
-                      </div>
+                      ) : (
+                        <Select value={lojaOrigemAvulso} onValueChange={setLojaOrigemAvulso}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a origem" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {todasLojas.map(loja => (
+                              <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
 
-                    {lojaDestinoAvulso && (
-                      <>
-                        {/* Formulário de Livre Digitação */}
-                        <Card>
-                          <CardHeader className="py-3">
-                            <CardTitle className="text-sm">Adicionar Item</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Destino: Sempre dropdown com todas as lojas exceto origem */}
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Destino</label>
+                      <Select value={lojaDestinoAvulso} onValueChange={setLojaDestinoAvulso}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o destino" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {todasLojas
+                            .filter(l => l.id !== (primaryLoja?.loja_id || lojaOrigemAvulso))
+                            .map(loja => (
+                              <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Badge mostrando direção da transferência */}
+                  {(primaryLoja || lojaOrigemAvulso) && lojaDestinoAvulso && (
+                    <Badge variant="secondary" className="w-fit py-2">
+                      <ArrowRightLeft className="w-3 h-3 mr-2" />
+                      {primaryLoja?.loja_nome || todasLojas.find(l => l.id === lojaOrigemAvulso)?.nome} → {todasLojas.find(l => l.id === lojaDestinoAvulso)?.nome}
+                    </Badge>
+                  )}
+                </div>
+
+                {((primaryLoja || lojaOrigemAvulso) && lojaDestinoAvulso) && (
+                  <>
+                    {/* Formulário de Livre Digitação */}
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">Adicionar Item</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <div className="flex-1">
+                            <Input
+                              placeholder="Descrição do item (ex: 10 pratos, 5 cadeiras, 1 caixa de talheres)"
+                              value={novoItemDescricao}
+                              onChange={(e) => setNovoItemDescricao(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleAdicionarItemAvulsoLivre()}
+                            />
+                          </div>
+                          <div className="w-24">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={novoItemQuantidade}
+                              onChange={(e) => setNovoItemQuantidade(parseInt(e.target.value) || 1)}
+                              placeholder="Qtd"
+                              className="text-center"
+                            />
+                          </div>
+                          <Button onClick={handleAdicionarItemAvulsoLivre} variant="outline">
+                            <Plus className="w-4 h-4 mr-1" />
+                            Adicionar
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Lista de Itens a Transferir */}
+                    <Card>
+                      <CardHeader className="py-3">
+                        <CardTitle className="text-sm">Itens a Transferir ({itensAvulsoLivre.length})</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 max-h-64 overflow-y-auto">
+                        {itensAvulsoLivre.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">Adicione itens usando o formulário acima</p>
+                        ) : (
+                          itensAvulsoLivre.map(item => (
+                            <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
                               <div className="flex-1">
-                                <Input
-                                  placeholder="Descrição do item (ex: 10 pratos, 5 cadeiras, 1 caixa de talheres)"
-                                  value={novoItemDescricao}
-                                  onChange={(e) => setNovoItemDescricao(e.target.value)}
-                                  onKeyDown={(e) => e.key === 'Enter' && handleAdicionarItemAvulsoLivre()}
-                                />
+                                <p className="font-medium text-sm">{item.descricao}</p>
                               </div>
-                              <div className="w-24">
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  value={novoItemQuantidade}
-                                  onChange={(e) => setNovoItemQuantidade(parseInt(e.target.value) || 1)}
-                                  placeholder="Qtd"
-                                  className="text-center"
-                                />
-                              </div>
-                              <Button onClick={handleAdicionarItemAvulsoLivre} variant="outline">
-                                <Plus className="w-4 h-4 mr-1" />
-                                Adicionar
+                              <Badge variant="secondary">{item.quantidade}</Badge>
+                              <Button size="sm" variant="ghost" onClick={() => handleRemoverItemAvulsoLivre(item.id)}>
+                                <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
                             </div>
-                          </CardContent>
-                        </Card>
+                          ))
+                        )}
+                      </CardContent>
+                    </Card>
 
-                        {/* Lista de Itens a Transferir */}
-                        <Card>
-                          <CardHeader className="py-3">
-                            <CardTitle className="text-sm">Itens a Transferir ({itensAvulsoLivre.length})</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-2 max-h-64 overflow-y-auto">
-                            {itensAvulsoLivre.length === 0 ? (
-                              <p className="text-sm text-muted-foreground text-center py-4">Adicione itens usando o formulário acima</p>
-                            ) : (
-                              itensAvulsoLivre.map(item => (
-                                <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
-                                  <div className="flex-1">
-                                    <p className="font-medium text-sm">{item.descricao}</p>
-                                  </div>
-                                  <Badge variant="secondary">{item.quantidade}</Badge>
-                                  <Button size="sm" variant="ghost" onClick={() => handleRemoverItemAvulsoLivre(item.id)}>
-                                    <Trash2 className="w-4 h-4 text-destructive" />
-                                  </Button>
-                                </div>
-                              ))
-                            )}
-                          </CardContent>
-                        </Card>
+                    {/* Observação */}
+                    <Textarea
+                      placeholder="Observação (opcional)"
+                      value={observacaoAvulso}
+                      onChange={(e) => setObservacaoAvulso(e.target.value)}
+                      className="h-20"
+                    />
 
-                        {/* Observação */}
-                        <Textarea
-                          placeholder="Observação (opcional)"
-                          value={observacaoAvulso}
-                          onChange={(e) => setObservacaoAvulso(e.target.value)}
-                          className="h-20"
-                        />
-
-                        {/* Botão Enviar */}
-                        <Button 
-                          onClick={handleCriarRomaneioAvulso} 
-                          disabled={itensAvulsoLivre.length === 0 || loadingPorcionados}
-                          className="w-full"
-                        >
-                          {loadingPorcionados ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4 mr-1" />
-                          )}
-                          Enviar Romaneio Avulso
-                        </Button>
-                      </>
-                    )}
+                    {/* Botão Enviar */}
+                    <Button 
+                      onClick={handleCriarRomaneioAvulso} 
+                      disabled={itensAvulsoLivre.length === 0 || loadingPorcionados}
+                      className="w-full"
+                    >
+                      {loadingPorcionados ? (
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4 mr-1" />
+                      )}
+                      Enviar Romaneio Avulso
+                    </Button>
                   </>
                 )}
               </TabsContent>
@@ -1855,7 +1908,7 @@ const Romaneio = () => {
           </CardHeader>
             <CardContent>
               <Tabs defaultValue={isLojaOnly ? 'receber-produtos' : 'enviar-produtos'} className="space-y-4">
-                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-2' : 'grid-cols-3'}`}>
                   {!isLojaOnly && <TabsTrigger value="enviar-produtos">Enviar</TabsTrigger>}
                   <TabsTrigger value="receber-produtos">
                     Receber
@@ -1864,6 +1917,10 @@ const Romaneio = () => {
                         {romaneiosProdutosEnviados.length}
                       </Badge>
                     )}
+                  </TabsTrigger>
+                  <TabsTrigger value="avulso-produtos">
+                    <ArrowRightLeft className="w-3 h-3 mr-1" />
+                    Romaneio Avulso
                   </TabsTrigger>
                 </TabsList>
 
@@ -2075,6 +2132,144 @@ const Romaneio = () => {
                         );
                       })}
                     </div>
+                  )}
+                </TabsContent>
+
+                {/* TAB: ROMANEIO AVULSO (PRODUTOS - LIVRE DIGITAÇÃO) */}
+                <TabsContent value="avulso-produtos" className="space-y-4">
+                  {/* Seleção de Origem e Destino */}
+                  <div className="flex flex-col gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Origem: Se tem primaryLoja, mostra fixo. Senão, dropdown */}
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Origem</label>
+                        {primaryLoja ? (
+                          <div className="h-10 px-3 py-2 border rounded-md bg-muted flex items-center">
+                            <Store className="w-4 h-4 mr-2 text-muted-foreground" />
+                            {primaryLoja.loja_nome}
+                          </div>
+                        ) : (
+                          <Select value={lojaOrigemAvulso} onValueChange={setLojaOrigemAvulso}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione a origem" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {todasLojas.map(loja => (
+                                <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+
+                      {/* Destino: Sempre dropdown com todas as lojas exceto origem */}
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Destino</label>
+                        <Select value={lojaDestinoAvulso} onValueChange={setLojaDestinoAvulso}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o destino" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {todasLojas
+                              .filter(l => l.id !== (primaryLoja?.loja_id || lojaOrigemAvulso))
+                              .map(loja => (
+                                <SelectItem key={loja.id} value={loja.id}>{loja.nome}</SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Badge mostrando direção da transferência */}
+                    {(primaryLoja || lojaOrigemAvulso) && lojaDestinoAvulso && (
+                      <Badge variant="secondary" className="w-fit py-2">
+                        <ArrowRightLeft className="w-3 h-3 mr-2" />
+                        {primaryLoja?.loja_nome || todasLojas.find(l => l.id === lojaOrigemAvulso)?.nome} → {todasLojas.find(l => l.id === lojaDestinoAvulso)?.nome}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {((primaryLoja || lojaOrigemAvulso) && lojaDestinoAvulso) && (
+                    <>
+                      {/* Formulário de Livre Digitação */}
+                      <Card>
+                        <CardHeader className="py-3">
+                          <CardTitle className="text-sm">Adicionar Item</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <div className="flex-1">
+                              <Input
+                                placeholder="Descrição do item (ex: 10 pratos, 5 cadeiras, 1 caixa de talheres)"
+                                value={novoItemDescricao}
+                                onChange={(e) => setNovoItemDescricao(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAdicionarItemAvulsoLivre()}
+                              />
+                            </div>
+                            <div className="w-24">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={novoItemQuantidade}
+                                onChange={(e) => setNovoItemQuantidade(parseInt(e.target.value) || 1)}
+                                placeholder="Qtd"
+                                className="text-center"
+                              />
+                            </div>
+                            <Button onClick={handleAdicionarItemAvulsoLivre} variant="outline">
+                              <Plus className="w-4 h-4 mr-1" />
+                              Adicionar
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Lista de Itens a Transferir */}
+                      <Card>
+                        <CardHeader className="py-3">
+                          <CardTitle className="text-sm">Itens a Transferir ({itensAvulsoLivre.length})</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2 max-h-64 overflow-y-auto">
+                          {itensAvulsoLivre.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">Adicione itens usando o formulário acima</p>
+                          ) : (
+                            itensAvulsoLivre.map(item => (
+                              <div key={item.id} className="flex items-center gap-2 p-2 border rounded">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{item.descricao}</p>
+                                </div>
+                                <Badge variant="secondary">{item.quantidade}</Badge>
+                                <Button size="sm" variant="ghost" onClick={() => handleRemoverItemAvulsoLivre(item.id)}>
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </div>
+                            ))
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      {/* Observação */}
+                      <Textarea
+                        placeholder="Observação (opcional)"
+                        value={observacaoAvulso}
+                        onChange={(e) => setObservacaoAvulso(e.target.value)}
+                        className="h-20"
+                      />
+
+                      {/* Botão Enviar */}
+                      <Button 
+                        onClick={handleCriarRomaneioAvulso} 
+                        disabled={itensAvulsoLivre.length === 0 || loadingPorcionados}
+                        className="w-full"
+                      >
+                        {loadingPorcionados ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 mr-1" />
+                        )}
+                        Enviar Romaneio Avulso
+                      </Button>
+                    </>
                   )}
                 </TabsContent>
               </Tabs>
