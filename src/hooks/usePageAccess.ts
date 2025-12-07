@@ -26,7 +26,7 @@ const accessCache = new Map<string, {
 const CACHE_TTL = 60000; // 1 minuto
 
 export const usePageAccess = (): UsePageAccessReturn => {
-  const { user, roles } = useAuth();
+  const { user, roles, loading: authLoading } = useAuth();
   const { organizationId } = useOrganization();
   
   // Verificar cache antes de inicializar estado
@@ -34,15 +34,23 @@ export const usePageAccess = (): UsePageAccessReturn => {
   const cachedData = accessCache.get(cacheKey);
   const hasValidCache = !!(cachedData && (Date.now() - cachedData.timestamp < CACHE_TTL));
   
-  const [profile, setProfile] = useState<UserProfile | null>(hasValidCache ? cachedData!.profile : null);
-  const [overrides, setOverrides] = useState<PageAccessOverride[]>(hasValidCache ? cachedData!.overrides : []);
-  const [loading, setLoading] = useState(!hasValidCache);
-  const hasFetched = useRef(hasValidCache);
+  // Se auth ainda está carregando, não usar cache
+  const useCache = hasValidCache && !authLoading;
+  
+  const [profile, setProfile] = useState<UserProfile | null>(useCache ? cachedData!.profile : null);
+  const [overrides, setOverrides] = useState<PageAccessOverride[]>(useCache ? cachedData!.overrides : []);
+  const [loading, setLoading] = useState(!useCache);
+  const hasFetched = useRef(useCache);
 
   // Calcular se é SuperAdmin usando roles array (estável)
   const userIsSuperAdmin = roles.includes('SuperAdmin');
 
   const fetchAccess = useCallback(async (forceRefresh = false) => {
+    // Aguardar AuthContext terminar de carregar
+    if (authLoading) {
+      return;
+    }
+    
     // SuperAdmin tem acesso total
     if (userIsSuperAdmin) {
       setProfile('admin');
@@ -131,14 +139,14 @@ export const usePageAccess = (): UsePageAccessReturn => {
       setLoading(false);
       hasFetched.current = true;
     }
-  }, [user?.id, organizationId, userIsSuperAdmin]);
+  }, [user?.id, organizationId, userIsSuperAdmin, authLoading]);
 
   useEffect(() => {
-    // Só buscar se não temos cache válido
-    if (!hasFetched.current) {
+    // Só buscar se auth carregou e não temos cache válido
+    if (!authLoading && !hasFetched.current) {
       fetchAccess();
     }
-  }, [fetchAccess]);
+  }, [fetchAccess, authLoading]);
 
   // Função para verificar acesso a uma página
   const hasPageAccess = useCallback((route: string): boolean => {
@@ -183,8 +191,8 @@ export const usePageAccess = (): UsePageAccessReturn => {
 
   return {
     profile,
-    // Só considerar loading=false quando profile foi determinado (exceto SuperAdmin)
-    loading: loading || (!userIsSuperAdmin && profile === null),
+    // Só considerar loading=false quando auth carregou e profile foi determinado
+    loading: authLoading || loading || (!userIsSuperAdmin && profile === null),
     hasPageAccess,
     accessiblePages,
     refreshAccess: fetchAccess,
