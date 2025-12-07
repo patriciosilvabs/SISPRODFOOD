@@ -102,14 +102,14 @@ const Assinatura = () => {
     await checkStatus(charge.correlationID, organizationId);
   }, [charge?.correlationID, organizationId, checkStatus]);
 
-  const handlePaymentConfirmed = useCallback(() => {
-    // Atualizar status da assinatura
-    refreshSubscription();
-    // Fechar modal e redirecionar para Dashboard após um delay
+  const handlePaymentConfirmed = useCallback(async () => {
+    // Atualizar status da assinatura e aguardar
+    await refreshSubscription();
+    // Fechar modal e redirecionar para Dashboard após a atualização
     setTimeout(() => {
       handleCloseModal();
       navigate('/dashboard');
-    }, 1500);
+    }, 500);
   }, [refreshSubscription, navigate]);
 
   return (
