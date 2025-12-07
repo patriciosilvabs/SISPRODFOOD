@@ -11,7 +11,7 @@ import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
-import { Volume2, VolumeX } from 'lucide-react';
+
 
 interface DetalheLojaProducao {
   loja_id: string;
@@ -489,6 +489,11 @@ const ResumoDaProducao = () => {
     sobra_preparo_kg: number;
     observacao_preparo: string;
   }) => {
+    // Parar alarme imediatamente ao avançar para porcionamento
+    if (alarmPlaying) {
+      handleStopAlarm();
+    }
+    
     console.log('🔵 handleConcluirPreparo chamado com data:', data);
     console.log('🔵 selectedRegistro:', selectedRegistro?.id, selectedRegistro?.item_nome);
     
@@ -781,17 +786,6 @@ const ResumoDaProducao = () => {
                 <div className="inline-block h-3 w-3 mr-2 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
                 Sincronizando...
               </Badge>
-            )}
-            {alarmPlaying && (
-              <Button
-                onClick={handleStopAlarm}
-                variant="destructive"
-                size="lg"
-                className="animate-pulse"
-              >
-                <VolumeX className="h-5 w-5 mr-2" />
-                Parar Alarme
-              </Button>
             )}
           </div>
         </div>
