@@ -121,7 +121,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       
       hasCheckedAccess.current = true;
     }
-  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, accessiblePages]);
+  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute]);
 
   // Loading
   if (loading || orgLoading) {
