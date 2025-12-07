@@ -346,13 +346,13 @@ const ReposicaoLoja = () => {
               organization_id: organizationId
             });
 
-          // Atualizar estoque loja (quantidade_ultimo_envio)
+          // Atualizar estoque loja - INCREMENTAR com quantidade enviada
           await supabase
             .from('estoque_loja_produtos')
             .upsert({
               loja_id: lojaId,
               produto_id: item.produto.id,
-              quantidade: item.estoque_atual_loja,
+              quantidade: item.estoque_atual_loja + qtdEnvio,
               quantidade_ultimo_envio: qtdEnvio,
               data_ultimo_envio: new Date().toISOString(),
               organization_id: organizationId
