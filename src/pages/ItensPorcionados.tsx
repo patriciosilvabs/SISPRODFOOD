@@ -384,7 +384,7 @@ const ItensPorcionados = () => {
                 Novo Item
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editingItem ? 'Editar Item' : 'Novo Item Porcionado'}
