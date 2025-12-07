@@ -271,9 +271,14 @@ const ResumoDaProducao = () => {
       } else {
         setIsRefreshing(true);
       }
+      
+      // REGRA OBRIGATÓRIA: Buscar apenas registros com data_referencia = hoje
+      const hoje = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      
       const { data, error } = await supabase
         .from('producao_registros')
         .select('*')
+        .eq('data_referencia', hoje)
         .order('data_inicio', { ascending: false });
 
       if (error) throw error;
