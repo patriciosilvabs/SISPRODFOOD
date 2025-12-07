@@ -27,10 +27,13 @@ export const usePermissions = (): UsePermissionsReturn => {
   // Calcular uma vez como valor booleano memoizado para evitar loops
   const isSuperAdminUser = useMemo(() => roles.includes('SuperAdmin'), [roles]);
 
+  // Verificar se usuário é Admin (dono da organização)
+  const isAdminUser = useMemo(() => roles.includes('Admin'), [roles]);
+
   const fetchPermissions = useCallback(async () => {
-    // Apenas SuperAdmin tem bypass total - Admin depende dos checkboxes
+    // SuperAdmin tem bypass total
     if (isSuperAdminUser) {
-      setPermissions(['*']); // Wildcard para acesso total
+      setPermissions(['*']);
       setLoading(false);
       return;
     }
@@ -50,12 +53,24 @@ export const usePermissions = (): UsePermissionsReturn => {
 
       if (error) {
         console.error('Erro ao carregar permissões:', error);
-        setPermissions([]);
+        // Admin sem permissões configuradas = acesso total
+        if (isAdminUser) {
+          setPermissions(['*']);
+        } else {
+          setPermissions([]);
+        }
       } else {
         const permKeys = data?.map(p => p.permission_key) || [];
-        // Expandir com dependências
-        const expanded = expandPermissionsWithDependencies(permKeys);
-        setPermissions(expanded);
+        
+        // Se é Admin e não tem permissões granulares configuradas, conceder acesso total
+        if (permKeys.length === 0 && isAdminUser) {
+          setPermissions(['*']);
+        } else if (permKeys.length === 0) {
+          setPermissions([]);
+        } else {
+          const expanded = expandPermissionsWithDependencies(permKeys);
+          setPermissions(expanded);
+        }
       }
     } catch (err) {
       console.error('Erro ao carregar permissões:', err);
@@ -63,7 +78,7 @@ export const usePermissions = (): UsePermissionsReturn => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, isSuperAdminUser]);
+  }, [user?.id, isSuperAdminUser, isAdminUser]);
 
   useEffect(() => {
     fetchPermissions();
