@@ -219,19 +219,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
                     )}
                   </div>
                 )}
-                
-                {/* Detalhamento por Loja */}
-                {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
-                  <div className="mt-2 space-y-1 bg-muted/50 rounded p-2">
-                    <p className="text-xs font-medium text-muted-foreground">Por loja:</p>
-                    {registro.detalhes_lojas.map((loja) => (
-                      <div key={loja.loja_id} className="flex justify-between text-xs">
-                        <span className="text-foreground">{loja.loja_nome}:</span>
-                        <span className="font-medium text-foreground">{loja.quantidade} un</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {/* Insumos Necessários */}
                 {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
@@ -354,18 +341,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
                 </p>
               )}
               
-              {/* Detalhamento por Loja */}
-              {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
-                <div className="mt-2 space-y-1 bg-green-50 dark:bg-green-950 rounded p-2">
-                  <p className="text-xs font-medium text-green-700 dark:text-green-300">🏪 Por loja:</p>
-                  {registro.detalhes_lojas.map((loja) => (
-                    <div key={loja.loja_id} className="flex justify-between text-xs text-green-600 dark:text-green-400">
-                      <span>{loja.loja_nome}:</span>
-                      <span className="font-medium">{loja.quantidade} un</span>
-                    </div>
-                  ))}
-                </div>
-              )}
               
               {registro.data_fim && (
                 <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
@@ -376,6 +351,19 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
                 </div>
               )}
             </>
+          )}
+
+          {/* Detalhamento por Loja - SEMPRE VISÍVEL */}
+          {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
+            <div className="space-y-1 bg-muted/50 rounded p-2 border-l-4 border-primary">
+              <p className="text-xs font-medium text-muted-foreground">🏪 Por loja:</p>
+              {registro.detalhes_lojas.map((loja) => (
+                <div key={loja.loja_id} className="flex justify-between text-xs">
+                  <span className="text-foreground">{loja.loja_nome}:</span>
+                  <span className="font-medium text-foreground">{loja.quantidade} un</span>
+                </div>
+              ))}
+            </div>
           )}
           </div>
 
