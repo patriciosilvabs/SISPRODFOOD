@@ -14,7 +14,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   const { user, roles, loading } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
-  const { hasPageAccess, accessiblePages, loading: pageAccessLoading } = usePageAccess();
+  const { accessiblePages, loading: pageAccessLoading } = usePageAccess();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -81,7 +81,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       const publicRoutes = ['/assinatura', '/aceitar-convite'];
       const isPublicRoute = publicRoutes.includes(currentPath);
       
-      if (!isPublicRoute && !hasPageAccess(currentPath)) {
+      if (!isPublicRoute && !accessiblePages.includes(currentPath)) {
         navigate(firstAllowedRoute);
         return;
       }
@@ -89,12 +89,12 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       // Verificação legacy de roles (para compatibilidade)
       if (requiredRoles && requiredRoles.length > 0) {
         const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
-        if (!hasRequiredRole && !hasPageAccess(currentPath)) {
+        if (!hasRequiredRole && !accessiblePages.includes(currentPath)) {
           navigate('/');
         }
       }
     }
-  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, hasPageAccess, firstAllowedRoute]);
+  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, firstAllowedRoute, accessiblePages]);
 
   // Loading
   if (loading || orgLoading) {
