@@ -18,14 +18,14 @@ interface UsePageAccessReturn {
 }
 
 export const usePageAccess = (): UsePageAccessReturn => {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, roles } = useAuth();
   const { organizationId } = useOrganization();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [overrides, setOverrides] = useState<PageAccessOverride[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Calcular se é SuperAdmin uma vez
-  const userIsSuperAdmin = useMemo(() => isSuperAdmin(), [isSuperAdmin]);
+  // Calcular se é SuperAdmin usando roles array (estável)
+  const userIsSuperAdmin = roles.includes('SuperAdmin');
 
   const fetchAccess = useCallback(async () => {
     // SuperAdmin tem acesso total
