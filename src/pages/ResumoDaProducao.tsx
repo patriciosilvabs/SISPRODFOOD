@@ -273,7 +273,9 @@ const ResumoDaProducao = () => {
       }
       
       // REGRA OBRIGATÓRIA: Buscar apenas registros com data_referencia = hoje
-      const hoje = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      // Usar data do SERVIDOR para funcionar em qualquer timezone
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const hoje = dataServidor || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       
       const { data, error } = await supabase
         .from('producao_registros')
