@@ -140,9 +140,16 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     );
   }
 
-  // Se não temos user, não renderizar nada (useEffect cuida do redirect)
+  // Se não temos user após loading terminar, mostrar spinner enquanto redirect acontece
   if (!user) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <p className="mt-4 text-muted-foreground">Verificando autenticação...</p>
+        </div>
+      </div>
+    );
   }
 
   // Renderizar children imediatamente - useEffect cuida dos redirects
