@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useUserLoja } from '@/hooks/useUserLoja';
+import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -222,6 +223,7 @@ const Romaneio = () => {
   const { user, profile, isAdmin, hasRole } = useAuth();
   const { organizationId } = useOrganization();
   const { primaryLoja, userLojas } = useUserLoja();
+  const { cpdLojaId } = useCPDLoja();
 
   // Check user roles
   const isLojaOnly = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
@@ -290,8 +292,8 @@ const Romaneio = () => {
     let isMounted = true;
     
     const channel = supabase
-      .channel('estoque-cpd-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'estoque_cpd' }, () => {
+      .channel('estoque-loja-itens-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'estoque_loja_itens' }, () => {
         if (isMounted && selectedLoja) fetchItensDisponiveis();
       })
       .subscribe();
@@ -371,13 +373,15 @@ const Romaneio = () => {
             .from('lojas')
             .select('*')
             .in('id', lojasIds)
+            .neq('tipo', 'cpd')
             .order('nome');
           
           if (error) throw error;
           setLojas(data || []);
         }
       } else {
-        const { data, error } = await supabase.from('lojas').select('*').order('nome');
+        // Excluir CPD da lista de lojas destino para romaneio
+        const { data, error } = await supabase.from('lojas').select('*').neq('tipo', 'cpd').order('nome');
         if (error) throw error;
         setLojas(data || []);
       }
@@ -386,10 +390,11 @@ const Romaneio = () => {
     }
   };
 
-  // Buscar TODAS as lojas da organização para romaneio avulso
+  // Buscar TODAS as lojas da organização para romaneio avulso (incluindo CPD)
   const fetchTodasLojas = async () => {
     try {
-      const { data, error } = await supabase.from('lojas').select('*').order('nome');
+      // Incluir CPD para permitir transferências de/para CPD
+      const { data, error } = await supabase.from('lojas').select('*, tipo').order('nome');
       if (error) throw error;
       setTodasLojas(data || []);
     } catch (error) {
@@ -446,12 +451,13 @@ const Romaneio = () => {
   };
 
   const fetchEstoquesProdutos = async () => {
-    if (!organizationId) return;
+    if (!organizationId || !cpdLojaId) return;
     try {
+      // Buscar estoque CPD da tabela unificada
       const { data, error } = await supabase
-        .from("estoque_cpd_produtos")
+        .from("estoque_loja_produtos")
         .select("produto_id, quantidade")
-        .eq("organization_id", organizationId);
+        .eq("loja_id", cpdLojaId);
       if (error) throw error;
       setEstoquesProdutos(data || []);
     } catch (error) {
@@ -460,12 +466,14 @@ const Romaneio = () => {
   };
 
   const fetchItensDisponiveis = async () => {
-    if (!selectedLoja) { setItensDisponiveis([]); return; }
+    if (!selectedLoja || !cpdLojaId) { setItensDisponiveis([]); return; }
 
     try {
+      // Buscar estoque CPD da tabela unificada (itens porcionados)
       const { data: estoqueCpd, error: estoqueError } = await supabase
-        .from('estoque_cpd')
+        .from('estoque_loja_itens')
         .select(`item_porcionado_id, quantidade, itens_porcionados!inner(nome, peso_unitario_g)`)
+        .eq('loja_id', cpdLojaId)
         .gt('quantidade', 0);
 
       if (estoqueError) throw estoqueError;
@@ -797,9 +805,14 @@ const Romaneio = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Validar estoque antes de criar
+      // Validar estoque antes de criar (tabela unificada)
       for (const item of itensSelecionados) {
-        const { data: estoque } = await supabase.from('estoque_cpd').select('quantidade').eq('item_porcionado_id', item.item_id).single();
+        const { data: estoque } = await supabase
+          .from('estoque_loja_itens')
+          .select('quantidade')
+          .eq('loja_id', cpdLojaId)
+          .eq('item_porcionado_id', item.item_id)
+          .maybeSingle();
         const estoqueAtual = estoque?.quantidade || 0;
         
         if (estoqueAtual < item.quantidade) {
@@ -1248,15 +1261,15 @@ const Romaneio = () => {
         const quantidadeAnterior = estoque?.quantidade || 0;
         const quantidadeFinal = quantidadeAnterior - item.quantidade;
 
-        // Atualizar estoque CPD
+        // Atualizar estoque CPD (tabela unificada)
         await supabase
-          .from("estoque_cpd_produtos")
+          .from("estoque_loja_produtos")
           .update({
             quantidade: quantidadeFinal,
-            data_ultima_movimentacao: agora,
+            data_ultima_atualizacao: agora,
           })
-          .eq("produto_id", item.produto_id)
-          .eq("organization_id", organizationId);
+          .eq("loja_id", cpdLojaId)
+          .eq("produto_id", item.produto_id);
 
         // Registrar movimentação
         await supabase
@@ -1312,13 +1325,13 @@ const Romaneio = () => {
         const quantidadeFinal = quantidadeAnterior - item.quantidade;
 
         await supabase
-          .from("estoque_cpd_produtos")
+          .from("estoque_loja_produtos")
           .update({
             quantidade: quantidadeFinal,
-            data_ultima_movimentacao: new Date().toISOString(),
+            data_ultima_atualizacao: new Date().toISOString(),
           })
-          .eq("produto_id", item.produto_id)
-          .eq("organization_id", organizationId);
+          .eq("loja_id", cpdLojaId)
+          .eq("produto_id", item.produto_id);
 
         await supabase
           .from("movimentacoes_cpd_produtos")

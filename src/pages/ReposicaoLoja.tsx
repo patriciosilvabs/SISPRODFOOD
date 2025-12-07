@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
@@ -66,6 +67,7 @@ const DIAS_SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta',
 const ReposicaoLoja = () => {
   const { user } = useAuth();
   const { organizationId } = useOrganization();
+  const { cpdLojaId } = useCPDLoja();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [lojaSelecionada, setLojaSelecionada] = useState<string>('todas');
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -89,10 +91,11 @@ const ReposicaoLoja = () => {
     try {
       setLoading(true);
 
-      // Buscar lojas
+      // Buscar lojas (excluindo CPD)
       const { data: lojasData, error: lojasError } = await supabase
         .from('lojas')
         .select('id, nome')
+        .neq('tipo', 'cpd')
         .order('nome');
 
       if (lojasError) throw lojasError;
@@ -108,13 +111,18 @@ const ReposicaoLoja = () => {
       if (produtosError) throw produtosError;
       setProdutos(produtosData || []);
 
-      // Buscar estoque CPD
-      const { data: estoqueCPDData, error: estoqueCPDError } = await supabase
-        .from('estoque_cpd_produtos')
-        .select('produto_id, quantidade');
+      // Buscar estoque CPD (agora da tabela unificada)
+      if (cpdLojaId) {
+        const { data: estoqueCPDData, error: estoqueCPDError } = await supabase
+          .from('estoque_loja_produtos')
+          .select('produto_id, quantidade')
+          .eq('loja_id', cpdLojaId);
 
-      if (estoqueCPDError) throw estoqueCPDError;
-      setEstoqueCPD(estoqueCPDData || []);
+        if (estoqueCPDError) throw estoqueCPDError;
+        setEstoqueCPD(estoqueCPDData || []);
+      } else {
+        setEstoqueCPD([]);
+      }
 
       // Buscar estoques mínimos semanais
       const { data: estoquesMinimosData, error: estoquesMinimosError } = await supabase
@@ -141,8 +149,10 @@ const ReposicaoLoja = () => {
   };
 
   useEffect(() => {
-    fetchDados();
-  }, [organizationId]);
+    if (cpdLojaId) {
+      fetchDados();
+    }
+  }, [organizationId, cpdLojaId]);
 
   // Calcular demandas de reposição
   const demandas = useMemo((): DemandaLoja[] => {
@@ -309,14 +319,15 @@ const ReposicaoLoja = () => {
               organization_id: organizationId
             });
 
-          // Debitar estoque CPD
+          // Debitar estoque CPD (tabela unificada)
           const novoEstoqueCPD = item.estoque_cpd - qtdEnvio;
           await supabase
-            .from('estoque_cpd_produtos')
+            .from('estoque_loja_produtos')
             .update({ 
               quantidade: novoEstoqueCPD,
-              data_ultima_movimentacao: new Date().toISOString()
+              data_ultima_atualizacao: new Date().toISOString()
             })
+            .eq('loja_id', cpdLojaId)
             .eq('produto_id', item.produto.id);
 
           // Registrar movimentação CPD

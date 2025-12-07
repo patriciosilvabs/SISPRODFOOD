@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 interface UserLoja {
   loja_id: string;
   loja_nome: string;
+  tipo?: string;
 }
 
 export const useUserLoja = () => {
@@ -21,7 +22,7 @@ export const useUserLoja = () => {
 
         const { data: lojasAcesso, error } = await supabase
           .from('lojas_acesso')
-          .select('loja_id, lojas(nome)')
+          .select('loja_id, lojas(nome, tipo)')
           .eq('user_id', user.id);
 
         if (error) {
@@ -32,7 +33,8 @@ export const useUserLoja = () => {
 
         const lojas: UserLoja[] = (lojasAcesso || []).map((la: any) => ({
           loja_id: la.loja_id,
-          loja_nome: la.lojas?.nome || 'Loja'
+          loja_nome: la.lojas?.nome || 'Loja',
+          tipo: la.lojas?.tipo || 'loja'
         }));
 
         setUserLojas(lojas);
@@ -46,12 +48,18 @@ export const useUserLoja = () => {
     fetchUserLojas();
   }, []);
 
-  const primaryLoja = userLojas.length > 0 ? userLojas[0] : null;
+  // Loja principal: primeira loja que não seja CPD
+  const primaryLoja = userLojas.find(l => l.tipo !== 'cpd') || null;
+  
+  // CPD do usuário (se tiver acesso)
+  const userCPD = userLojas.find(l => l.tipo === 'cpd') || null;
 
   return {
     userLojas,
     primaryLoja,
+    userCPD,
     loading,
-    hasMultipleLojas: userLojas.length > 1
+    hasMultipleLojas: userLojas.filter(l => l.tipo !== 'cpd').length > 1,
+    hasCPDAccess: !!userCPD
   };
 };

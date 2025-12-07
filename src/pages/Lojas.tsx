@@ -49,9 +49,11 @@ const Lojas = () => {
 
   const fetchLojas = async () => {
     try {
+      // Excluir CPD da listagem de lojas gerenciáveis
       const { data, error } = await supabase
         .from('lojas')
         .select('*')
+        .neq('tipo', 'cpd')
         .order('nome');
 
       if (error) throw error;
