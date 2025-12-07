@@ -140,26 +140,12 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     );
   }
 
-  // Super Admin não precisa esperar page access
-  if (user && userIsSuperAdmin) {
-    return <>{children}</>;
-  }
-
-  // Outros usuários precisam esperar loading de page access
-  if (pageAccessLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-4 text-muted-foreground">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Se não temos user, não renderizar nada (useEffect cuida do redirect)
   if (!user) {
     return null;
   }
 
+  // Renderizar children imediatamente - useEffect cuida dos redirects
+  // Isso evita flash/flicker do menu durante navegação
   return <>{children}</>;
 };
