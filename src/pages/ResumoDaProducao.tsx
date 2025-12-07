@@ -619,8 +619,8 @@ const ResumoDaProducao = () => {
               'saida'
             );
 
-            // Registrar no histórico de consumo (consumo extra)
-            await supabase.from('consumo_historico').insert({
+            // Registrar no histórico de consumo (consumo extra) - não bloqueia se falhar
+            const { error: consumoExtraError } = await supabase.from('consumo_historico').insert({
               producao_registro_id: selectedRegistro.id,
               item_id: selectedRegistro.item_id,
               item_nome: selectedRegistro.item_nome,
@@ -634,6 +634,9 @@ const ResumoDaProducao = () => {
               usuario_nome: profile?.nome || 'Sistema',
               organization_id: organizationId,
             });
+            if (consumoExtraError) {
+              console.warn('Aviso: falha ao registrar consumo extra no histórico:', consumoExtraError);
+            }
           } catch (error) {
             console.error(`Erro ao debitar insumo extra ${extra.nome}:`, error);
             toast.error(`Erro ao debitar ${extra.nome}`);
@@ -653,7 +656,8 @@ const ResumoDaProducao = () => {
           consumoReal = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
         }
 
-        await supabase.from('consumo_historico').insert({
+        // Registrar consumo principal no histórico - não bloqueia se falhar
+        const { error: consumoPrincipalError } = await supabase.from('consumo_historico').insert({
           producao_registro_id: selectedRegistro.id,
           item_id: selectedRegistro.item_id,
           item_nome: selectedRegistro.item_nome,
@@ -667,6 +671,9 @@ const ResumoDaProducao = () => {
           usuario_nome: profile?.nome || 'Sistema',
           organization_id: organizationId,
         });
+        if (consumoPrincipalError) {
+          console.warn('Aviso: falha ao registrar consumo principal no histórico:', consumoPrincipalError);
+        }
       }
 
       const { error } = await supabase
