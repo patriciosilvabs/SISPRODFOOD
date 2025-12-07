@@ -9,9 +9,12 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
+import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
+import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 
 interface DetalheLojaProducao {
@@ -90,6 +93,7 @@ const ResumoDaProducao = () => {
   const { organizationId } = useOrganization();
   const { cpdLojaId } = useCPDLoja();
   const { playAlarm, stopAlarm } = useAlarmSound();
+  const { log } = useAuditLog();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -101,6 +105,8 @@ const ResumoDaProducao = () => {
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
+  const [modalCancelar, setModalCancelar] = useState(false);
+  const [modalPerda, setModalPerda] = useState(false);
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
 
@@ -786,6 +792,200 @@ const ResumoDaProducao = () => {
     }
   };
 
+  // REGRA-MÃE: Cancelar Preparo (Cancelamento Técnico)
+  // - Estorna estoque
+  // - Retorna item para "A Produzir"
+  // - Registra auditoria
+  const handleCancelarPreparo = async (data: {
+    motivo: string;
+    observacao: string;
+  }) => {
+    if (!selectedRegistro) return;
+
+    try {
+      // 1. Buscar dados do item para verificar se houve baixa de estoque
+      const itemData = await getItemInsumoData(selectedRegistro.item_id);
+
+      // 2. ESTORNAR estoque se houve baixa no início do preparo
+      if (itemData?.baixar_producao_inicio && itemData.insumo_vinculado_id && selectedRegistro.peso_programado_kg) {
+        await movimentarEstoqueInsumo(
+          itemData.insumo_vinculado_id,
+          selectedRegistro.peso_programado_kg,
+          `${selectedRegistro.item_nome} (estorno por cancelamento)`,
+          'entrada'
+        );
+      }
+
+      // 3. Atualizar producao_registros para voltar a "a_produzir"
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({
+          status: 'a_produzir',
+          data_inicio_preparo: null,
+          data_fim_preparo: null,
+          data_inicio_porcionamento: null,
+          peso_preparo_kg: null,
+          sobra_preparo_kg: null,
+          observacao_preparo: `[CANCELADO] ${data.motivo}: ${data.observacao}`,
+          timer_status: 'aguardando',
+        })
+        .eq('id', selectedRegistro.id);
+
+      if (error) throw error;
+
+      // 4. Desbloquear próximo traço se necessário
+      if (selectedRegistro.lote_producao_id && selectedRegistro.sequencia_traco) {
+        await supabase
+          .from('producao_registros')
+          .update({ bloqueado_por_traco_anterior: false })
+          .eq('lote_producao_id', selectedRegistro.lote_producao_id)
+          .eq('sequencia_traco', selectedRegistro.sequencia_traco + 1);
+      }
+
+      // 5. Registrar auditoria
+      await log('user.update', 'producao_registro' as any, selectedRegistro.id, {
+        action: 'cancelamento_tecnico',
+        motivo: data.motivo,
+        observacao: data.observacao,
+        item_nome: selectedRegistro.item_nome,
+        estoque_estornado: itemData?.baixar_producao_inicio ? 'sim' : 'nao',
+        quantidade_estornada_kg: selectedRegistro.peso_programado_kg,
+      } as any);
+
+      // 6. Atualização otimista: mover card de volta para a_produzir
+      const sourceColumn = selectedRegistro.status === 'em_preparo' ? 'em_preparo' : 'em_porcionamento';
+      setColumns(prev => {
+        const cardToMove = prev[sourceColumn as keyof KanbanColumns].find(r => r.id === selectedRegistro.id);
+        if (!cardToMove) return prev;
+        return {
+          ...prev,
+          [sourceColumn]: prev[sourceColumn as keyof KanbanColumns].filter(r => r.id !== selectedRegistro.id),
+          a_produzir: [...prev.a_produzir, { ...cardToMove, status: 'a_produzir' }],
+        };
+      });
+
+      toast.success(`✅ Preparo cancelado. ${selectedRegistro.item_nome} retornou para produção.`);
+      setModalCancelar(false);
+      setSelectedRegistro(null);
+
+      // Parar alarme se estiver tocando
+      if (alarmPlaying) {
+        handleStopAlarm();
+      }
+    } catch (error) {
+      console.error('Erro ao cancelar preparo:', error);
+      toast.error('Erro ao cancelar preparo');
+      throw error;
+    }
+  };
+
+  // REGRA-MÃE: Registrar Perda (Perda Real)
+  // - NÃO estorna estoque
+  // - Remove item da fila de produção
+  // - Registra prejuízo financeiro
+  // - Registra auditoria completa
+  const handleRegistrarPerda = async (data: {
+    tipo_perda: string;
+    quantidade_perdida: number;
+    peso_perdido_kg: number | null;
+    motivo: string;
+  }) => {
+    if (!selectedRegistro) return;
+
+    try {
+      // 1. Inserir registro de perda (NÃO estorna estoque)
+      const { error: perdaError } = await supabase
+        .from('perdas_producao')
+        .insert({
+          producao_registro_id: selectedRegistro.id,
+          item_id: selectedRegistro.item_id,
+          item_nome: selectedRegistro.item_nome,
+          tipo_perda: data.tipo_perda,
+          quantidade_perdida: data.quantidade_perdida,
+          peso_perdido_kg: data.peso_perdido_kg,
+          motivo: data.motivo,
+          usuario_id: user?.id || '',
+          usuario_nome: profile?.nome || 'Sistema',
+          organization_id: organizationId,
+        });
+
+      if (perdaError) throw perdaError;
+
+      // 2. Atualizar producao_registros para marcar como perda
+      const { error: updateError } = await supabase
+        .from('producao_registros')
+        .update({
+          status: 'finalizado',
+          unidades_reais: 0,
+          peso_final_kg: 0,
+          data_fim: new Date().toISOString(),
+          observacao_porcionamento: `[PERDA - ${data.tipo_perda.toUpperCase()}] ${data.motivo}`,
+        })
+        .eq('id', selectedRegistro.id);
+
+      if (updateError) throw updateError;
+
+      // 3. Desbloquear próximo traço se necessário
+      if (selectedRegistro.lote_producao_id && selectedRegistro.sequencia_traco) {
+        await supabase
+          .from('producao_registros')
+          .update({ bloqueado_por_traco_anterior: false })
+          .eq('lote_producao_id', selectedRegistro.lote_producao_id)
+          .eq('sequencia_traco', selectedRegistro.sequencia_traco + 1);
+      }
+
+      // 4. Registrar auditoria
+      await log('user.update', 'producao_registro' as any, selectedRegistro.id, {
+        action: 'perda_registrada',
+        tipo_perda: data.tipo_perda,
+        quantidade_perdida: data.quantidade_perdida,
+        peso_perdido_kg: data.peso_perdido_kg,
+        motivo: data.motivo,
+        item_nome: selectedRegistro.item_nome,
+        estoque_estornado: 'nao',
+        prejuizo_financeiro: 'sim',
+      } as any);
+
+      // 5. Atualização otimista: remover card da coluna atual
+      const sourceColumn = selectedRegistro.status === 'em_preparo' ? 'em_preparo' : 'em_porcionamento';
+      setColumns(prev => ({
+        ...prev,
+        [sourceColumn]: prev[sourceColumn as keyof KanbanColumns].filter(r => r.id !== selectedRegistro.id),
+        finalizado: [...prev.finalizado, { 
+          ...selectedRegistro, 
+          status: 'finalizado', 
+          unidades_reais: 0,
+          peso_final_kg: 0,
+          data_fim: new Date().toISOString() 
+        }],
+      }));
+
+      toast.warning(`⚠️ Perda registrada: ${data.quantidade_perdida} un de ${selectedRegistro.item_nome}. Estoque NÃO foi estornado.`);
+      setModalPerda(false);
+      setSelectedRegistro(null);
+
+      // Parar alarme se estiver tocando
+      if (alarmPlaying) {
+        handleStopAlarm();
+      }
+    } catch (error) {
+      console.error('Erro ao registrar perda:', error);
+      toast.error('Erro ao registrar perda');
+      throw error;
+    }
+  };
+
+  // Handlers para abrir modais de cancelar e perda
+  const handleOpenCancelarModal = (registro: ProducaoRegistro) => {
+    setSelectedRegistro(registro);
+    setModalCancelar(true);
+  };
+
+  const handleOpenPerdaModal = (registro: ProducaoRegistro) => {
+    setSelectedRegistro(registro);
+    setModalPerda(true);
+  };
+
   // Mostrar loading apenas no carregamento inicial E quando não há dados
   const totalCards = columns.a_produzir.length + columns.em_preparo.length + columns.em_porcionamento.length + columns.finalizado.length;
   
@@ -842,6 +1042,8 @@ const ResumoDaProducao = () => {
                       columnId={columnId}
                       onAction={() => handleCardAction(registro, columnId)}
                       onTimerFinished={handleTimerFinished}
+                      onCancelarPreparo={() => handleOpenCancelarModal(registro)}
+                      onRegistrarPerda={() => handleOpenPerdaModal(registro)}
                     />
                   ))}
                   
@@ -873,6 +1075,22 @@ const ResumoDaProducao = () => {
             itemNome={selectedRegistro.item_nome}
             unidadesProgramadas={selectedRegistro.unidades_programadas}
             onConfirm={handleFinalizarProducao}
+          />
+
+          <CancelarPreparoModal
+            open={modalCancelar}
+            onOpenChange={setModalCancelar}
+            itemNome={selectedRegistro.item_nome}
+            onConfirm={handleCancelarPreparo}
+          />
+
+          <RegistrarPerdaModal
+            open={modalPerda}
+            onOpenChange={setModalPerda}
+            itemNome={selectedRegistro.item_nome}
+            unidadesProgramadas={selectedRegistro.unidades_programadas}
+            pesoProgramadoKg={selectedRegistro.peso_programado_kg}
+            onConfirm={handleRegistrarPerda}
           />
         </>
       )}
