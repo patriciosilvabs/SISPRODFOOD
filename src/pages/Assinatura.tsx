@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -57,6 +58,7 @@ const PlanoCard = ({ plano, onAssinar }: { plano: PlanoFromDB; onAssinar: () => 
 );
 
 const Assinatura = () => {
+  const navigate = useNavigate();
   const { organizationName, organizationId } = useOrganization();
   const { subscriptionStatus, daysRemaining, isTrialExpired, isSubscriptionActive, subscriptionPlan, refreshSubscription } = useSubscription();
   const { isLoading, error, charge, paymentStatus, createCharge, checkStatus, reset } = useWooviPayment();
@@ -103,11 +105,12 @@ const Assinatura = () => {
   const handlePaymentConfirmed = useCallback(() => {
     // Atualizar status da assinatura
     refreshSubscription();
-    // Fechar modal após um delay
+    // Fechar modal e redirecionar para Dashboard após um delay
     setTimeout(() => {
       handleCloseModal();
-    }, 1000);
-  }, [refreshSubscription]);
+      navigate('/dashboard');
+    }, 1500);
+  }, [refreshSubscription, navigate]);
 
   return (
     <Layout>
