@@ -14,7 +14,7 @@ interface ProtectedRouteProps {
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
   const { user, roles, loading, isSuperAdmin, isAdmin } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
-  const { canAccess } = useSubscription();
+  const { canAccess, subscriptionLoading } = useSubscription();
   const { hasRouteAccess, loading: permissionsLoading } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,7 +55,8 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     }
 
     // Redirecionar para assinatura se trial expirou e não está na página de assinatura
-    if (!loading && !orgLoading && user && !needsOnboarding && !canAccess && location.pathname !== '/assinatura') {
+    // Aguarda subscriptionLoading terminar para evitar redirecionamento prematuro
+    if (!loading && !orgLoading && !subscriptionLoading && user && !needsOnboarding && !canAccess && location.pathname !== '/assinatura') {
       navigate('/assinatura');
       return;
     }
@@ -90,7 +91,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
         }
       }
     }
-  }, [user, loading, orgLoading, permissionsLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isAdmin, isSuperAdminRoute, hasRouteAccess]);
+  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isAdmin, isSuperAdminRoute, hasRouteAccess]);
 
   // Loading básico (auth e org)
   if (loading || orgLoading) {

@@ -65,12 +65,12 @@ export const PixPaymentModal = ({
       return;
     }
 
-    // Verificar a cada 5 segundos
+    // Verificar a cada 3 segundos para resposta mais rápida
     pollingRef.current = setInterval(async () => {
       setIsChecking(true);
       await onCheckStatus();
       setIsChecking(false);
-    }, 5000);
+    }, 3000);
 
     return () => {
       if (pollingRef.current) {
@@ -83,15 +83,15 @@ export const PixPaymentModal = ({
   // Quando pagamento for confirmado
   useEffect(() => {
     if (paymentStatus === 'paid') {
-      toast.success('Pagamento confirmado com sucesso!');
+      toast.success('🎉 Pagamento confirmado! Bem-vindo ao SimChef!');
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
-      // Chamar callback após pequeno delay para mostrar a confirmação
+      // Delay maior para celebrar o sucesso antes de redirecionar
       setTimeout(() => {
         onPaymentConfirmed?.();
-      }, 2000);
+      }, 3000);
     }
   }, [paymentStatus, onPaymentConfirmed]);
 
@@ -156,13 +156,18 @@ export const PixPaymentModal = ({
 
           {/* Status de pagamento confirmado */}
           {paymentStatus === 'paid' && (
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <div className="rounded-full bg-green-100 p-4">
-                <CheckCircle className="h-16 w-16 text-green-600" />
+            <div className="flex flex-col items-center justify-center py-8 space-y-4 animate-in zoom-in duration-300">
+              <div className="rounded-full bg-green-100 p-6 animate-bounce">
+                <CheckCircle className="h-20 w-20 text-green-600" />
               </div>
-              <div className="text-center">
-                <h3 className="text-xl font-semibold text-green-600">Pagamento Confirmado!</h3>
-                <p className="text-muted-foreground mt-1">Sua assinatura foi ativada com sucesso.</p>
+              <div className="text-center space-y-2">
+                <h3 className="text-2xl font-bold text-green-600">🎉 Pagamento Confirmado!</h3>
+                <p className="text-muted-foreground">Sua assinatura do plano {planoNome} foi ativada.</p>
+                <p className="text-sm text-muted-foreground">Redirecionando para o sistema...</p>
+                <div className="flex items-center justify-center gap-2 mt-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-green-600" />
+                  <span className="text-green-600 font-medium">Preparando seu acesso...</span>
+                </div>
               </div>
             </div>
           )}

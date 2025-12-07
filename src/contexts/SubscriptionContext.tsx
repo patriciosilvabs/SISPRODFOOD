@@ -10,6 +10,7 @@ interface SubscriptionContextType {
   isTrialExpired: boolean;
   isSubscriptionActive: boolean;
   canAccess: boolean;
+  subscriptionLoading: boolean;
   refreshSubscription: () => Promise<void>;
 }
 
@@ -18,8 +19,11 @@ const SubscriptionContext = createContext<SubscriptionContextType | undefined>(u
 export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
   const { subscriptionStatus, trialEndDate, subscriptionExpiresAt, subscriptionPlan, refreshOrganization } = useOrganization();
 
-  const { daysRemaining, isTrialExpired, isSubscriptionActive, canAccess } = useMemo(() => {
+  const { daysRemaining, isTrialExpired, isSubscriptionActive, canAccess, subscriptionLoading } = useMemo(() => {
     const now = new Date();
+    
+    // Se subscriptionStatus ainda é null, estamos carregando
+    const isLoading = subscriptionStatus === null;
     
     // Calcular dias restantes do trial
     let days: number | null = null;
@@ -36,14 +40,16 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     const subActive = subscriptionStatus === 'active' && 
       (!subscriptionExpiresAt || new Date(subscriptionExpiresAt) > now);
     
-    // Pode acessar se: assinatura ativa OU trial não expirado
-    const access = subActive || (subscriptionStatus === 'trial' && !trialExpired);
+    // Durante loading, canAccess = true para evitar redirecionamento prematuro
+    // Após carregar, verifica: assinatura ativa OU trial não expirado
+    const access = isLoading ? true : (subActive || (subscriptionStatus === 'trial' && !trialExpired));
     
     return {
       daysRemaining: days,
       isTrialExpired: trialExpired,
       isSubscriptionActive: subActive,
-      canAccess: access
+      canAccess: access,
+      subscriptionLoading: isLoading
     };
   }, [subscriptionStatus, trialEndDate, subscriptionExpiresAt]);
 
@@ -61,6 +67,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       isTrialExpired,
       isSubscriptionActive,
       canAccess,
+      subscriptionLoading,
       refreshSubscription
     }}>
       {children}
