@@ -38,7 +38,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Key } from 'lucide-react';
+import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Key, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -455,6 +455,11 @@ const GerenciarUsuarios = () => {
       return;
     }
 
+    if (!inviteIsAdmin && inviteLojas.length === 0) {
+      toast.error('Selecione pelo menos uma loja para este usuário');
+      return;
+    }
+
     if (!inviteIsAdmin && invitePermissions.length === 0) {
       toast.error('Selecione pelo menos uma permissão ou marque como Admin');
       return;
@@ -800,32 +805,70 @@ const GerenciarUsuarios = () => {
                 </div>
               </div>
 
-              {/* Permissions (only if not admin) */}
+              {/* Summary Badges (only if not admin) */}
               {!inviteIsAdmin && (
-                <Tabs defaultValue="permissions" className="w-full">
+                <div className="flex gap-2 flex-wrap">
+                  <Badge variant={inviteLojas.length > 0 ? "default" : "destructive"} className="flex items-center gap-1">
+                    {inviteLojas.length > 0 ? (
+                      <CheckCircle2 className="h-3 w-3" />
+                    ) : (
+                      <AlertCircle className="h-3 w-3" />
+                    )}
+                    <Store className="h-3 w-3" />
+                    {inviteLojas.length} loja(s) *
+                  </Badge>
+                  <Badge variant={invitePermissions.length > 0 ? "secondary" : "outline"} className="flex items-center gap-1">
+                    <Key className="h-3 w-3" />
+                    {invitePermissions.length} permissão(ões)
+                  </Badge>
+                </div>
+              )}
+
+              {/* Lojas and Permissions Tabs (only if not admin) */}
+              {!inviteIsAdmin && (
+                <Tabs defaultValue="lojas" className="w-full">
                   <TabsList className="w-full">
-                    <TabsTrigger value="permissions" className="flex-1">
-                      <Key className="h-4 w-4 mr-2" />
-                      Permissões
-                    </TabsTrigger>
                     <TabsTrigger value="lojas" className="flex-1">
                       <Store className="h-4 w-4 mr-2" />
-                      Lojas ({inviteLojas.length})
+                      Lojas * ({inviteLojas.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="permissions" className="flex-1">
+                      <Key className="h-4 w-4 mr-2" />
+                      Permissões ({invitePermissions.length})
                     </TabsTrigger>
                   </TabsList>
-                  <TabsContent value="permissions" className="mt-4">
-                    <div className="max-h-[45vh] overflow-y-auto pr-2">
-                      <PermissionsEditor 
-                        selectedPermissions={invitePermissions}
-                        onChange={setInvitePermissions}
-                      />
-                    </div>
-                  </TabsContent>
                   <TabsContent value="lojas" className="mt-4">
                     <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">
-                        Selecione as lojas que este usuário poderá acessar
-                      </p>
+                      {/* Validation Alert */}
+                      {inviteLojas.length === 0 && (
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+                          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                          <span className="text-sm">Selecione pelo menos uma loja (obrigatório)</span>
+                        </div>
+                      )}
+
+                      {/* Select All Button */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          Lojas que este usuário poderá acessar *
+                        </p>
+                        {lojas.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (inviteLojas.length === lojas.length) {
+                                setInviteLojas([]);
+                              } else {
+                                setInviteLojas(lojas.map(l => l.id));
+                              }
+                            }}
+                          >
+                            {inviteLojas.length === lojas.length ? 'Desmarcar Todas' : 'Marcar Todas'}
+                          </Button>
+                        )}
+                      </div>
+
                       {lojas.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                           Nenhuma loja cadastrada no sistema
@@ -851,6 +894,14 @@ const GerenciarUsuarios = () => {
                       )}
                     </div>
                   </TabsContent>
+                  <TabsContent value="permissions" className="mt-4">
+                    <div className="max-h-[45vh] overflow-y-auto pr-2">
+                      <PermissionsEditor 
+                        selectedPermissions={invitePermissions}
+                        onChange={setInvitePermissions}
+                      />
+                    </div>
+                  </TabsContent>
                 </Tabs>
               )}
             </div>
@@ -862,7 +913,7 @@ const GerenciarUsuarios = () => {
             </Button>
             <Button 
               onClick={handleSendInvite} 
-              disabled={sendingInvite || !inviteEmail || (!inviteIsAdmin && invitePermissions.length === 0)}
+              disabled={sendingInvite || !inviteEmail || (!inviteIsAdmin && (invitePermissions.length === 0 || inviteLojas.length === 0))}
             >
               {sendingInvite ? (
                 <>
@@ -929,34 +980,70 @@ const GerenciarUsuarios = () => {
                   </div>
                 </div>
 
-                {/* Permissions (only if not admin) */}
+                {/* Summary Badges (only if not admin) */}
                 {!isAdminRole && (
-                  <Tabs defaultValue="permissions" className="w-full">
+                  <div className="flex gap-2 flex-wrap">
+                    <Badge variant={selectedLojas.length > 0 ? "default" : "destructive"} className="flex items-center gap-1">
+                      {selectedLojas.length > 0 ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : (
+                        <AlertCircle className="h-3 w-3" />
+                      )}
+                      <Store className="h-3 w-3" />
+                      {selectedLojas.length} loja(s) *
+                    </Badge>
+                    <Badge variant={selectedPermissions.length > 0 ? "secondary" : "outline"} className="flex items-center gap-1">
+                      <Key className="h-3 w-3" />
+                      {selectedPermissions.length} permissão(ões)
+                    </Badge>
+                  </div>
+                )}
+
+                {/* Lojas and Permissions Tabs (only if not admin) */}
+                {!isAdminRole && (
+                  <Tabs defaultValue="lojas" className="w-full">
                     <TabsList className="w-full">
-                      <TabsTrigger value="permissions" className="flex-1">
-                        <Key className="h-4 w-4 mr-2" />
-                        Permissões
-                      </TabsTrigger>
                       <TabsTrigger value="lojas" className="flex-1">
                         <Store className="h-4 w-4 mr-2" />
-                        Lojas ({selectedLojas.length})
+                        Lojas * ({selectedLojas.length})
+                      </TabsTrigger>
+                      <TabsTrigger value="permissions" className="flex-1">
+                        <Key className="h-4 w-4 mr-2" />
+                        Permissões ({selectedPermissions.length})
                       </TabsTrigger>
                     </TabsList>
-                    <TabsContent value="permissions" className="mt-4">
-                      <PermissionsEditor 
-                        selectedPermissions={selectedPermissions}
-                        onChange={setSelectedPermissions}
-                        userId={editingUser?.id}
-                        organizationId={organizationId || undefined}
-                        onUIPermissionsChange={setSelectedUIPermissions}
-                        initialUIPermissions={selectedUIPermissions}
-                      />
-                    </TabsContent>
                     <TabsContent value="lojas" className="mt-4">
                       <div className="space-y-3">
-                        <p className="text-sm text-muted-foreground">
-                          Selecione as lojas que este usuário poderá acessar
-                        </p>
+                        {/* Validation Alert */}
+                        {selectedLojas.length === 0 && (
+                          <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
+                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                            <span className="text-sm">Selecione pelo menos uma loja (obrigatório)</span>
+                          </div>
+                        )}
+
+                        {/* Select All Button */}
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-muted-foreground">
+                            Lojas que este usuário poderá acessar *
+                          </p>
+                          {lojas.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (selectedLojas.length === lojas.length) {
+                                  setSelectedLojas([]);
+                                } else {
+                                  setSelectedLojas(lojas.map(l => l.id));
+                                }
+                              }}
+                            >
+                              {selectedLojas.length === lojas.length ? 'Desmarcar Todas' : 'Marcar Todas'}
+                            </Button>
+                          )}
+                        </div>
+
                         {lojas.length === 0 ? (
                           <p className="text-sm text-muted-foreground">
                             Nenhuma loja cadastrada no sistema
@@ -981,6 +1068,16 @@ const GerenciarUsuarios = () => {
                           </div>
                         )}
                       </div>
+                    </TabsContent>
+                    <TabsContent value="permissions" className="mt-4">
+                      <PermissionsEditor 
+                        selectedPermissions={selectedPermissions}
+                        onChange={setSelectedPermissions}
+                        userId={editingUser?.id}
+                        organizationId={organizationId || undefined}
+                        onUIPermissionsChange={setSelectedUIPermissions}
+                        initialUIPermissions={selectedUIPermissions}
+                      />
                     </TabsContent>
                   </Tabs>
                 )}

@@ -4,13 +4,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue 
-} from '@/components/ui/select';
-import { 
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -19,20 +12,12 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { 
   PERMISSIONS_CONFIG, 
-  expandPermissionsWithDependencies,
   getPermissionDependencies,
   SECTION_TO_UI_PAGE
 } from '@/lib/permissions';
-import { UI_PAGES_CONFIG, getPageConfigById, UIPermissionsConfig, getDefaultConfig } from '@/lib/ui-permissions-config';
-import { Wand2, Check, Columns3 } from 'lucide-react';
+import { getPageConfigById, UIPermissionsConfig, getDefaultConfig } from '@/lib/ui-permissions-config';
+import { Columns3, Check } from 'lucide-react';
 
-interface PermissionPreset {
-  id: string;
-  nome: string;
-  descricao: string | null;
-  permissions: string[];
-  is_system: boolean;
-}
 
 interface PermissionsEditorProps {
   selectedPermissions: string[];
@@ -53,34 +38,7 @@ export const PermissionsEditor = ({
   onUIPermissionsChange,
   initialUIPermissions = {}
 }: PermissionsEditorProps) => {
-  const [presets, setPresets] = useState<PermissionPreset[]>([]);
-  const [loadingPresets, setLoadingPresets] = useState(true);
   const [uiPermissions, setUIPermissions] = useState<Record<string, UIPermissionsConfig>>(initialUIPermissions);
-
-  useEffect(() => {
-    const fetchPresets = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('permission_presets')
-          .select('*')
-          .order('is_system', { ascending: false })
-          .order('nome');
-
-        if (!error && data) {
-          setPresets(data.map(p => ({
-            ...p,
-            permissions: Array.isArray(p.permissions) ? p.permissions as string[] : []
-          })));
-        }
-      } catch (err) {
-        console.error('Erro ao carregar presets:', err);
-      } finally {
-        setLoadingPresets(false);
-      }
-    };
-
-    fetchPresets();
-  }, []);
 
   // Carregar UI permissions existentes do usuário
   useEffect(() => {
@@ -143,15 +101,6 @@ export const PermissionsEditor = ({
     onChange(newPermissions);
   };
 
-  const handlePresetApply = (presetId: string) => {
-    if (disabled) return;
-
-    const preset = presets.find(p => p.id === presetId);
-    if (!preset) return;
-
-    const expanded = expandPermissionsWithDependencies(preset.permissions);
-    onChange(expanded);
-  };
 
   const handleUIColumnToggle = (pageId: string, columnId: string, checked: boolean) => {
     if (disabled) return;
@@ -394,28 +343,6 @@ export const PermissionsEditor = ({
 
   return (
     <div className="space-y-4">
-      {/* Presets */}
-      <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-        <Wand2 className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Aplicar Preset:</span>
-        <Select onValueChange={handlePresetApply} disabled={disabled || loadingPresets}>
-          <SelectTrigger className="w-[240px]">
-            <SelectValue placeholder="Selecionar preset..." />
-          </SelectTrigger>
-          <SelectContent>
-            {presets.map(preset => (
-              <SelectItem key={preset.id} value={preset.id}>
-                <div className="flex items-center gap-2">
-                  <span>{preset.nome}</span>
-                  {preset.is_system && (
-                    <Badge variant="secondary" className="text-xs">Sistema</Badge>
-                  )}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
 
       {/* Contador de permissões */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
