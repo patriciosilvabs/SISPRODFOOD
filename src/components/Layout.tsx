@@ -75,6 +75,7 @@ export const Layout = ({ children }: LayoutProps) => {
   const canSeeProducao = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage']);
   const canSeeInsumos = hasAnyPermission(['insumos.view', 'insumos.manage']);
   const canSeeEstoqueProdutosCPD = hasAnyPermission(['estoque_cpd_produtos.view', 'estoque_cpd_produtos.manage']);
+  const canSeeReposicaoLoja = hasAnyPermission(['reposicao_loja.view', 'reposicao_loja.enviar']);
   
   const canSeeLoja = hasAnyPermission(['contagem.view', 'contagem.manage', 'estoque_loja.view', 'estoque_loja.manage', 'erros.view', 'erros.create']);
   const canSeeContagem = hasAnyPermission(['contagem.view', 'contagem.manage']);
@@ -121,6 +122,9 @@ export const Layout = ({ children }: LayoutProps) => {
           {canSeeEstoqueProdutosCPD && (
             <NavLink to="/estoque-produtos-cpd" icon={Warehouse}>Estoque de Produtos</NavLink>
           )}
+          {canSeeReposicaoLoja && (
+            <NavLink to="/reposicao-loja" icon={Store}>Reposição de Lojas</NavLink>
+          )}
         </>
       )}
       
@@ -132,7 +136,7 @@ export const Layout = ({ children }: LayoutProps) => {
             <NavLink to="/contagem-porcionados" icon={ClipboardList}>Contagem Porcionados</NavLink>
           )}
           {canSeeEstoqueLoja && (
-            <NavLink to="/estoque-diario" icon={Boxes}>Estoque da Loja</NavLink>
+            <NavLink to="/estoque-loja" icon={Boxes}>Meu Estoque</NavLink>
           )}
           {canSeeErros && (
             <NavLink to="/erros-devolucoes" icon={AlertTriangle}>Erros e Devoluções</NavLink>

@@ -184,10 +184,30 @@ export const PERMISSIONS_CONFIG: PermissionSection[] = [
       },
       {
         key: 'estoque_loja.manage',
-        label: 'Gerenciar Estoque',
-        description: 'Registrar contagens e solicitar reposição',
+        label: 'Informar Estoque',
+        description: 'Registrar estoque atual da loja',
         section: 'estoque_loja',
         dependsOn: ['estoque_loja.view']
+      }
+    ]
+  },
+  {
+    key: 'reposicao_loja',
+    label: 'Reposição de Loja (CPD)',
+    description: 'Gerenciar reposição de estoque para lojas',
+    permissions: [
+      {
+        key: 'reposicao_loja.view',
+        label: 'Visualizar Demandas das Lojas',
+        description: 'Ver demandas de reposição consolidadas',
+        section: 'reposicao_loja'
+      },
+      {
+        key: 'reposicao_loja.enviar',
+        label: 'Enviar Reposição',
+        description: 'Confirmar e enviar produtos para lojas',
+        section: 'reposicao_loja',
+        dependsOn: ['reposicao_loja.view']
       }
     ]
   },
@@ -441,7 +461,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   '/insumos': ['insumos.view'],
   '/estoque-produtos-cpd': ['estoque_cpd_produtos.view'],
   '/contagem-porcionados': ['contagem.view'],
-  '/estoque-diario': ['estoque_loja.view'],
+  '/estoque-loja': ['estoque_loja.view'],
+  '/reposicao-loja': ['reposicao_loja.view'],
   '/romaneio': ['romaneio.view'],
   '/erros-devolucoes': ['erros.view'],
   '/lista-de-compras-ia': ['compras.view'],
