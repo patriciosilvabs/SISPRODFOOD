@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Package, PackageCheck, AlertCircle, CheckCircle, AlertTriangle, Loader2, FileText } from 'lucide-react';
+import { Package, PackageCheck, AlertCircle, CheckCircle, AlertTriangle, Loader2, FileText, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -79,7 +79,7 @@ const EstoqueLoja = () => {
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<string>('');
   const [originalEstoques, setOriginalEstoques] = useState<{ [key: string]: number }>({});
   const [hasDirtyEstoque, setHasDirtyEstoque] = useState(false);
-
+  const [refreshKey, setRefreshKey] = useState(0);
   // Estados para Romaneios de Produtos
   const [romaneiosParaReceber, setRomaneiosParaReceber] = useState<RomaneioProduto[]>([]);
   const [itensRomaneioParaReceber, setItensRomaneioParaReceber] = useState<{ [key: string]: RomaneioProdutoItem[] }>({});
@@ -212,7 +212,7 @@ const EstoqueLoja = () => {
     };
 
     fetchDados();
-  }, [lojaSelecionada]);
+  }, [lojaSelecionada, refreshKey]);
 
   // Buscar romaneios para receber
   const fetchRomaneiosProdutos = async () => {
@@ -487,11 +487,17 @@ const EstoqueLoja = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Meu Estoque</h1>
-          <p className="text-muted-foreground mt-1">
-            Informe o estoque atual de produtos da sua loja
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Meu Estoque</h1>
+            <p className="text-muted-foreground mt-1">
+              Informe o estoque atual de produtos da sua loja
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setRefreshKey(prev => prev + 1)} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
         </div>
 
         <Tabs defaultValue="estoque" className="w-full">

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Sparkles, Eye, ChevronDown, ChevronUp, X, Loader2 } from 'lucide-react';
+import { Sparkles, Eye, ChevronDown, ChevronUp, X, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -507,10 +507,16 @@ const ContagemPorcionados = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Contagem de Porcionados</h1>
-          <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
-            <Sparkles className="mr-2 h-4 w-4" />
-            Otimizar com IA
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => loadData()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+              <Sparkles className="mr-2 h-4 w-4" />
+              Otimizar com IA
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3">

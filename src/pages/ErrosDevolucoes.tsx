@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Camera, X } from 'lucide-react';
+import { Camera, X, RefreshCw } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -291,8 +291,12 @@ const ErrosDevolucoes = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
+        <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Registro de Erros e Devoluções</h1>
+          <Button variant="outline" size="sm" onClick={() => { loadLojas(); loadOcorrencias(); }} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

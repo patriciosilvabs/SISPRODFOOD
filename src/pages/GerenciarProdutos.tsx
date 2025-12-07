@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Plus, Sparkles, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Sparkles, Pencil, Trash2, Search, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -168,6 +168,10 @@ const GerenciarProdutos = () => {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => fetchProdutos()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
             <Button
               variant="outline"
               onClick={() => setEstoqueModalOpen(true)}
