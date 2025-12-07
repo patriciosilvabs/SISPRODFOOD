@@ -23,8 +23,8 @@ export const useUIPermissions = (paginaId: string): UseUIPermissionsReturn => {
   const [pageConfig, setPageConfig] = useState<UIPermissionsConfig | null>(null);
 
   const fetchConfig = useCallback(async () => {
-    // Admin e SuperAdmin veem tudo por padrão
-    if (isAdmin() || isSuperAdmin()) {
+    // Apenas SuperAdmin vê tudo por padrão - Admin depende da configuração
+    if (isSuperAdmin()) {
       setPageConfig(null); // null = sem restrições
       setLoading(false);
       return;
@@ -79,7 +79,7 @@ export const useUIPermissions = (paginaId: string): UseUIPermissionsReturn => {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, paginaId, user?.id, isAdmin, isSuperAdmin]);
+  }, [organizationId, paginaId, user?.id, isSuperAdmin]);
 
   useEffect(() => {
     fetchConfig();

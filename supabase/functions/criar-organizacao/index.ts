@@ -6,6 +6,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Todas as permissões do sistema para conceder ao Admin criador
+const ALL_PERMISSIONS = [
+  'dashboard.view',
+  'producao.resumo.view',
+  'producao.resumo.manage',
+  'insumos.view',
+  'insumos.manage',
+  'estoque_cpd_produtos.view',
+  'estoque_cpd_produtos.manage',
+  'pedidos_compra.view',
+  'pedidos_compra.manage',
+  'pedidos_compra.receber',
+  'romaneios_produtos.view',
+  'romaneios_produtos.criar',
+  'romaneios_produtos.enviar',
+  'romaneios_produtos.receber',
+  'contagem.view',
+  'contagem.manage',
+  'estoque_loja.view',
+  'estoque_loja.manage',
+  'romaneio.view',
+  'romaneio.create',
+  'romaneio.send',
+  'romaneio.receive',
+  'romaneio.history',
+  'erros.view',
+  'erros.create',
+  'relatorios.producao',
+  'relatorios.romaneios',
+  'relatorios.estoque',
+  'relatorios.insumos',
+  'relatorios.consumo',
+  'relatorios.diagnostico',
+  'config.view',
+  'config.insumos',
+  'config.itens',
+  'config.produtos',
+  'config.lojas',
+  'config.usuarios',
+  'config.sistema',
+  'config.interface',
+  'compras.view',
+  'compras.manage'
+];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -161,6 +206,25 @@ serve(async (req) => {
     }
 
     console.log('Role Admin atribuída ao usuário');
+
+    // 4. Conceder TODAS as permissões ao Admin criador
+    const permissionsToInsert = ALL_PERMISSIONS.map(permKey => ({
+      user_id: userId,
+      organization_id: org.id,
+      permission_key: permKey,
+      granted: true
+    }));
+
+    const { error: permError } = await supabaseAdmin
+      .from('user_permissions')
+      .insert(permissionsToInsert);
+
+    if (permError) {
+      console.error('Erro ao conceder permissões:', permError);
+      // Não falhar - Admin foi criado, permissões podem ser adicionadas depois
+    } else {
+      console.log(`${ALL_PERMISSIONS.length} permissões concedidas ao Admin`);
+    }
 
     return new Response(
       JSON.stringify({
