@@ -466,11 +466,13 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
 export const hasRoutePermission = (
   route: string, 
   userPermissions: string[], 
-  isAdmin: boolean,
   isSuperAdmin: boolean
 ): boolean => {
-  // Admin e SuperAdmin têm acesso total
-  if (isAdmin || isSuperAdmin) return true;
+  // Apenas SuperAdmin tem bypass total - Admin depende das permissões
+  if (isSuperAdmin) return true;
+  
+  // Wildcard = todas as permissões (usado para Admin com todas as permissões concedidas)
+  if (userPermissions.includes('*')) return true;
   
   const requiredPermissions = ROUTE_PERMISSIONS[route];
   

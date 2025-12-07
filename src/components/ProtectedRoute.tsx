@@ -62,8 +62,8 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
 
     // Verificar permissões granulares para a rota atual
     if (!loading && !orgLoading && !permissionsLoading && user && !needsOnboarding && canAccess) {
-      // Admin e SuperAdmin passam em qualquer verificação
-      if (isAdmin() || isSuperAdmin()) return;
+      // Apenas SuperAdmin tem bypass - Admin depende das permissões granulares
+      if (isSuperAdmin()) return;
       
       // Rotas super admin já são protegidas pela verificação de role acima - pular permissões granulares
       if (isSuperAdminRoute) return;
@@ -104,8 +104,8 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     );
   }
 
-  // Super Admin e Admin não precisam esperar permissões granulares - renderizar imediatamente
-  if (user && (isSuperAdmin() || isAdmin())) {
+  // Apenas Super Admin não precisa esperar permissões granulares
+  if (user && isSuperAdmin()) {
     return <>{children}</>;
   }
 
