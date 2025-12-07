@@ -1,0 +1,66 @@
+-- Adicionar constraint UNIQUE para (user_id, permission_key)
+ALTER TABLE user_permissions 
+ADD CONSTRAINT user_permissions_user_permission_unique UNIQUE (user_id, permission_key);
+
+-- Inserir todas as permissões granulares para o Admin existente heldermoitafreire@gmail.com
+INSERT INTO user_permissions (user_id, organization_id, permission_key, granted)
+SELECT 
+  'cd719068-b6d7-44a8-bd9c-e876e5cf3bbc'::uuid,
+  'db124f8c-a8a0-4d78-9d12-3372297202f4'::uuid,
+  permission_key,
+  true
+FROM (VALUES
+  ('dashboard.view'),
+  ('producao.resumo.view'),
+  ('producao.resumo.manage'),
+  ('insumos.view'),
+  ('insumos.manage'),
+  ('estoque_cpd_produtos.view'),
+  ('estoque_cpd_produtos.manage'),
+  ('pedidos_compra.view'),
+  ('pedidos_compra.manage'),
+  ('pedidos_compra.receber'),
+  ('romaneios_produtos.view'),
+  ('romaneios_produtos.criar'),
+  ('romaneios_produtos.enviar'),
+  ('romaneios_produtos.receber'),
+  ('contagem.view'),
+  ('contagem.manage'),
+  ('estoque_loja.view'),
+  ('estoque_loja.manage'),
+  ('romaneio.view'),
+  ('romaneio.create'),
+  ('romaneio.send'),
+  ('romaneio.receive'),
+  ('romaneio.history'),
+  ('erros.view'),
+  ('erros.create'),
+  ('relatorios.producao'),
+  ('relatorios.romaneios'),
+  ('relatorios.estoque'),
+  ('relatorios.insumos'),
+  ('relatorios.consumo'),
+  ('relatorios.diagnostico'),
+  ('config.view'),
+  ('config.insumos'),
+  ('config.itens'),
+  ('config.produtos'),
+  ('config.lojas'),
+  ('config.usuarios'),
+  ('config.sistema'),
+  ('config.interface'),
+  ('compras.view'),
+  ('compras.manage'),
+  ('romaneio.avulso.view'),
+  ('romaneio.avulso.create'),
+  ('romaneio.avulso.receive'),
+  ('lista_compras_ia.view'),
+  ('lista_compras_ia.manage'),
+  ('auditoria.view'),
+  ('auditoria.manage'),
+  ('contagem.reserva_diaria'),
+  ('contagem.estoque_ideal'),
+  ('producao.kanban.view'),
+  ('producao.kanban.manage')
+) AS permissions(permission_key)
+ON CONFLICT (user_id, permission_key) DO NOTHING;
