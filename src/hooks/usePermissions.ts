@@ -19,14 +19,17 @@ interface UsePermissionsReturn {
 }
 
 export const usePermissions = (): UsePermissionsReturn => {
-  const { user, isAdmin, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const { organizationId } = useOrganization();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Calcular uma vez como valor booleano para evitar loops
+  const isSuperAdminUser = isSuperAdmin();
+
   const fetchPermissions = useCallback(async () => {
     // Apenas SuperAdmin tem bypass total - Admin depende dos checkboxes
-    if (isSuperAdmin()) {
+    if (isSuperAdminUser) {
       setPermissions(['*']); // Wildcard para acesso total
       setLoading(false);
       return;
@@ -60,33 +63,33 @@ export const usePermissions = (): UsePermissionsReturn => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, isSuperAdmin]);
+  }, [user?.id, isSuperAdminUser]);
 
   useEffect(() => {
     fetchPermissions();
   }, [fetchPermissions]);
 
   const hasPermission = useCallback((permissionKey: string): boolean => {
-    if (isSuperAdmin()) return true;
+    if (isSuperAdminUser) return true;
     if (permissions.includes('*')) return true;
     return permissions.includes(permissionKey);
-  }, [permissions, isSuperAdmin]);
+  }, [permissions, isSuperAdminUser]);
 
   const hasAnyPermission = useCallback((permissionKeys: string[]): boolean => {
-    if (isSuperAdmin()) return true;
+    if (isSuperAdminUser) return true;
     if (permissions.includes('*')) return true;
     return permissionKeys.some(key => permissions.includes(key));
-  }, [permissions, isSuperAdmin]);
+  }, [permissions, isSuperAdminUser]);
 
   const hasAllPermissions = useCallback((permissionKeys: string[]): boolean => {
-    if (isSuperAdmin()) return true;
+    if (isSuperAdminUser) return true;
     if (permissions.includes('*')) return true;
     return permissionKeys.every(key => permissions.includes(key));
-  }, [permissions, isSuperAdmin]);
+  }, [permissions, isSuperAdminUser]);
 
   const hasRouteAccess = useCallback((route: string): boolean => {
-    return hasRoutePermission(route, permissions, isSuperAdmin());
-  }, [permissions, isSuperAdmin]);
+    return hasRoutePermission(route, permissions, isSuperAdminUser);
+  }, [permissions, isSuperAdminUser]);
 
   const refreshPermissions = useCallback(async () => {
     setLoading(true);
