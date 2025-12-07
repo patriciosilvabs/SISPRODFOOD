@@ -131,6 +131,18 @@ const ItensPorcionados = () => {
       return;
     }
 
+    // Validação: alertar se consumo_por_traco_g for muito baixo (provavelmente erro de unidade)
+    const consumoPorTraco = parseFloat(formData.consumo_por_traco_g) || 0;
+    if (formData.unidade_medida === 'traco' && consumoPorTraco > 0 && consumoPorTraco < 100) {
+      const confirmar = confirm(
+        `⚠️ ATENÇÃO: O valor de "Consumo por Traço" está muito baixo (${consumoPorTraco}g).\n\n` +
+        `Isso parece estar em quilogramas ao invés de gramas.\n\n` +
+        `Exemplo: Se cada traço consome 15kg de farinha, o valor correto é 15000 (gramas).\n\n` +
+        `Deseja continuar mesmo assim?`
+      );
+      if (!confirmar) return;
+    }
+
     try {
       const data = {
         nome: formData.nome,
@@ -138,7 +150,7 @@ const ItensPorcionados = () => {
         insumo_vinculado_id: formData.insumo_vinculado_id === 'none' ? null : formData.insumo_vinculado_id || null,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
-        consumo_por_traco_g: formData.consumo_por_traco_g ? parseFloat(formData.consumo_por_traco_g) : 0,
+        consumo_por_traco_g: consumoPorTraco,
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
         timer_ativo: formData.timer_ativo,
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
