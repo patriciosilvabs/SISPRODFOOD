@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
@@ -64,9 +64,11 @@ interface KanbanCardProps {
   columnId: StatusColumn;
   onAction: () => void;
   onTimerFinished?: (registroId: string) => void;
+  onCancelarPreparo?: () => void;
+  onRegistrarPerda?: () => void;
 }
 
-export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: KanbanCardProps) {
+export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda }: KanbanCardProps) {
   // Hook para gerenciar timer (apenas para EM PREPARO)
   const timerState = useProductionTimer(
     registro.id,
@@ -377,32 +379,61 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished }: Ka
             )}
           </div>
 
-          {/* Botão de Ação */}
-          {buttonConfig && (
-            <Button 
-              onClick={onAction}
-              className="w-full mt-2"
-              variant={estaBloqueado ? 'secondary' : buttonConfig.variant}
-              size="sm"
-              disabled={estaBloqueado}
-            >
-              {timerAindaRodando ? (
-                <>
-                  <Clock className="h-4 w-4 mr-2" />
-                  Aguardando timer
-                </>
-              ) : estaBloqueadoPorTraco ? (
-                <>
-                  <Lock className="h-4 w-4 mr-2" />
-                  Bloqueado
-                </>
-              ) : (
-                <>
-                  {ButtonIcon && <ButtonIcon className="h-4 w-4 mr-2" />}
-                  {buttonConfig.label}
-                </>
+          {/* Botões de Ação */}
+          {columnId !== 'finalizado' && (
+            <div className="space-y-2 mt-2">
+              {/* Botão Principal */}
+              {buttonConfig && (
+                <Button 
+                  onClick={onAction}
+                  className="w-full"
+                  variant={estaBloqueado ? 'secondary' : buttonConfig.variant}
+                  size="sm"
+                  disabled={estaBloqueado}
+                >
+                  {timerAindaRodando ? (
+                    <>
+                      <Clock className="h-4 w-4 mr-2" />
+                      Aguardando timer
+                    </>
+                  ) : estaBloqueadoPorTraco ? (
+                    <>
+                      <Lock className="h-4 w-4 mr-2" />
+                      Bloqueado
+                    </>
+                  ) : (
+                    <>
+                      {ButtonIcon && <ButtonIcon className="h-4 w-4 mr-2" />}
+                      {buttonConfig.label}
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
+
+              {/* Botões de Cancelamento e Perda - apenas para EM PREPARO e EM PORCIONAMENTO */}
+              {(columnId === 'em_preparo' || columnId === 'em_porcionamento') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onCancelarPreparo}
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onRegistrarPerda}
+                    className="text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Perda
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </CardContent>

@@ -1284,6 +1284,73 @@ export type Database = {
           },
         ]
       }
+      perdas_producao: {
+        Row: {
+          created_at: string | null
+          id: string
+          item_id: string
+          item_nome: string
+          motivo: string
+          organization_id: string | null
+          peso_perdido_kg: number | null
+          producao_registro_id: string
+          quantidade_perdida: number
+          tipo_perda: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          item_id: string
+          item_nome: string
+          motivo: string
+          organization_id?: string | null
+          peso_perdido_kg?: number | null
+          producao_registro_id: string
+          quantidade_perdida: number
+          tipo_perda: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          item_id?: string
+          item_nome?: string
+          motivo?: string
+          organization_id?: string | null
+          peso_perdido_kg?: number | null
+          producao_registro_id?: string
+          quantidade_perdida?: number
+          tipo_perda?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_item"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_organization"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_producao_registro"
+            columns: ["producao_registro_id"]
+            isOneToOne: false
+            referencedRelation: "producao_registros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       permission_presets: {
         Row: {
           created_at: string
