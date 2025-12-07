@@ -289,8 +289,18 @@ const GerenciarUsuarios = () => {
         newRole = 'Produção';
       }
 
+      console.log('[GerenciarUsuarios] Salvando usuário:', {
+        userId: editingUser.id,
+        email: editingUser.email,
+        detectedProfile,
+        newRole,
+        isAdminRole,
+        selectedLojas,
+        organizationId
+      });
+
       // 2. Atualizar is_admin E role em organization_members
-      await supabase
+      const { error: memberError } = await supabase
         .from('organization_members')
         .update({ 
           is_admin: isAdminRole,
@@ -299,27 +309,56 @@ const GerenciarUsuarios = () => {
         .eq('user_id', editingUser.id)
         .eq('organization_id', organizationId);
 
-      // 2. Atualizar lojas
-      await supabase
+      if (memberError) {
+        console.error('[GerenciarUsuarios] Erro ao atualizar organization_members:', memberError);
+        toast.error(`Erro ao atualizar role: ${memberError.message}`);
+        return;
+      }
+
+      console.log('[GerenciarUsuarios] organization_members atualizado com sucesso');
+
+      // 3. Atualizar lojas - deletar existentes
+      const { error: deleteError } = await supabase
         .from('lojas_acesso')
         .delete()
-        .eq('user_id', editingUser.id);
+        .eq('user_id', editingUser.id)
+        .eq('organization_id', organizationId);
 
+      if (deleteError) {
+        console.error('[GerenciarUsuarios] Erro ao deletar lojas_acesso:', deleteError);
+        toast.error(`Erro ao atualizar lojas: ${deleteError.message}`);
+        return;
+      }
+
+      // 4. Inserir novas lojas
       if (selectedLojas.length > 0) {
         const lojasData = selectedLojas.map(lojaId => ({
           user_id: editingUser.id,
           loja_id: lojaId,
           organization_id: organizationId,
         }));
-        await supabase.from('lojas_acesso').insert(lojasData);
+        
+        const { error: insertError } = await supabase.from('lojas_acesso').insert(lojasData);
+        
+        if (insertError) {
+          console.error('[GerenciarUsuarios] Erro ao inserir lojas_acesso:', insertError);
+          toast.error(`Erro ao vincular lojas: ${insertError.message}`);
+          return;
+        }
       }
 
-      // 3. Atualizar page overrides
-      await supabase
+      console.log('[GerenciarUsuarios] lojas_acesso atualizado com sucesso');
+
+      // 5. Atualizar page overrides
+      const { error: deletePageError } = await supabase
         .from('user_page_access')
         .delete()
         .eq('user_id', editingUser.id)
         .eq('organization_id', organizationId);
+
+      if (deletePageError) {
+        console.error('[GerenciarUsuarios] Erro ao deletar user_page_access:', deletePageError);
+      }
 
       const pageOverrideEntries = Object.entries(pageOverrides);
       if (pageOverrideEntries.length > 0) {
@@ -329,19 +368,28 @@ const GerenciarUsuarios = () => {
           page_route: route,
           enabled,
         }));
-        await supabase.from('user_page_access').insert(pageData);
+        
+        const { error: insertPageError } = await supabase.from('user_page_access').insert(pageData);
+        
+        if (insertPageError) {
+          console.error('[GerenciarUsuarios] Erro ao inserir user_page_access:', insertPageError);
+        }
       }
+
+      console.log('[GerenciarUsuarios] user_page_access atualizado com sucesso');
 
       await auditLog.log('user.update', 'user', editingUser.id, {
         target_email: editingUser.email,
         lojas: selectedLojas,
+        newRole,
+        detectedProfile,
       });
 
-      toast.success('Usuário atualizado com sucesso!');
+      toast.success(`Usuário atualizado! Perfil: ${detectedProfile.toUpperCase()}, Role: ${newRole}`);
       setEditModalOpen(false);
       fetchData();
     } catch (error) {
-      console.error('Erro ao salvar usuário:', error);
+      console.error('[GerenciarUsuarios] Erro geral ao salvar usuário:', error);
       toast.error('Erro ao salvar usuário');
     } finally {
       setSaving(false);
