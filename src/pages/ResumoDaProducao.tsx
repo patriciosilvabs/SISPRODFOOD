@@ -11,6 +11,7 @@ import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
+import { useCPDLoja } from '@/hooks/useCPDLoja';
 
 
 interface DetalheLojaProducao {
@@ -87,6 +88,7 @@ const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
 const ResumoDaProducao = () => {
   const { user, profile } = useAuth();
   const { organizationId } = useOrganization();
+  const { cpdLojaId } = useCPDLoja();
   const { playAlarm, stopAlarm } = useAlarmSound();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
@@ -696,17 +698,40 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Incrementar estoque CPD com unidades produzidas
-      const { error: estoqueError } = await supabase.rpc('incrementar_estoque_cpd', {
-        p_item_id: selectedRegistro.item_id,
-        p_quantidade: data.unidades_reais
-      });
+      // Incrementar estoque CPD (tabela unificada estoque_loja_itens)
+      if (cpdLojaId) {
+        // Buscar estoque atual
+        const { data: estoqueAtual } = await supabase
+          .from('estoque_loja_itens')
+          .select('quantidade')
+          .eq('loja_id', cpdLojaId)
+          .eq('item_porcionado_id', selectedRegistro.item_id)
+          .maybeSingle();
 
-      if (estoqueError) {
-        console.error('Erro ao atualizar estoque CPD:', estoqueError);
-        toast.error('Produção finalizada, mas erro ao atualizar estoque');
+        const novaQuantidade = (estoqueAtual?.quantidade || 0) + data.unidades_reais;
+
+        // Upsert no estoque CPD
+        const { error: estoqueError } = await supabase
+          .from('estoque_loja_itens')
+          .upsert({
+            loja_id: cpdLojaId,
+            item_porcionado_id: selectedRegistro.item_id,
+            quantidade: novaQuantidade,
+            data_ultima_movimentacao: new Date().toISOString(),
+            organization_id: organizationId
+          }, { 
+            onConflict: 'loja_id,item_porcionado_id'
+          });
+
+        if (estoqueError) {
+          console.error('Erro ao atualizar estoque CPD:', estoqueError);
+          toast.error('Produção finalizada, mas erro ao atualizar estoque');
+        } else {
+          toast.success('Produção finalizada com sucesso!');
+        }
       } else {
-        toast.success('Produção finalizada com sucesso!');
+        console.error('CPD Loja não encontrada');
+        toast.error('Produção finalizada, mas CPD não configurado');
       }
 
       // Atualização otimista: mover card localmente
