@@ -37,7 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Factory, FileText } from 'lucide-react';
+import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Factory, FileText, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -604,10 +604,16 @@ const GerenciarUsuarios = () => {
               Gerencie perfis e acesso às páginas do sistema
             </p>
           </div>
-          <Button onClick={() => setInviteModalOpen(true)}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Convidar Funcionário
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => fetchData()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            <Button onClick={() => setInviteModalOpen(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Convidar Funcionário
+            </Button>
+          </div>
         </div>
 
         {/* Pending Invites */}

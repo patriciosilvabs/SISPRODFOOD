@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Truck, Plus, Trash2, Send, CheckCircle, Clock, History, Package, ArrowRightLeft, Store, Search, Loader2, ClipboardList, ShoppingCart } from 'lucide-react';
+import { Truck, Plus, Trash2, Send, CheckCircle, Clock, History, Package, ArrowRightLeft, Store, Search, Loader2, ClipboardList, ShoppingCart, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -1486,9 +1486,15 @@ const Romaneio = () => {
   return (
     <Layout>
       <div className="space-y-8">
-        <div className="flex items-center gap-2">
-          <Truck className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold">Romaneio</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Truck className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-bold">Romaneio</h1>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { fetchItensDisponiveis(); fetchRomaneiosEnviados(); fetchRomaneiosHistorico(); fetchProdutos(); fetchRomaneiosProdutos(); }} disabled={loadingPorcionados}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loadingPorcionados ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
         </div>
 
         {/* ==================== SEÇÃO: ROMANEIO DE PORCIONADOS ==================== */}

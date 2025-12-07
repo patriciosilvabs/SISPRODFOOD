@@ -14,6 +14,7 @@ import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
+import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 
 
@@ -1029,6 +1030,10 @@ const ResumoDaProducao = () => {
                 Sincronizando...
               </Badge>
             )}
+            <Button variant="outline" size="sm" onClick={() => loadProducaoRegistros()} disabled={isRefreshing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
           </div>
         </div>
 
