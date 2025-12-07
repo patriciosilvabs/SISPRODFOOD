@@ -1481,6 +1481,31 @@ const Romaneio = () => {
     }
   };
 
+  // ==================== REFRESH HANDLER ====================
+
+  const handleRefresh = async () => {
+    setLoadingPorcionados(true);
+    try {
+      await Promise.all([
+        fetchItensDisponiveis(),
+        fetchRomaneiosEnviados(),
+        fetchRomaneiosHistorico(),
+        fetchRomaneiosAvulsos(),
+        fetchProdutos(),
+        fetchEstoquesProdutos(),
+        fetchRomaneiosProdutos(),
+        fetchRomaneiosProdutosEnviados(),
+        lojaSelecionadaProduto ? fetchDadosLojaSelecionada() : Promise.resolve()
+      ]);
+      toast.success('Dados atualizados!');
+    } catch (error) {
+      console.error('Erro ao atualizar:', error);
+      toast.error('Erro ao atualizar dados');
+    } finally {
+      setLoadingPorcionados(false);
+    }
+  };
+
   // ==================== RENDER ====================
 
   return (
@@ -1491,7 +1516,7 @@ const Romaneio = () => {
             <Truck className="h-6 w-6 text-primary" />
             <h1 className="text-2xl font-bold">Romaneio</h1>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { fetchItensDisponiveis(); fetchRomaneiosEnviados(); fetchRomaneiosHistorico(); fetchProdutos(); fetchRomaneiosProdutos(); }} disabled={loadingPorcionados}>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loadingPorcionados}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingPorcionados ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
