@@ -3,6 +3,7 @@ import { Layout } from "@/components/Layout";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCPDLoja } from "@/hooks/useCPDLoja";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,6 +119,7 @@ const STATUS_PEDIDO = {
 export default function EstoqueProdutosCPD() {
   const { organizationId } = useOrganization();
   const { profile } = useAuth();
+  const { cpdLojaId } = useCPDLoja();
   const { toast } = useToast();
 
   const [activeTab, setActiveTab] = useState("estoque");
@@ -160,17 +162,24 @@ export default function EstoqueProdutosCPD() {
       if (produtosError) throw produtosError;
       setProdutos(produtosData || []);
 
-      // Buscar estoques CPD
+      // Buscar estoques CPD (agora da tabela unificada estoque_loja_produtos)
+      if (!cpdLojaId) {
+        setEstoques([]);
+        setLoading(false);
+        return;
+      }
+
       const { data: estoquesData, error: estoquesError } = await supabase
-        .from("estoque_cpd_produtos")
-        .select("*")
-        .eq("organization_id", organizationId);
+        .from("estoque_loja_produtos")
+        .select("id, produto_id, quantidade, data_ultima_atualizacao")
+        .eq("loja_id", cpdLojaId);
 
       if (estoquesError) throw estoquesError;
       
       // Mapear estoques com produtos
       const estoquesComProdutos = (estoquesData || []).map(est => ({
         ...est,
+        data_ultima_movimentacao: est.data_ultima_atualizacao,
         produto: produtosData?.find(p => p.id === est.produto_id)
       }));
       
@@ -236,8 +245,10 @@ export default function EstoqueProdutosCPD() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, [organizationId]);
+    if (cpdLojaId) {
+      fetchData();
+    }
+  }, [organizationId, cpdLojaId]);
 
   useEffect(() => {
     if (activeTab === "receber") {
@@ -311,16 +322,27 @@ export default function EstoqueProdutosCPD() {
         return;
       }
 
-      // Upsert no estoque
+      // Upsert no estoque (tabela unificada)
+      if (!cpdLojaId) {
+        toast({
+          title: "Erro",
+          description: "Loja CPD não encontrada",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const { error: estoqueError } = await supabase
-        .from("estoque_cpd_produtos")
+        .from("estoque_loja_produtos")
         .upsert({
+          loja_id: cpdLojaId,
           produto_id: produtoSelecionado,
           quantidade: quantidadeFinal,
-          data_ultima_movimentacao: new Date().toISOString(),
+          data_ultima_atualizacao: new Date().toISOString(),
           organization_id: organizationId,
         }, {
-          onConflict: "organization_id,produto_id",
+          onConflict: "loja_id,produto_id",
         });
 
       if (estoqueError) throw estoqueError;
@@ -469,19 +491,22 @@ export default function EstoqueProdutosCPD() {
             const quantidadeAnterior = estoqueAtual?.quantidade || 0;
             const quantidadeFinal = quantidadeAnterior + item.quantidade_recebida;
 
-            // Upsert estoque
-            const { error: estoqueError } = await supabase
-              .from("estoque_cpd_produtos")
-              .upsert({
-                produto_id: itemOriginal.produto_id,
-                quantidade: quantidadeFinal,
-                data_ultima_movimentacao: new Date().toISOString(),
-                organization_id: organizationId,
-              }, {
-                onConflict: "organization_id,produto_id",
-              });
+            // Upsert estoque (tabela unificada)
+            if (cpdLojaId) {
+              const { error: estoqueError } = await supabase
+                .from("estoque_loja_produtos")
+                .upsert({
+                  loja_id: cpdLojaId,
+                  produto_id: itemOriginal.produto_id,
+                  quantidade: quantidadeFinal,
+                  data_ultima_atualizacao: new Date().toISOString(),
+                  organization_id: organizationId,
+                }, {
+                  onConflict: "loja_id,produto_id",
+                });
 
-            if (estoqueError) throw estoqueError;
+              if (estoqueError) throw estoqueError;
+            }
 
             // Registrar movimentação
             const { error: movError } = await supabase

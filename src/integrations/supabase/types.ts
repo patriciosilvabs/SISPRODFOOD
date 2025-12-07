@@ -937,6 +937,7 @@ export type Database = {
           nome: string
           organization_id: string | null
           responsavel: string
+          tipo: string | null
         }
         Insert: {
           created_at?: string | null
@@ -944,6 +945,7 @@ export type Database = {
           nome: string
           organization_id?: string | null
           responsavel: string
+          tipo?: string | null
         }
         Update: {
           created_at?: string | null
@@ -951,6 +953,7 @@ export type Database = {
           nome?: string
           organization_id?: string | null
           responsavel?: string
+          tipo?: string | null
         }
         Relationships: [
           {
@@ -2291,6 +2294,7 @@ export type Database = {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
       }
+      get_cpd_loja_id: { Args: { p_organization_id: string }; Returns: string }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       has_permission: {
