@@ -37,8 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Key, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Factory, FileText } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -46,10 +45,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { PermissionsEditor } from '@/components/permissions/PermissionsEditor';
-import { PERMISSIONS_CONFIG } from '@/lib/permissions';
-import { UIPermissionsConfig } from '@/lib/ui-permissions-config';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { SYSTEM_PAGES, PAGE_SECTIONS, getProfileLabel, UserProfile } from '@/lib/page-access-config';
 
 interface Profile {
   id: string;
@@ -58,26 +55,22 @@ interface Profile {
   created_at: string;
 }
 
-interface UserRole {
-  user_id: string;
-  role: 'Admin' | 'Produção' | 'Loja';
-}
-
-interface LojaAcesso {
-  user_id: string;
-  loja_id: string;
-}
-
 interface Loja {
   id: string;
   nome: string;
+  tipo: string;
+}
+
+interface PageAccessOverride {
+  page_route: string;
+  enabled: boolean;
 }
 
 interface UsuarioCompleto extends Profile {
-  roles: string[];
-  lojas: { id: string; nome: string }[];
-  permissions: string[];
+  lojas: { id: string; nome: string; tipo: string }[];
   isAdmin: boolean;
+  profile: UserProfile;
+  pageOverrides: PageAccessOverride[];
 }
 
 interface ConvitePendente {
@@ -91,16 +84,8 @@ interface ConvitePendente {
   convidado_por_nome: string;
 }
 
-const roleLabels: Record<string, { label: string; color: string; description: string }> = {
-  'Admin': { 
-    label: 'Admin', 
-    color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    description: 'Acesso total ao sistema (todas as permissões)'
-  },
-};
-
 const GerenciarUsuarios = () => {
-  const { user: currentUser, isAdmin: currentUserIsAdmin } = useAuth();
+  const { user: currentUser } = useAuth();
   const { organizationId } = useOrganization();
   const auditLog = useAuditLog();
   const [usuarios, setUsuarios] = useState<UsuarioCompleto[]>([]);
@@ -112,9 +97,8 @@ const GerenciarUsuarios = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UsuarioCompleto | null>(null);
   const [isAdminRole, setIsAdminRole] = useState(false);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
-  const [selectedUIPermissions, setSelectedUIPermissions] = useState<Record<string, UIPermissionsConfig>>({});
+  const [pageOverrides, setPageOverrides] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   
   // Delete dialog state
@@ -125,9 +109,8 @@ const GerenciarUsuarios = () => {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteIsAdmin, setInviteIsAdmin] = useState(false);
-  const [invitePermissions, setInvitePermissions] = useState<string[]>([]);
   const [inviteLojas, setInviteLojas] = useState<string[]>([]);
-  const [inviteUIPermissions, setInviteUIPermissions] = useState<Record<string, UIPermissionsConfig>>({});
+  const [invitePageOverrides, setInvitePageOverrides] = useState<Record<string, boolean>>({});
   const [sendingInvite, setSendingInvite] = useState(false);
   
   // Cancel invite dialog state
@@ -143,29 +126,23 @@ const GerenciarUsuarios = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-
-      if (!organizationId) {
-        setLoading(false);
-        return;
-      }
+      if (!organizationId) return;
       
-      // Buscar membros da organização primeiro
+      // Buscar membros da organização
       const { data: members, error: membersError } = await supabase
         .from('organization_members')
-        .select('user_id')
+        .select('user_id, is_admin')
         .eq('organization_id', organizationId);
 
       if (membersError) throw membersError;
-
       const memberUserIds = (members || []).map(m => m.user_id);
-
       if (memberUserIds.length === 0) {
         setUsuarios([]);
         setLoading(false);
         return;
       }
 
-      // Buscar profiles dos membros da organização
+      // Buscar profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*')
@@ -174,25 +151,17 @@ const GerenciarUsuarios = () => {
 
       if (profilesError) throw profilesError;
 
-      // Buscar roles dos membros
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-        .in('user_id', memberUserIds);
-
-      if (rolesError) throw rolesError;
-
-      // Buscar lojas da organização
+      // Buscar lojas
       const { data: lojasData, error: lojasError } = await supabase
         .from('lojas')
-        .select('*')
+        .select('id, nome, tipo')
         .eq('organization_id', organizationId)
         .order('nome');
 
       if (lojasError) throw lojasError;
       setLojas(lojasData || []);
 
-      // Buscar acessos às lojas dos membros
+      // Buscar acessos às lojas
       const { data: lojasAcesso, error: lojasAcessoError } = await supabase
         .from('lojas_acesso')
         .select('user_id, loja_id')
@@ -200,14 +169,14 @@ const GerenciarUsuarios = () => {
 
       if (lojasAcessoError) throw lojasAcessoError;
 
-      // Buscar permissões granulares
-      const { data: permissionsData, error: permissionsError } = await supabase
-        .from('user_permissions')
-        .select('user_id, permission_key')
+      // Buscar page overrides
+      const { data: pageAccessData, error: pageAccessError } = await supabase
+        .from('user_page_access')
+        .select('user_id, page_route, enabled')
         .in('user_id', memberUserIds)
-        .eq('granted', true);
+        .eq('organization_id', organizationId);
 
-      if (permissionsError) console.error('Erro ao buscar permissões:', permissionsError);
+      if (pageAccessError) console.error('Erro ao buscar page access:', pageAccessError);
 
       // Buscar convites pendentes
       const { data: convites, error: convitesError } = await supabase
@@ -217,38 +186,38 @@ const GerenciarUsuarios = () => {
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
-      if (convitesError) {
-        console.error('Erro ao buscar convites:', convitesError);
-      } else {
-        setConvitesPendentes(convites || []);
-      }
+      if (!convitesError) setConvitesPendentes(convites || []);
 
       // Combinar dados
       const usuariosCompletos: UsuarioCompleto[] = (profiles || []).map(profile => {
-        const userRoles = (roles || [])
-          .filter(r => r.user_id === profile.id)
-          .map(r => r.role);
-
+        const memberInfo = members?.find(m => m.user_id === profile.id);
+        const isAdmin = memberInfo?.is_admin === true;
+        
         const userLojas = (lojasAcesso || [])
           .filter(la => la.user_id === profile.id)
           .map(la => {
             const loja = lojasData?.find(l => l.id === la.loja_id);
             return {
               id: la.loja_id,
-              nome: loja?.nome || 'Loja Desconhecida'
+              nome: loja?.nome || 'Loja Desconhecida',
+              tipo: loja?.tipo || 'loja'
             };
           });
 
-        const userPermissions = (permissionsData || [])
-          .filter(p => p.user_id === profile.id)
-          .map(p => p.permission_key);
+        const userPageOverrides = (pageAccessData || [])
+          .filter(pa => pa.user_id === profile.id)
+          .map(pa => ({ page_route: pa.page_route, enabled: pa.enabled }));
+
+        // Determinar perfil baseado em lojas
+        const hasCPD = userLojas.some(l => l.tipo === 'cpd');
+        const detectedProfile: UserProfile = isAdmin ? 'admin' : hasCPD ? 'cpd' : 'loja';
 
         return {
           ...profile,
-          roles: userRoles,
           lojas: userLojas,
-          permissions: userPermissions,
-          isAdmin: userRoles.includes('Admin'),
+          isAdmin,
+          profile: detectedProfile,
+          pageOverrides: userPageOverrides,
         };
       });
 
@@ -264,9 +233,13 @@ const GerenciarUsuarios = () => {
   const handleEditClick = (usuario: UsuarioCompleto) => {
     setEditingUser(usuario);
     setIsAdminRole(usuario.isAdmin);
-    setSelectedPermissions(usuario.permissions);
     setSelectedLojas(usuario.lojas.map(l => l.id));
-    setSelectedUIPermissions({});
+    // Converter overrides para objeto
+    const overridesObj: Record<string, boolean> = {};
+    usuario.pageOverrides.forEach(o => {
+      overridesObj[o.page_route] = o.enabled;
+    });
+    setPageOverrides(overridesObj);
     setEditModalOpen(true);
   };
 
@@ -283,79 +256,38 @@ const GerenciarUsuarios = () => {
     );
   };
 
+  const handlePageToggle = (route: string, isOverride: boolean) => {
+    setPageOverrides(prev => {
+      const newOverrides = { ...prev };
+      if (isOverride) {
+        newOverrides[route] = !prev[route];
+      } else {
+        delete newOverrides[route];
+      }
+      return newOverrides;
+    });
+  };
+
   const handleSave = async () => {
     if (!editingUser || !organizationId) return;
 
-    // Validação: não permitir que admin remova seu próprio role
+    // Validação
     if (editingUser.id === currentUser?.id && editingUser.isAdmin && !isAdminRole) {
-      toast.error('Você não pode remover seu próprio role de Admin');
+      toast.error('Você não pode remover seu próprio status de Admin');
       return;
     }
 
     try {
       setSaving(true);
 
-      // 1. Atualizar roles (manter apenas Admin ou remover)
+      // 1. Atualizar is_admin em organization_members
       await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', editingUser.id);
-
-      if (isAdminRole) {
-        await supabase
-          .from('user_roles')
-          .insert({ user_id: editingUser.id, role: 'Admin' });
-      }
-
-      // 2. Atualizar permissões granulares (apenas se não for admin)
-      await supabase
-        .from('user_permissions')
-        .delete()
+        .from('organization_members')
+        .update({ is_admin: isAdminRole })
         .eq('user_id', editingUser.id)
         .eq('organization_id', organizationId);
 
-      if (!isAdminRole && selectedPermissions.length > 0) {
-        const permissionsToInsert = selectedPermissions.map(perm => ({
-          user_id: editingUser.id,
-          organization_id: organizationId,
-          permission_key: perm,
-          granted: true,
-        }));
-
-        const { error: permError } = await supabase
-          .from('user_permissions')
-          .insert(permissionsToInsert);
-
-        if (permError) throw permError;
-      }
-
-      // 4. Atualizar UI permissions por usuário
-      if (!isAdminRole && Object.keys(selectedUIPermissions).length > 0) {
-        // Deletar UI permissions existentes do usuário
-        await supabase
-          .from('ui_permissions')
-          .delete()
-          .eq('user_id', editingUser.id)
-          .eq('organization_id', organizationId);
-
-        // Inserir novas UI permissions
-        const uiPermissionsToInsert = Object.entries(selectedUIPermissions).map(([paginaId, config]) => ({
-          user_id: editingUser.id,
-          organization_id: organizationId,
-          pagina_id: paginaId,
-          config: JSON.parse(JSON.stringify(config)),
-        }));
-
-        if (uiPermissionsToInsert.length > 0) {
-          const { error: uiPermError } = await supabase
-            .from('ui_permissions')
-            .insert(uiPermissionsToInsert);
-
-          if (uiPermError) console.error('Erro ao salvar UI permissions:', uiPermError);
-        }
-      }
-
-      // 5. Atualizar lojas
+      // 2. Atualizar lojas
       await supabase
         .from('lojas_acesso')
         .delete()
@@ -367,21 +299,32 @@ const GerenciarUsuarios = () => {
           loja_id: lojaId,
           organization_id: organizationId,
         }));
-        const { error: lojasError } = await supabase
-          .from('lojas_acesso')
-          .insert(lojasData);
-
-        if (lojasError) throw lojasError;
+        await supabase.from('lojas_acesso').insert(lojasData);
       }
 
-      // Log de auditoria
-      await auditLog.log('role.assign', 'user', editingUser.id, {
+      // 3. Atualizar page overrides
+      await supabase
+        .from('user_page_access')
+        .delete()
+        .eq('user_id', editingUser.id)
+        .eq('organization_id', organizationId);
+
+      const pageOverrideEntries = Object.entries(pageOverrides);
+      if (pageOverrideEntries.length > 0) {
+        const pageData = pageOverrideEntries.map(([route, enabled]) => ({
+          user_id: editingUser.id,
+          organization_id: organizationId,
+          page_route: route,
+          enabled,
+        }));
+        await supabase.from('user_page_access').insert(pageData);
+      }
+
+      await auditLog.log('user.update', 'user', editingUser.id, {
         target_email: editingUser.email,
-        target_name: editingUser.nome,
-        role: isAdminRole ? 'Admin' : 'Custom',
-        previous_roles: editingUser.roles,
-        new_permissions: selectedPermissions,
-        new_lojas: selectedLojas,
+        is_admin: isAdminRole,
+        lojas: selectedLojas,
+        page_overrides: pageOverrides,
       });
 
       toast.success('Usuário atualizado com sucesso!');
@@ -398,7 +341,6 @@ const GerenciarUsuarios = () => {
   const handleDelete = async () => {
     if (!deletingUser || !organizationId) return;
 
-    // Validação: não permitir que admin delete a si mesmo
     if (deletingUser.id === currentUser?.id) {
       toast.error('Você não pode deletar sua própria conta');
       setDeleteDialogOpen(false);
@@ -406,41 +348,30 @@ const GerenciarUsuarios = () => {
     }
 
     try {
-      // Remover roles, permissões e acessos
+      // Remover acesso a lojas e page overrides
+      await supabase.from('lojas_acesso').delete().eq('user_id', deletingUser.id);
+      await supabase.from('user_page_access').delete().eq('user_id', deletingUser.id).eq('organization_id', organizationId);
+      
+      // Remover is_admin
       await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', deletingUser.id);
-
-      await supabase
-        .from('user_permissions')
-        .delete()
+        .from('organization_members')
+        .update({ is_admin: false })
         .eq('user_id', deletingUser.id)
         .eq('organization_id', organizationId);
 
-      await supabase
-        .from('lojas_acesso')
-        .delete()
-        .eq('user_id', deletingUser.id);
-
-      // Log de auditoria
       await auditLog.log('user.remove', 'user', deletingUser.id, {
         target_email: deletingUser.email,
-        target_name: deletingUser.nome,
-        removed_roles: deletingUser.roles,
-        removed_permissions: deletingUser.permissions,
       });
 
-      toast.success('Permissões do usuário removidas com sucesso');
+      toast.success('Permissões do usuário removidas');
       setDeleteDialogOpen(false);
       fetchData();
     } catch (error) {
       console.error('Erro ao remover permissões:', error);
-      toast.error('Erro ao remover permissões do usuário');
+      toast.error('Erro ao remover permissões');
     }
   };
 
-  // Invite handlers
   const handleInviteLojaToggle = (lojaId: string) => {
     setInviteLojas(prev =>
       prev.includes(lojaId)
@@ -456,16 +387,10 @@ const GerenciarUsuarios = () => {
     }
 
     if (!inviteIsAdmin && inviteLojas.length === 0) {
-      toast.error('Selecione pelo menos uma loja para este usuário');
+      toast.error('Selecione pelo menos uma loja');
       return;
     }
 
-    if (!inviteIsAdmin && invitePermissions.length === 0) {
-      toast.error('Selecione pelo menos uma permissão ou marque como Admin');
-      return;
-    }
-
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(inviteEmail)) {
       toast.error('Email inválido');
@@ -474,28 +399,28 @@ const GerenciarUsuarios = () => {
 
     try {
       setSendingInvite(true);
-
-      // Montar roles baseado nas seleções
       const roles = inviteIsAdmin ? ['Admin'] : [];
 
       const { data, error } = await supabase.functions.invoke('convidar-funcionario', {
         body: {
           email: inviteEmail.toLowerCase().trim(),
-          roles: roles,
+          roles,
           lojas_ids: inviteLojas,
-          permissions: inviteIsAdmin ? [] : invitePermissions,
+          permissions: [], // Não usa mais permissões granulares
+          page_overrides: invitePageOverrides,
+          is_admin: inviteIsAdmin,
         },
       });
 
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      toast.success(data.message || 'Convite enviado com sucesso!');
+      toast.success(data.message || 'Convite enviado!');
       setInviteModalOpen(false);
       setInviteEmail('');
       setInviteIsAdmin(false);
-      setInvitePermissions([]);
       setInviteLojas([]);
+      setInvitePageOverrides({});
       fetchData();
     } catch (error: any) {
       console.error('Erro ao enviar convite:', error);
@@ -507,14 +432,11 @@ const GerenciarUsuarios = () => {
 
   const handleCancelInvite = async () => {
     if (!cancelingInvite) return;
-
     try {
-      const { error } = await supabase
+      await supabase
         .from('convites_pendentes')
         .update({ status: 'cancelado' })
         .eq('id', cancelingInvite.id);
-
-      if (error) throw error;
 
       toast.success('Convite cancelado');
       setCancelInviteDialogOpen(false);
@@ -526,40 +448,83 @@ const GerenciarUsuarios = () => {
     }
   };
 
-  const handleResendInvite = async (convite: ConvitePendente) => {
-    try {
-      // Delete old invite and create new one
-      await supabase
-        .from('convites_pendentes')
-        .delete()
-        .eq('id', convite.id);
-
-      const { data, error } = await supabase.functions.invoke('convidar-funcionario', {
-        body: {
-          email: convite.email,
-          roles: convite.roles,
-          lojas_ids: convite.lojas_ids,
-        },
-      });
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      toast.success('Convite reenviado com sucesso!');
-      fetchData();
-    } catch (error: any) {
-      console.error('Erro ao reenviar convite:', error);
-      toast.error(error.message || 'Erro ao reenviar convite');
-    }
-  };
-
   const getLojaNameById = (lojaId: string) => {
     const loja = lojas.find(l => l.id === lojaId);
     return loja?.nome || 'Loja Desconhecida';
   };
 
-  const getPermissionCount = (permissions: string[]) => {
-    return permissions.length;
+  // Detectar perfil baseado nas lojas selecionadas (para modal de edição/convite)
+  const getDetectedProfile = (selectedLojaIds: string[], isAdmin: boolean): UserProfile => {
+    if (isAdmin) return 'admin';
+    const hasCPD = selectedLojaIds.some(id => {
+      const loja = lojas.find(l => l.id === id);
+      return loja?.tipo === 'cpd';
+    });
+    return hasCPD ? 'cpd' : 'loja';
+  };
+
+  const renderPageCheckboxes = (
+    overrides: Record<string, boolean>,
+    setOverrides: (fn: (prev: Record<string, boolean>) => Record<string, boolean>) => void,
+    profile: UserProfile
+  ) => {
+    const sections = Object.entries(PAGE_SECTIONS);
+    
+    return (
+      <div className="space-y-4">
+        {sections.map(([key, section]) => (
+          <div key={key} className="space-y-2">
+            <h4 className="text-sm font-semibold text-muted-foreground">{section.label}</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {section.pages.map(page => {
+                // Verificar se está no override ou no default do perfil
+                const isInOverride = page.route in overrides;
+                const overrideValue = overrides[page.route];
+                
+                // Importar defaults
+                const { PROFILE_DEFAULT_PAGES } = require('@/lib/page-access-config');
+                const defaultPages = PROFILE_DEFAULT_PAGES[profile] || [];
+                const isDefaultEnabled = defaultPages.includes(page.route);
+                
+                const isEnabled = isInOverride ? overrideValue : isDefaultEnabled;
+                
+                return (
+                  <div 
+                    key={page.route} 
+                    className={`flex items-center space-x-2 p-2 rounded border ${isInOverride ? 'border-primary/50 bg-primary/5' : ''}`}
+                  >
+                    <Checkbox
+                      id={`page-${page.route}`}
+                      checked={isEnabled}
+                      onCheckedChange={(checked) => {
+                        setOverrides(prev => {
+                          const newOverrides = { ...prev };
+                          if (checked === isDefaultEnabled) {
+                            // Se volta ao default, remove o override
+                            delete newOverrides[page.route];
+                          } else {
+                            newOverrides[page.route] = !!checked;
+                          }
+                          return newOverrides;
+                        });
+                      }}
+                    />
+                    <label htmlFor={`page-${page.route}`} className="text-sm cursor-pointer flex-1">
+                      {page.label}
+                    </label>
+                    {isInOverride && (
+                      <Badge variant="outline" className="text-xs">
+                        personalizado
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -570,7 +535,7 @@ const GerenciarUsuarios = () => {
           <div>
             <h1 className="text-3xl font-bold">Gerenciar Usuários</h1>
             <p className="text-muted-foreground mt-1">
-              Configure permissões granulares e vincule lojas aos usuários
+              Gerencie perfis e acesso às páginas do sistema
             </p>
           </div>
           <Button onClick={() => setInviteModalOpen(true)}>
@@ -591,10 +556,7 @@ const GerenciarUsuarios = () => {
             <CardContent>
               <div className="space-y-3">
                 {convitesPendentes.map((convite) => (
-                  <div 
-                    key={convite.id} 
-                    className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border"
-                  >
+                  <div key={convite.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <Mail className="h-4 w-4 text-muted-foreground" />
@@ -602,13 +564,17 @@ const GerenciarUsuarios = () => {
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         {convite.roles.includes('Admin') ? (
-                          <Badge variant="secondary" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                          <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                            <Shield className="h-3 w-3 mr-1" />
                             Admin
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs">
-                            <Key className="h-3 w-3 mr-1" />
-                            Permissões personalizadas
+                          <Badge variant="outline">
+                            {convite.lojas_ids.some(id => lojas.find(l => l.id === id)?.tipo === 'cpd') ? (
+                              <><Factory className="h-3 w-3 mr-1" />CPD</>
+                            ) : (
+                              <><Store className="h-3 w-3 mr-1" />Loja</>
+                            )}
                           </Badge>
                         )}
                         {convite.lojas_ids.length > 0 && (
@@ -620,19 +586,9 @@ const GerenciarUsuarios = () => {
                       <p className="text-xs text-muted-foreground mt-1">
                         Convidado por {convite.convidado_por_nome} em{' '}
                         {format(new Date(convite.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                        {' • Expira em '}
-                        {format(new Date(convite.expires_at), "dd/MM/yyyy", { locale: ptBR })}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleResendInvite(convite)}
-                      >
-                        <Send className="h-4 w-4 mr-1" />
-                        Reenviar
-                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -655,13 +611,9 @@ const GerenciarUsuarios = () => {
         <Card>
           <CardContent className="pt-6">
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Carregando usuários...
-              </div>
+              <div className="text-center py-8 text-muted-foreground">Carregando...</div>
             ) : usuarios.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Nenhum usuário cadastrado
-              </div>
+              <div className="text-center py-8 text-muted-foreground">Nenhum usuário cadastrado</div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -669,10 +621,9 @@ const GerenciarUsuarios = () => {
                     <TableRow>
                       <TableHead>Nome</TableHead>
                       <TableHead>Email</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Permissões</TableHead>
+                      <TableHead>Perfil</TableHead>
                       <TableHead>Lojas</TableHead>
-                      <TableHead>Data Criação</TableHead>
+                      <TableHead>Criação</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -692,28 +643,18 @@ const GerenciarUsuarios = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {usuario.isAdmin ? (
-                            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                              <Shield className="h-3 w-3 mr-1" />
-                              Admin
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">
-                              <Key className="h-3 w-3 mr-1" />
-                              Personalizado
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {usuario.isAdmin ? (
-                            <span className="text-sm text-muted-foreground">Acesso total</span>
-                          ) : usuario.permissions.length > 0 ? (
-                            <Badge variant="secondary">
-                              {getPermissionCount(usuario.permissions)} permissão(ões)
-                            </Badge>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">Sem permissões</span>
-                          )}
+                          <Badge className={
+                            usuario.profile === 'admin' 
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              : usuario.profile === 'cpd'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                              : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                          }>
+                            {usuario.profile === 'admin' && <Shield className="h-3 w-3 mr-1" />}
+                            {usuario.profile === 'cpd' && <Factory className="h-3 w-3 mr-1" />}
+                            {usuario.profile === 'loja' && <Store className="h-3 w-3 mr-1" />}
+                            {getProfileLabel(usuario.profile)}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           {usuario.lojas.length > 0 ? (
@@ -733,11 +674,7 @@ const GerenciarUsuarios = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEditClick(usuario)}
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleEditClick(usuario)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
@@ -762,24 +699,22 @@ const GerenciarUsuarios = () => {
 
       {/* Invite Modal */}
       <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
               Convidar Funcionário
             </DialogTitle>
             <DialogDescription>
-              Envie um convite por email para adicionar um novo funcionário ao sistema
+              Envie um convite por email para adicionar um novo funcionário
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 max-h-[60vh] overflow-y-auto pr-4">
+          <div className="flex-1 max-h-[60vh] overflow-y-auto pr-2">
             <div className="space-y-6 py-4">
-              {/* Email Input */}
               <div className="space-y-2">
-                <Label htmlFor="invite-email">Email do Funcionário *</Label>
+                <Label>Email do Funcionário *</Label>
                 <Input
-                  id="invite-email"
                   type="email"
                   placeholder="funcionario@empresa.com"
                   value={inviteEmail}
@@ -787,7 +722,6 @@ const GerenciarUsuarios = () => {
                 />
               </div>
 
-              {/* Admin Toggle */}
               <div className="flex items-start space-x-3 p-4 rounded-lg border bg-muted/30">
                 <Checkbox
                   id="invite-admin"
@@ -795,137 +729,72 @@ const GerenciarUsuarios = () => {
                   onCheckedChange={(checked) => setInviteIsAdmin(!!checked)}
                 />
                 <div className="flex-1">
-                  <label htmlFor="invite-admin" className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2">
+                  <label htmlFor="invite-admin" className="text-sm font-medium cursor-pointer flex items-center gap-2">
                     <Shield className="h-4 w-4 text-red-600" />
                     Tornar Administrador
                   </label>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Administradores têm acesso total ao sistema sem restrições
+                    Acesso total ao sistema
                   </p>
                 </div>
               </div>
 
-              {/* Summary Badges (only if not admin) */}
               {!inviteIsAdmin && (
-                <div className="flex gap-2 flex-wrap">
-                  <Badge variant={inviteLojas.length > 0 ? "default" : "destructive"} className="flex items-center gap-1">
-                    {inviteLojas.length > 0 ? (
-                      <CheckCircle2 className="h-3 w-3" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3" />
-                    )}
-                    <Store className="h-3 w-3" />
-                    {inviteLojas.length} loja(s) *
-                  </Badge>
-                  <Badge variant={invitePermissions.length > 0 ? "secondary" : "outline"} className="flex items-center gap-1">
-                    <Key className="h-3 w-3" />
-                    {invitePermissions.length} permissão(ões)
-                  </Badge>
-                </div>
-              )}
+                <>
+                  {/* Perfil detectado */}
+                  <div className="p-3 rounded-lg bg-muted/50 border">
+                    <span className="text-sm text-muted-foreground">Perfil detectado: </span>
+                    <Badge>{getProfileLabel(getDetectedProfile(inviteLojas, inviteIsAdmin))}</Badge>
+                  </div>
 
-              {/* Lojas and Permissions Tabs (only if not admin) */}
-              {!inviteIsAdmin && (
-                <Tabs defaultValue="lojas" className="w-full">
-                  <TabsList className="w-full">
-                    <TabsTrigger value="lojas" className="flex-1">
-                      <Store className="h-4 w-4 mr-2" />
-                      Lojas * ({inviteLojas.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="permissions" className="flex-1">
-                      <Key className="h-4 w-4 mr-2" />
-                      Permissões ({invitePermissions.length})
-                    </TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="lojas" className="mt-4">
-                    <div className="space-y-3">
-                      {/* Validation Alert */}
-                      {inviteLojas.length === 0 && (
-                        <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-                          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                          <span className="text-sm">Selecione pelo menos uma loja (obrigatório)</span>
-                        </div>
-                      )}
-
-                      {/* Select All Button */}
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-muted-foreground">
-                          Lojas que este usuário poderá acessar *
-                        </p>
-                        {lojas.length > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (inviteLojas.length === lojas.length) {
-                                setInviteLojas([]);
-                              } else {
-                                setInviteLojas(lojas.map(l => l.id));
-                              }
-                            }}
-                          >
-                            {inviteLojas.length === lojas.length ? 'Desmarcar Todas' : 'Marcar Todas'}
-                          </Button>
-                        )}
+                  <Tabs defaultValue="lojas">
+                    <TabsList className="w-full">
+                      <TabsTrigger value="lojas" className="flex-1">
+                        <Store className="h-4 w-4 mr-2" />
+                        Lojas ({inviteLojas.length})
+                      </TabsTrigger>
+                      <TabsTrigger value="pages" className="flex-1">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Páginas
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="lojas" className="mt-4">
+                      <div className="space-y-2">
+                        {lojas.map(loja => (
+                          <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                            <Checkbox
+                              id={`invite-loja-${loja.id}`}
+                              checked={inviteLojas.includes(loja.id)}
+                              onCheckedChange={() => handleInviteLojaToggle(loja.id)}
+                            />
+                            <label htmlFor={`invite-loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                              {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                              {loja.nome}
+                              {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                            </label>
+                          </div>
+                        ))}
                       </div>
-
-                      {lojas.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          Nenhuma loja cadastrada no sistema
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {lojas.map(loja => (
-                            <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                              <Checkbox
-                                id={`invite-loja-${loja.id}`}
-                                checked={inviteLojas.includes(loja.id)}
-                                onCheckedChange={() => handleInviteLojaToggle(loja.id)}
-                              />
-                              <label
-                                htmlFor={`invite-loja-${loja.id}`}
-                                className="text-sm font-medium leading-none cursor-pointer flex-1"
-                              >
-                                {loja.nome}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="permissions" className="mt-4">
-                    <div className="max-h-[45vh] overflow-y-auto pr-2">
-                      <PermissionsEditor 
-                        selectedPermissions={invitePermissions}
-                        onChange={setInvitePermissions}
-                      />
-                    </div>
-                  </TabsContent>
-                </Tabs>
+                    </TabsContent>
+                    <TabsContent value="pages" className="mt-4">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
+                      </p>
+                      {renderPageCheckboxes(invitePageOverrides, setInvitePageOverrides, getDetectedProfile(inviteLojas, inviteIsAdmin))}
+                    </TabsContent>
+                  </Tabs>
+                </>
               )}
             </div>
           </div>
 
           <DialogFooter className="pt-4 border-t">
-            <Button variant="outline" onClick={() => setInviteModalOpen(false)}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setInviteModalOpen(false)}>Cancelar</Button>
             <Button 
               onClick={handleSendInvite} 
-              disabled={sendingInvite || !inviteEmail || (!inviteIsAdmin && (invitePermissions.length === 0 || inviteLojas.length === 0))}
+              disabled={sendingInvite || !inviteEmail || (!inviteIsAdmin && inviteLojas.length === 0)}
             >
-              {sendingInvite ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Enviar Convite
-                </>
-              )}
+              {sendingInvite ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Enviando...</> : <><Send className="h-4 w-4 mr-2" />Enviar</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -933,30 +802,22 @@ const GerenciarUsuarios = () => {
 
       {/* Edit Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Editar Usuário</DialogTitle>
-            <DialogDescription>
-              Configure as permissões e lojas do usuário
-            </DialogDescription>
+            <DialogDescription>Configure o perfil e acesso às páginas</DialogDescription>
           </DialogHeader>
 
           {editingUser && (
-            <div className="flex-1 overflow-y-auto max-h-[60vh] pr-4">
+            <div className="flex-1 overflow-y-auto max-h-[60vh] pr-2">
               <div className="space-y-6 py-4">
-                {/* User Info */}
-                <div className="space-y-3 p-4 bg-muted rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <User className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-semibold">{editingUser.nome}</span>
+                <div className="p-4 bg-muted rounded-lg">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <User className="h-5 w-5" />{editingUser.nome}
                   </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-5 w-5" />
-                    <span>{editingUser.email}</span>
-                  </div>
+                  <div className="text-sm text-muted-foreground">{editingUser.email}</div>
                 </div>
 
-                {/* Admin Toggle */}
                 <div className="flex items-start space-x-3 p-4 rounded-lg border bg-muted/30">
                   <Checkbox
                     id="edit-admin"
@@ -965,130 +826,65 @@ const GerenciarUsuarios = () => {
                     disabled={editingUser.id === currentUser?.id && editingUser.isAdmin}
                   />
                   <div className="flex-1">
-                    <label htmlFor="edit-admin" className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2">
+                    <label htmlFor="edit-admin" className="text-sm font-medium cursor-pointer flex items-center gap-2">
                       <Shield className="h-4 w-4 text-red-600" />
                       Administrador
                     </label>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Administradores têm acesso total ao sistema sem restrições
-                    </p>
-                    {editingUser.id === currentUser?.id && editingUser.isAdmin && (
-                      <p className="text-xs text-amber-600 mt-2">
-                        Você não pode remover seu próprio role de Admin
-                      </p>
-                    )}
+                    <p className="text-sm text-muted-foreground mt-1">Acesso total ao sistema</p>
                   </div>
                 </div>
 
-                {/* Summary Badges (only if not admin) */}
                 {!isAdminRole && (
-                  <div className="flex gap-2 flex-wrap">
-                    <Badge variant={selectedLojas.length > 0 ? "default" : "destructive"} className="flex items-center gap-1">
-                      {selectedLojas.length > 0 ? (
-                        <CheckCircle2 className="h-3 w-3" />
-                      ) : (
-                        <AlertCircle className="h-3 w-3" />
-                      )}
-                      <Store className="h-3 w-3" />
-                      {selectedLojas.length} loja(s) *
-                    </Badge>
-                    <Badge variant={selectedPermissions.length > 0 ? "secondary" : "outline"} className="flex items-center gap-1">
-                      <Key className="h-3 w-3" />
-                      {selectedPermissions.length} permissão(ões)
-                    </Badge>
-                  </div>
-                )}
+                  <>
+                    <div className="p-3 rounded-lg bg-muted/50 border">
+                      <span className="text-sm text-muted-foreground">Perfil detectado: </span>
+                      <Badge>{getProfileLabel(getDetectedProfile(selectedLojas, isAdminRole))}</Badge>
+                    </div>
 
-                {/* Lojas and Permissions Tabs (only if not admin) */}
-                {!isAdminRole && (
-                  <Tabs defaultValue="lojas" className="w-full">
-                    <TabsList className="w-full">
-                      <TabsTrigger value="lojas" className="flex-1">
-                        <Store className="h-4 w-4 mr-2" />
-                        Lojas * ({selectedLojas.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="permissions" className="flex-1">
-                        <Key className="h-4 w-4 mr-2" />
-                        Permissões ({selectedPermissions.length})
-                      </TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="lojas" className="mt-4">
-                      <div className="space-y-3">
-                        {/* Validation Alert */}
-                        {selectedLojas.length === 0 && (
-                          <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-                            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                            <span className="text-sm">Selecione pelo menos uma loja (obrigatório)</span>
-                          </div>
-                        )}
-
-                        {/* Select All Button */}
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-muted-foreground">
-                            Lojas que este usuário poderá acessar *
-                          </p>
-                          {lojas.length > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                if (selectedLojas.length === lojas.length) {
-                                  setSelectedLojas([]);
-                                } else {
-                                  setSelectedLojas(lojas.map(l => l.id));
-                                }
-                              }}
-                            >
-                              {selectedLojas.length === lojas.length ? 'Desmarcar Todas' : 'Marcar Todas'}
-                            </Button>
-                          )}
+                    <Tabs defaultValue="lojas">
+                      <TabsList className="w-full">
+                        <TabsTrigger value="lojas" className="flex-1">
+                          <Store className="h-4 w-4 mr-2" />
+                          Lojas ({selectedLojas.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="pages" className="flex-1">
+                          <FileText className="h-4 w-4 mr-2" />
+                          Páginas
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="lojas" className="mt-4">
+                        <div className="space-y-2">
+                          {lojas.map(loja => (
+                            <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                              <Checkbox
+                                id={`loja-${loja.id}`}
+                                checked={selectedLojas.includes(loja.id)}
+                                onCheckedChange={() => handleLojaToggle(loja.id)}
+                              />
+                              <label htmlFor={`loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                                {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                                {loja.nome}
+                                {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                              </label>
+                            </div>
+                          ))}
                         </div>
-
-                        {lojas.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            Nenhuma loja cadastrada no sistema
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {lojas.map(loja => (
-                              <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                                <Checkbox
-                                  id={`loja-${loja.id}`}
-                                  checked={selectedLojas.includes(loja.id)}
-                                  onCheckedChange={() => handleLojaToggle(loja.id)}
-                                />
-                                <label
-                                  htmlFor={`loja-${loja.id}`}
-                                  className="text-sm font-medium leading-none cursor-pointer flex-1"
-                                >
-                                  {loja.nome}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </TabsContent>
-                    <TabsContent value="permissions" className="mt-4">
-                      <PermissionsEditor 
-                        selectedPermissions={selectedPermissions}
-                        onChange={setSelectedPermissions}
-                        userId={editingUser?.id}
-                        organizationId={organizationId || undefined}
-                        onUIPermissionsChange={setSelectedUIPermissions}
-                        initialUIPermissions={selectedUIPermissions}
-                      />
-                    </TabsContent>
-                  </Tabs>
+                      </TabsContent>
+                      <TabsContent value="pages" className="mt-4">
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
+                        </p>
+                        {renderPageCheckboxes(pageOverrides, setPageOverrides, getDetectedProfile(selectedLojas, isAdminRole))}
+                      </TabsContent>
+                    </Tabs>
+                  </>
                 )}
               </div>
             </div>
           )}
 
           <DialogFooter className="pt-4 border-t">
-            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? 'Salvando...' : 'Salvar'}
             </Button>
@@ -1100,22 +896,17 @@ const GerenciarUsuarios = () => {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover Permissões do Usuário?</AlertDialogTitle>
+            <AlertDialogTitle>Remover Permissões?</AlertDialogTitle>
             <AlertDialogDescription>
               {deletingUser && (
-                <>
-                  Isso removerá todas as permissões e vínculos de lojas do usuário{' '}
-                  <span className="font-semibold">{deletingUser.nome}</span>.
-                  <br /><br />
-                  O perfil do usuário será mantido, mas ele não terá mais acesso ao sistema até que novas permissões sejam atribuídas.
-                </>
+                <>Isso removerá todas as permissões e vínculos de <strong>{deletingUser.nome}</strong>.</>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
-              Remover Permissões
+              Remover
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1127,12 +918,7 @@ const GerenciarUsuarios = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar Convite?</AlertDialogTitle>
             <AlertDialogDescription>
-              {cancelingInvite && (
-                <>
-                  O convite enviado para <span className="font-semibold">{cancelingInvite.email}</span> será cancelado
-                  e não poderá mais ser aceito.
-                </>
-              )}
+              {cancelingInvite && <>O convite para <strong>{cancelingInvite.email}</strong> será cancelado.</>}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

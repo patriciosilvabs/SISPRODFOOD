@@ -1075,6 +1075,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_admin: boolean
           organization_id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -1082,6 +1083,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          is_admin?: boolean
           organization_id: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -1089,6 +1091,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          is_admin?: boolean
           organization_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
@@ -2207,6 +2210,44 @@ export type Database = {
           },
         ]
       }
+      user_page_access: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          organization_id: string
+          page_route: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          organization_id: string
+          page_route: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          organization_id?: string
+          page_route?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_page_access_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           created_at: string
@@ -2297,6 +2338,11 @@ export type Database = {
       get_cpd_loja_id: { Args: { p_organization_id: string }; Returns: string }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
+      get_user_profile: { Args: { _user_id: string }; Returns: string }
+      has_page_access: {
+        Args: { _page_route: string; _user_id: string }
+        Returns: boolean
+      }
       has_permission: {
         Args: { _permission_key: string; _user_id: string }
         Returns: boolean
