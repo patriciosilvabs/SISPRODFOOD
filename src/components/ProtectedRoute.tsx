@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -12,15 +12,18 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, roles, loading, isSuperAdmin, isAdmin } = useAuth();
+  const { user, roles, loading, isSuperAdmin } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
   const { hasRouteAccess, loading: permissionsLoading } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Check if current route is a super admin route
+  // Memoize static values to prevent infinite loops in useEffect
+  const userIsSuperAdmin = useMemo(() => isSuperAdmin(), [user]);
   const isSuperAdminRoute = location.pathname.startsWith('/super-admin');
+  const currentPath = location.pathname;
+  const routeAccessAllowed = useMemo(() => hasRouteAccess(currentPath), [hasRouteAccess, currentPath]);
 
   useEffect(() => {
     // Redirecionar para auth se não estiver logado
@@ -30,10 +33,10 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     }
 
     // Super Admin tem acesso total - redireciona para painel super admin se logado
-    if (!loading && user && isSuperAdmin()) {
+    if (!loading && user && userIsSuperAdmin) {
       // Se Super Admin está em rota normal, deixar acessar (para debug)
       // Se está tentando acessar onboarding ou assinatura, redirecionar para painel
-      if (location.pathname === '/onboarding' || location.pathname === '/assinatura') {
+      if (currentPath === '/onboarding' || currentPath === '/assinatura') {
         navigate('/super-admin');
         return;
       }
@@ -42,21 +45,26 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     }
 
     // Se é rota de super admin mas usuário não é super admin
-    if (!loading && user && isSuperAdminRoute && !isSuperAdmin()) {
+    if (!loading && user && isSuperAdminRoute && !userIsSuperAdmin) {
       navigate('/');
       return;
     }
 
     // Redirecionar para onboarding se precisar (exceto se já estiver lá ou tiver convite pendente)
-    const hasPendingInvite = typeof window !== 'undefined' && localStorage.getItem('pendingInviteToken');
-    if (!loading && !orgLoading && user && needsOnboarding && !hasPendingInvite && location.pathname !== '/onboarding') {
+    let hasPendingInvite = false;
+    try {
+      hasPendingInvite = typeof window !== 'undefined' && !!localStorage.getItem('pendingInviteToken');
+    } catch {
+      // localStorage may not be accessible in insecure contexts
+    }
+    if (!loading && !orgLoading && user && needsOnboarding && !hasPendingInvite && currentPath !== '/onboarding') {
       navigate('/onboarding');
       return;
     }
 
     // Redirecionar para assinatura se trial expirou e não está na página de assinatura
     // Aguarda subscriptionLoading terminar para evitar redirecionamento prematuro
-    if (!loading && !orgLoading && !subscriptionLoading && user && !needsOnboarding && !canAccess && location.pathname !== '/assinatura') {
+    if (!loading && !orgLoading && !subscriptionLoading && user && !needsOnboarding && !canAccess && currentPath !== '/assinatura') {
       navigate('/assinatura');
       return;
     }
@@ -64,7 +72,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     // Verificar permissões granulares para a rota atual
     if (!loading && !orgLoading && !permissionsLoading && user && !needsOnboarding && canAccess) {
       // Apenas SuperAdmin tem bypass - Admin depende das permissões granulares
-      if (isSuperAdmin()) return;
+      if (userIsSuperAdmin) return;
       
       // Rotas super admin já são protegidas pela verificação de role acima - pular permissões granulares
       if (isSuperAdminRoute) return;
@@ -72,9 +80,9 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       // Verificar permissão de rota usando o sistema granular
       // Rotas que não precisam de permissão específica (auth-related apenas)
       const publicRoutes = ['/assinatura', '/aceitar-convite'];
-      const isPublicRoute = publicRoutes.includes(location.pathname);
+      const isPublicRoute = publicRoutes.includes(currentPath);
       
-      if (!isPublicRoute && !hasRouteAccess(location.pathname)) {
+      if (!isPublicRoute && !routeAccessAllowed) {
         // Usuário não tem permissão para esta rota - redirecionar para primeira rota permitida
         const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
           (route: string) => route !== '/' && hasRouteAccess(route)
@@ -91,7 +99,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
         }
       }
     }
-  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, location.pathname, isSuperAdmin, isAdmin, isSuperAdminRoute, hasRouteAccess]);
+  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, routeAccessAllowed, hasRouteAccess]);
 
   // Loading básico (auth e org)
   if (loading || orgLoading) {
@@ -106,7 +114,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   }
 
   // Apenas Super Admin não precisa esperar permissões granulares
-  if (user && isSuperAdmin()) {
+  if (user && userIsSuperAdmin) {
     return <>{children}</>;
   }
 
