@@ -69,7 +69,7 @@ const Dashboard = () => {
               Visão geral do sistema de estoque e produção
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => fetchStats()}>
+          <Button size="sm" onClick={() => fetchStats()} className="!bg-green-600 hover:!bg-green-700 text-white">
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar
           </Button>

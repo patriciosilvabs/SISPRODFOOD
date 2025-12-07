@@ -1030,7 +1030,7 @@ const ResumoDaProducao = () => {
                 Sincronizando...
               </Badge>
             )}
-            <Button variant="outline" size="sm" onClick={() => loadProducaoRegistros()} disabled={isRefreshing}>
+            <Button size="sm" onClick={() => loadProducaoRegistros()} disabled={isRefreshing} className="!bg-green-600 hover:!bg-green-700 text-white">
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Atualizar
             </Button>
