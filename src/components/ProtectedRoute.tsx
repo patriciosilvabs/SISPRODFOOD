@@ -3,8 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
-import { usePermissions } from '@/hooks/usePermissions';
-import { hasRoutePermission, ROUTE_PERMISSIONS } from '@/lib/permissions';
+import { usePageAccess } from '@/hooks/usePageAccess';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -15,30 +14,23 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   const { user, roles, loading } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
-  const { permissions, loading: permissionsLoading } = usePermissions();
+  const { hasPageAccess, accessiblePages, loading: pageAccessLoading } = usePageAccess();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Memoize static values - usar roles diretamente, não função
+  // Memoize static values
   const userIsSuperAdmin = useMemo(() => roles.includes('SuperAdmin'), [roles]);
   const currentPath = location.pathname;
   const isSuperAdminRoute = currentPath.startsWith('/super-admin');
-  
-  // Calcular rota permitida usando função pura (não hook)
-  const routeAccessAllowed = useMemo(() => {
-    if (userIsSuperAdmin) return true;
-    if (permissions.includes('*')) return true;
-    return hasRoutePermission(currentPath, permissions, userIsSuperAdmin);
-  }, [userIsSuperAdmin, permissions, currentPath]);
-  
-  // Calcular primeira rota permitida usando função pura
+
+  // Calcular primeira rota permitida
   const firstAllowedRoute = useMemo(() => {
-    if (userIsSuperAdmin || permissions.includes('*')) return '/dashboard';
-    const allowedRoute = Object.keys(ROUTE_PERMISSIONS).find(
-      (route: string) => route !== '/' && hasRoutePermission(route, permissions, userIsSuperAdmin)
-    );
-    return allowedRoute || '/assinatura';
-  }, [userIsSuperAdmin, permissions]);
+    if (userIsSuperAdmin) return '/dashboard';
+    if (accessiblePages.length > 0) {
+      return accessiblePages.includes('/') ? '/' : accessiblePages[0];
+    }
+    return '/assinatura';
+  }, [userIsSuperAdmin, accessiblePages]);
 
   useEffect(() => {
     // Redirecionar para auth se não estiver logado
@@ -47,15 +39,12 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       return;
     }
 
-    // Super Admin tem acesso total - redireciona para painel super admin se logado
+    // Super Admin tem acesso total
     if (!loading && user && userIsSuperAdmin) {
-      // Se Super Admin está em rota normal, deixar acessar (para debug)
-      // Se está tentando acessar onboarding ou assinatura, redirecionar para painel
       if (currentPath === '/onboarding' || currentPath === '/assinatura') {
         navigate('/super-admin');
         return;
       }
-      // Super Admin pode acessar qualquer rota
       return;
     }
 
@@ -65,40 +54,34 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       return;
     }
 
-    // Redirecionar para onboarding se precisar (exceto se já estiver lá ou tiver convite pendente)
+    // Redirecionar para onboarding se precisar
     let hasPendingInvite = false;
     try {
       hasPendingInvite = typeof window !== 'undefined' && !!localStorage.getItem('pendingInviteToken');
     } catch {
-      // localStorage may not be accessible in insecure contexts
+      // localStorage may not be accessible
     }
     if (!loading && !orgLoading && user && needsOnboarding && !hasPendingInvite && currentPath !== '/onboarding') {
       navigate('/onboarding');
       return;
     }
 
-    // Redirecionar para assinatura se trial expirou e não está na página de assinatura
-    // Aguarda subscriptionLoading terminar para evitar redirecionamento prematuro
+    // Redirecionar para assinatura se trial expirou
     if (!loading && !orgLoading && !subscriptionLoading && user && !needsOnboarding && !canAccess && currentPath !== '/assinatura') {
       navigate('/assinatura');
       return;
     }
 
-    // Verificar permissões granulares para a rota atual
-    if (!loading && !orgLoading && !permissionsLoading && user && !needsOnboarding && canAccess) {
-      // Apenas SuperAdmin tem bypass - Admin depende das permissões granulares
+    // Verificar acesso à página usando novo sistema de perfis
+    if (!loading && !orgLoading && !pageAccessLoading && user && !needsOnboarding && canAccess) {
       if (userIsSuperAdmin) return;
-      
-      // Rotas super admin já são protegidas pela verificação de role acima - pular permissões granulares
       if (isSuperAdminRoute) return;
       
-      // Verificar permissão de rota usando o sistema granular
-      // Rotas que não precisam de permissão específica (auth-related apenas)
+      // Rotas públicas não precisam de verificação
       const publicRoutes = ['/assinatura', '/aceitar-convite'];
       const isPublicRoute = publicRoutes.includes(currentPath);
       
-      if (!isPublicRoute && !routeAccessAllowed) {
-        // Usuário não tem permissão para esta rota - redirecionar para primeira rota permitida
+      if (!isPublicRoute && !hasPageAccess(currentPath)) {
         navigate(firstAllowedRoute);
         return;
       }
@@ -106,14 +89,14 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
       // Verificação legacy de roles (para compatibilidade)
       if (requiredRoles && requiredRoles.length > 0) {
         const hasRequiredRole = requiredRoles.some(role => roles.includes(role));
-        if (!hasRequiredRole) {
+        if (!hasRequiredRole && !hasPageAccess(currentPath)) {
           navigate('/');
         }
       }
     }
-  }, [user, loading, orgLoading, permissionsLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, routeAccessAllowed, firstAllowedRoute]);
+  }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute, hasPageAccess, firstAllowedRoute]);
 
-  // Loading básico (auth e org)
+  // Loading
   if (loading || orgLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -125,13 +108,13 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     );
   }
 
-  // Apenas Super Admin não precisa esperar permissões granulares
+  // Super Admin não precisa esperar page access
   if (user && userIsSuperAdmin) {
     return <>{children}</>;
   }
 
-  // Outros usuários precisam esperar loading de permissões
-  if (permissionsLoading) {
+  // Outros usuários precisam esperar loading de page access
+  if (pageAccessLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">

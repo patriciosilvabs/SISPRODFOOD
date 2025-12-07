@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useUserLoja } from '@/hooks/useUserLoja';
-import { usePermissions } from '@/hooks/usePermissions';
+import { usePageAccess } from '@/hooks/usePageAccess';
 import { Button } from '@/components/ui/button';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -30,24 +30,25 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Badge } from '@/components/ui/badge';
+import { getProfileLabel } from '@/lib/page-access-config';
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 export const Layout = ({ children }: LayoutProps) => {
-  const { profile, signOut, isAdmin, hasRole, isSuperAdmin } = useAuth();
+  const { profile, signOut, isSuperAdmin } = useAuth();
   const { subscriptionStatus, daysRemaining, isTrialExpired } = useSubscription();
   const { primaryLoja } = useUserLoja();
-  const { hasPermission, hasAnyPermission, loading: permissionsLoading } = usePermissions();
+  const { hasPageAccess, profile: userProfile, loading: pageAccessLoading } = usePageAccess();
   const location = useLocation();
   const navigate = useNavigate();
 
   const isActive = (path: string) => location.pathname === path;
   const showBackButton = location.pathname !== '/';
   
-  // Mostrar loja vinculada para usuários com role Loja (não Admin/Produção)
-  const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
+  // Mostrar loja vinculada para usuários com perfil loja
+  const isLojaUser = userProfile === 'loja';
 
   const NavLink = ({ to, icon: Icon, children }: { to: string; icon: any; children: ReactNode }) => (
     <Link to={to}>
@@ -70,35 +71,32 @@ export const Layout = ({ children }: LayoutProps) => {
     </div>
   );
 
-  // Verificações baseadas em permissões granulares
-  const canSeeDashboard = hasPermission('dashboard.view');
-  const canSeeCPD = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage', 'insumos.view', 'insumos.manage', 'estoque_cpd_produtos.view', 'estoque_cpd_produtos.manage']);
-  const canSeeProducao = hasAnyPermission(['producao.resumo.view', 'producao.resumo.manage']);
-  const canSeeInsumos = hasAnyPermission(['insumos.view', 'insumos.manage']);
-  const canSeeEstoqueProdutosCPD = hasAnyPermission(['estoque_cpd_produtos.view', 'estoque_cpd_produtos.manage']);
-  const canSeeReposicaoLoja = hasAnyPermission(['reposicao_loja.view', 'reposicao_loja.enviar']);
+  // Verificações baseadas no novo sistema de perfis
+  const canSeeDashboard = hasPageAccess('/');
   
-  const canSeeLoja = hasAnyPermission(['contagem.view', 'contagem.manage', 'estoque_loja.view', 'estoque_loja.manage', 'erros.view', 'erros.create']);
-  const canSeeContagem = hasAnyPermission(['contagem.view', 'contagem.manage']);
-  const canSeeEstoqueLoja = hasAnyPermission(['estoque_loja.view', 'estoque_loja.manage']);
-  const canSeeErros = hasAnyPermission(['erros.view', 'erros.create']);
+  // CPD - Produção
+  const canSeeProducao = hasPageAccess('/resumo-da-producao');
+  const canSeeInsumos = hasPageAccess('/insumos');
+  const canSeeEstoqueProdutosCPD = hasPageAccess('/estoque-produtos-cpd');
+  const canSeeReposicaoLoja = hasPageAccess('/reposicao-loja');
+  const canSeeCPD = canSeeProducao || canSeeInsumos || canSeeEstoqueProdutosCPD || canSeeReposicaoLoja;
   
-  const canSeeLogistica = hasAnyPermission(['romaneio.view', 'romaneio.create', 'romaneio.send', 'romaneio.receive', 'romaneio.history']);
+  // Loja
+  const canSeeContagem = hasPageAccess('/contagem-porcionados');
+  const canSeeEstoqueLoja = hasPageAccess('/estoque-loja');
+  const canSeeErros = hasPageAccess('/erros-devolucoes');
+  const canSeeLoja = canSeeContagem || canSeeEstoqueLoja || canSeeErros;
   
-  const canSeeRelatorios = hasAnyPermission([
-    'relatorios.producao', 'relatorios.romaneios', 'relatorios.estoque', 
-    'relatorios.insumos', 'relatorios.consumo', 'relatorios.diagnostico'
-  ]);
+  // Logística
+  const canSeeRomaneio = hasPageAccess('/romaneio');
   
-  const canSeeAdmin = hasAnyPermission([
-    'config.view', 'config.insumos', 'config.itens', 'config.produtos', 
-    'config.lojas', 'config.usuarios', 'config.sistema', 'compras.view', 'compras.manage'
-  ]);
-  const canSeeCompras = hasAnyPermission(['compras.view', 'compras.manage']);
-  const canSeeConfig = hasAnyPermission([
-    'config.view', 'config.insumos', 'config.itens', 'config.produtos', 
-    'config.lojas', 'config.usuarios', 'config.sistema'
-  ]);
+  // Relatórios
+  const canSeeCentralRelatorios = hasPageAccess('/central-de-relatorios');
+  
+  // Admin
+  const canSeeCompras = hasPageAccess('/lista-de-compras-ia');
+  const canSeeConfig = hasPageAccess('/configuracoes');
+  const canSeeAdmin = canSeeCompras || canSeeConfig;
 
   const navigation = (
     <nav className="space-y-1">
@@ -145,8 +143,8 @@ export const Layout = ({ children }: LayoutProps) => {
         </>
       )}
       
-      {/* LOGÍSTICA - Compartilhado entre CPD e Loja */}
-      {canSeeLogistica && (
+      {/* LOGÍSTICA */}
+      {canSeeRomaneio && (
         <>
           <SectionLabel>Logística</SectionLabel>
           <NavLink to="/romaneio" icon={Truck}>Romaneio</NavLink>
@@ -154,7 +152,7 @@ export const Layout = ({ children }: LayoutProps) => {
       )}
       
       {/* RELATÓRIOS */}
-      {canSeeRelatorios && (
+      {canSeeCentralRelatorios && (
         <>
           <SectionLabel>Relatórios</SectionLabel>
           <NavLink to="/central-de-relatorios" icon={Clock}>Central de Relatórios</NavLink>
@@ -216,6 +214,11 @@ export const Layout = ({ children }: LayoutProps) => {
                 <div className="flex flex-col h-full">
                   <div className="mb-4">
                     <h2 className="text-lg font-semibold">Menu</h2>
+                    {userProfile && !isSuperAdmin() && (
+                      <Badge variant="outline" className="mt-1">
+                        {getProfileLabel(userProfile)}
+                      </Badge>
+                    )}
                   </div>
                   {navigation}
                 </div>
@@ -251,6 +254,13 @@ export const Layout = ({ children }: LayoutProps) => {
               </Badge>
             )}
             
+            {/* Badge do Perfil */}
+            {userProfile && !isSuperAdmin() && (
+              <Badge variant="outline" className="hidden sm:flex">
+                {getProfileLabel(userProfile)}
+              </Badge>
+            )}
+            
             <div className="hidden sm:flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Olá,</span>
               <span className="font-medium">{profile?.nome}</span>
@@ -273,6 +283,13 @@ export const Layout = ({ children }: LayoutProps) => {
       <div className="flex">
         {/* Sidebar - Desktop */}
         <aside className="hidden lg:block w-56 border-r min-h-[calc(100vh-3.5rem)] p-3">
+          {userProfile && !isSuperAdmin() && (
+            <div className="mb-4 px-3">
+              <Badge variant="outline" className="w-full justify-center">
+                {getProfileLabel(userProfile)}
+              </Badge>
+            </div>
+          )}
           {navigation}
         </aside>
 

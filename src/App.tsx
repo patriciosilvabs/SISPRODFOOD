@@ -19,7 +19,7 @@ import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
 import GerenciarProdutos from "./pages/GerenciarProdutos";
 import EstoqueProdutosCPD from "./pages/EstoqueProdutosCPD";
-import ConfigurarInterface from "./pages/ConfigurarInterface";
+// ConfigurarInterface foi removido - sistema simplificado para perfis
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
 import PainelKanban from "./pages/PainelKanban";
@@ -233,14 +233,7 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="/configurar-interface"
-                  element={
-                    <ProtectedRoute requiredRoles={['Admin']}>
-                      <ConfigurarInterface />
-                    </ProtectedRoute>
-                  }
-                />
+                {/* Rota /configurar-interface removida - sistema simplificado */}
                 <Route
                   path="/relatorios/monitoramento-consumo"
                   element={
