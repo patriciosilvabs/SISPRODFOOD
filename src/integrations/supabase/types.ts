@@ -688,6 +688,66 @@ export type Database = {
           },
         ]
       }
+      insumos_estoque_minimo_semanal: {
+        Row: {
+          created_at: string
+          domingo: number
+          id: string
+          insumo_id: string
+          organization_id: string | null
+          quarta: number
+          quinta: number
+          sabado: number
+          segunda: number
+          sexta: number
+          terca: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          insumo_id: string
+          organization_id?: string | null
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          domingo?: number
+          id?: string
+          insumo_id?: string
+          organization_id?: string | null
+          quarta?: number
+          quinta?: number
+          sabado?: number
+          segunda?: number
+          sexta?: number
+          terca?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insumos_estoque_minimo_semanal_insumo_id_fkey"
+            columns: ["insumo_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "insumos_estoque_minimo_semanal_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insumos_extras: {
         Row: {
           consumo_por_traco_g: number | null

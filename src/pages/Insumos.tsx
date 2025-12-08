@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, Package, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, RefreshCw, Settings } from 'lucide-react';
+import { ConfigurarEstoqueMinimoInsumoModal } from '@/components/modals/ConfigurarEstoqueMinimoInsumoModal';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
@@ -53,6 +54,7 @@ const Insumos = () => {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [estoqueModalOpen, setEstoqueModalOpen] = useState(false);
   const [editingInsumo, setEditingInsumo] = useState<Insumo | null>(null);
   const [formData, setFormData] = useState({
     nome: '',
@@ -191,6 +193,10 @@ const Insumos = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setEstoqueModalOpen(true)}>
+              <Settings className="mr-2 h-4 w-4" />
+              Estoque Mínimo Semanal
+            </Button>
             <Button size="sm" onClick={() => fetchInsumos()} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Atualizar
@@ -408,6 +414,11 @@ const Insumos = () => {
             </Table>
           </CardContent>
         </Card>
+
+        <ConfigurarEstoqueMinimoInsumoModal
+          open={estoqueModalOpen}
+          onOpenChange={setEstoqueModalOpen}
+        />
       </div>
     </Layout>
   );
