@@ -283,6 +283,7 @@ export type Database = {
         Row: {
           a_produzir: number | null
           created_at: string
+          dia_operacional: string
           final_sobra: number
           id: string
           ideal_amanha: number
@@ -297,6 +298,7 @@ export type Database = {
         Insert: {
           a_produzir?: number | null
           created_at?: string
+          dia_operacional: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
@@ -311,6 +313,7 @@ export type Database = {
         Update: {
           a_produzir?: number | null
           created_at?: string
+          dia_operacional?: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
@@ -1096,6 +1099,8 @@ export type Database = {
       lojas: {
         Row: {
           created_at: string | null
+          cutoff_operacional: string
+          fuso_horario: string
           id: string
           nome: string
           organization_id: string | null
@@ -1104,6 +1109,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          cutoff_operacional?: string
+          fuso_horario?: string
           id?: string
           nome: string
           organization_id?: string | null
@@ -1112,6 +1119,8 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          cutoff_operacional?: string
+          fuso_horario?: string
           id?: string
           nome?: string
           organization_id?: string | null
@@ -2587,6 +2596,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calcular_dia_operacional: {
+        Args: { p_loja_id: string; p_timestamp?: string }
+        Returns: string
+      }
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
       criar_ou_atualizar_producao_registro: {
         Args: {

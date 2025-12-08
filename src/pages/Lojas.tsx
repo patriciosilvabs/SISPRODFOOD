@@ -5,8 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, Store, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Store, RefreshCw, Clock, Globe } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import {
   Dialog,
@@ -30,7 +37,21 @@ interface Loja {
   id: string;
   nome: string;
   responsavel: string;
+  fuso_horario: string;
+  cutoff_operacional: string;
 }
+
+// Lista de fusos horários brasileiros
+const FUSOS_HORARIOS = [
+  { value: 'America/Sao_Paulo', label: 'São Paulo (BRT -3)' },
+  { value: 'America/Manaus', label: 'Manaus (AMT -4)' },
+  { value: 'America/Rio_Branco', label: 'Rio Branco (ACT -5)' },
+  { value: 'America/Cuiaba', label: 'Cuiabá (AMT -4)' },
+  { value: 'America/Belem', label: 'Belém (BRT -3)' },
+  { value: 'America/Fortaleza', label: 'Fortaleza (BRT -3)' },
+  { value: 'America/Recife', label: 'Recife (BRT -3)' },
+  { value: 'America/Noronha', label: 'Fernando de Noronha (FNT -2)' },
+];
 
 const Lojas = () => {
   const { organizationId } = useOrganization();
@@ -41,6 +62,8 @@ const Lojas = () => {
   const [formData, setFormData] = useState({
     nome: '',
     responsavel: '',
+    fuso_horario: 'America/Sao_Paulo',
+    cutoff_operacional: '03:00',
   });
 
   useEffect(() => {
@@ -127,6 +150,8 @@ const Lojas = () => {
     setFormData({
       nome: loja.nome,
       responsavel: loja.responsavel,
+      fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
+      cutoff_operacional: loja.cutoff_operacional?.slice(0, 5) || '03:00',
     });
     setDialogOpen(true);
   };
@@ -136,6 +161,8 @@ const Lojas = () => {
     setFormData({
       nome: '',
       responsavel: '',
+      fuso_horario: 'America/Sao_Paulo',
+      cutoff_operacional: '03:00',
     });
   };
 
@@ -210,6 +237,48 @@ const Lojas = () => {
                       required
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="fuso_horario" className="flex items-center gap-1">
+                      <Globe className="h-3.5 w-3.5" />
+                      Fuso Horário
+                    </Label>
+                    <Select
+                      value={formData.fuso_horario}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, fuso_horario: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o fuso horário" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FUSOS_HORARIOS.map((fuso) => (
+                          <SelectItem key={fuso.value} value={fuso.value}>
+                            {fuso.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cutoff_operacional" className="flex items-center gap-1">
+                      <Clock className="h-3.5 w-3.5" />
+                      Cutoff Operacional
+                    </Label>
+                    <Input
+                      id="cutoff_operacional"
+                      type="time"
+                      value={formData.cutoff_operacional}
+                      onChange={(e) =>
+                        setFormData({ ...formData, cutoff_operacional: e.target.value })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Horário limite para virada do dia operacional (padrão: 03:00)
+                    </p>
+                  </div>
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -243,39 +312,46 @@ const Lojas = () => {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Responsável</TableHead>
+                  <TableHead>Fuso Horário</TableHead>
+                  <TableHead>Cutoff</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lojas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       Nenhuma loja cadastrada
                     </TableCell>
                   </TableRow>
                 ) : (
-                  lojas.map((loja) => (
-                    <TableRow key={loja.id}>
-                      <TableCell className="font-medium">{loja.nome}</TableCell>
-                      <TableCell>{loja.responsavel}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(loja)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(loja.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  lojas.map((loja) => {
+                    const fusoLabel = FUSOS_HORARIOS.find(f => f.value === loja.fuso_horario)?.label || loja.fuso_horario;
+                    return (
+                      <TableRow key={loja.id}>
+                        <TableCell className="font-medium">{loja.nome}</TableCell>
+                        <TableCell>{loja.responsavel}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{fusoLabel}</TableCell>
+                        <TableCell className="text-xs">{loja.cutoff_operacional?.slice(0, 5) || '03:00'}</TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEditDialog(loja)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(loja.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
