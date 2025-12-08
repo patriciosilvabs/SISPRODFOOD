@@ -1,10 +1,13 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TrendingDown, TrendingUp, AlertCircle, Activity } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TrendingDown, TrendingUp, AlertCircle, Activity, Clock, User, History } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface ConsumoInsumo {
   insumo_id: string;
@@ -15,10 +18,22 @@ interface ConsumoInsumo {
   dias_cobertura: number;
   variacao_percentual: number;
   status: 'normal' | 'alerta' | 'critico';
+  ultima_movimentacao_data: string | null;
+  ultima_movimentacao_usuario: string | null;
+}
+
+interface MovimentacaoInsumo {
+  id: string;
+  insumo_nome: string;
+  tipo: string;
+  quantidade: number;
+  data: string;
+  usuario_nome: string;
 }
 
 const MonitoramentoConsumo = () => {
   const [consumos, setConsumos] = useState<ConsumoInsumo[]>([]);
+  const [movimentacoes, setMovimentacoes] = useState<MovimentacaoInsumo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,10 +50,14 @@ const MonitoramentoConsumo = () => {
 
       const { data: logs, error: logsError } = await supabase
         .from('insumos_log')
-        .select('insumo_id, insumo_nome, tipo, quantidade')
-        .gte('data', dataInicio.toISOString());
+        .select('id, insumo_id, insumo_nome, tipo, quantidade, data, usuario_nome')
+        .gte('data', dataInicio.toISOString())
+        .order('data', { ascending: false });
 
       if (logsError) throw logsError;
+
+      // Guardar últimas 50 movimentações para exibição
+      setMovimentacoes((logs || []).slice(0, 50));
 
       // Buscar estoque atual
       const { data: insumos, error: insumosError } = await supabase
@@ -61,6 +80,8 @@ const MonitoramentoConsumo = () => {
             dias_cobertura: 0,
             variacao_percentual: 0,
             status: 'normal',
+            ultima_movimentacao_data: null,
+            ultima_movimentacao_usuario: null,
           });
         }
 
@@ -69,6 +90,12 @@ const MonitoramentoConsumo = () => {
           consumo.total_saidas += Number(log.quantidade);
         } else {
           consumo.total_entradas += Number(log.quantidade);
+        }
+
+        // Guardar última movimentação (já ordenado por data desc)
+        if (!consumo.ultima_movimentacao_data) {
+          consumo.ultima_movimentacao_data = log.data;
+          consumo.ultima_movimentacao_usuario = log.usuario_nome;
         }
       });
 
@@ -121,6 +148,26 @@ const MonitoramentoConsumo = () => {
       case 'critico': return <AlertCircle className="h-4 w-4" />;
       case 'alerta': return <TrendingDown className="h-4 w-4" />;
       default: return <Activity className="h-4 w-4" />;
+    }
+  };
+
+  const formatDateTime = (dateString: string | null) => {
+    if (!dateString) return '-';
+    try {
+      return format(new Date(dateString), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    } catch {
+      return '-';
+    }
+  };
+
+  const getTipoBadge = (tipo: string) => {
+    switch (tipo) {
+      case 'entrada':
+        return <Badge variant="default" className="bg-green-600">Entrada</Badge>;
+      case 'saida':
+        return <Badge variant="destructive">Saída</Badge>;
+      default:
+        return <Badge variant="outline">{tipo}</Badge>;
     }
   };
 
@@ -214,35 +261,103 @@ const MonitoramentoConsumo = () => {
                 consumos.map((consumo) => (
                   <div
                     key={consumo.insumo_id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
+                    className="flex flex-col p-4 border rounded-lg"
                   >
-                    <div className="flex items-center gap-4 flex-1">
-                      {getStatusIcon(consumo.status)}
-                      <div className="flex-1">
-                        <p className="font-medium">{consumo.insumo_nome}</p>
-                        <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                          <span>Consumo médio: {consumo.consumo_medio_diario.toFixed(2)}/dia</span>
-                          <span>Total saídas: {consumo.total_saidas.toFixed(2)}</span>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-4 flex-1">
+                        {getStatusIcon(consumo.status)}
+                        <div className="flex-1">
+                          <p className="font-medium">{consumo.insumo_nome}</p>
+                          <div className="flex gap-4 text-sm text-muted-foreground mt-1">
+                            <span>Consumo médio: {consumo.consumo_medio_diario.toFixed(2)}/dia</span>
+                            <span>Total saídas: {consumo.total_saidas.toFixed(2)}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="font-medium">
-                          {consumo.dias_cobertura > 999 
-                            ? '∞' 
-                            : `${consumo.dias_cobertura.toFixed(1)} dias`}
-                        </p>
-                        <p className="text-xs text-muted-foreground">Cobertura</p>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="font-medium">
+                            {consumo.dias_cobertura > 999 
+                              ? '∞' 
+                              : `${consumo.dias_cobertura.toFixed(1)} dias`}
+                          </p>
+                          <p className="text-xs text-muted-foreground">Cobertura</p>
+                        </div>
+                        <Badge variant={getStatusColor(consumo.status)}>
+                          {consumo.status.toUpperCase()}
+                        </Badge>
                       </div>
-                      <Badge variant={getStatusColor(consumo.status)}>
-                        {consumo.status.toUpperCase()}
-                      </Badge>
+                    </div>
+
+                    {/* Data, Hora e Usuário */}
+                    <div className="flex flex-wrap gap-4 pt-3 border-t text-sm">
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>Última movimentação: {formatDateTime(consumo.ultima_movimentacao_data)}</span>
+                      </div>
+                      {consumo.ultima_movimentacao_usuario && (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <User className="h-3 w-3" />
+                          <span>por {consumo.ultima_movimentacao_usuario}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Histórico de Movimentações */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Últimas Movimentações de Insumos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Data/Hora
+                    </div>
+                  </TableHead>
+                  <TableHead>Insumo</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Quantidade</TableHead>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      Usuário
+                    </div>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movimentacoes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      Nenhuma movimentação registrada nos últimos 30 dias
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  movimentacoes.map((mov) => (
+                    <TableRow key={mov.id}>
+                      <TableCell className="text-sm">{formatDateTime(mov.data)}</TableCell>
+                      <TableCell className="font-medium">{mov.insumo_nome}</TableCell>
+                      <TableCell>{getTipoBadge(mov.tipo)}</TableCell>
+                      <TableCell className="text-right font-medium">{Number(mov.quantidade).toFixed(2)}</TableCell>
+                      <TableCell className="text-sm">{mov.usuario_nome}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>

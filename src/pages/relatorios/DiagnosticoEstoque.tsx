@@ -1,10 +1,12 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, TrendingUp, Package } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Package, Clock, User } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface DiagnosticoItem {
   item_id: string;
@@ -14,6 +16,9 @@ interface DiagnosticoItem {
   dias_cobertura: number;
   status: 'critico' | 'alerta' | 'normal';
   sugestao_producao: number;
+  ultima_producao_data: string | null;
+  ultima_producao_usuario: string | null;
+  ultima_movimentacao_data: string | null;
 }
 
 const DiagnosticoEstoque = () => {
@@ -28,10 +33,10 @@ const DiagnosticoEstoque = () => {
     try {
       setLoading(true);
 
-      // Buscar estoque atual CPD
+      // Buscar estoque atual CPD com data de movimentação
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_cpd')
-        .select('item_porcionado_id, quantidade');
+        .select('item_porcionado_id, quantidade, data_ultima_movimentacao');
 
       if (estoqueError) throw estoqueError;
 
@@ -48,9 +53,10 @@ const DiagnosticoEstoque = () => {
 
       const { data: producao, error: producaoError } = await supabase
         .from('producao_registros')
-        .select('item_id, unidades_reais')
+        .select('item_id, unidades_reais, data_fim, usuario_nome')
         .eq('status', 'finalizado')
-        .gte('data_fim', dataInicio.toISOString());
+        .gte('data_fim', dataInicio.toISOString())
+        .order('data_fim', { ascending: false });
 
       if (producaoError) throw producaoError;
 
@@ -81,6 +87,9 @@ const DiagnosticoEstoque = () => {
         const estoqueIdeal = consumoMedioDiario * 7;
         const sugestaoProducao = Math.max(0, estoqueIdeal - estoqueAtual);
 
+        // Buscar última produção do item
+        const ultimaProducao = producaoItem?.[0];
+
         diagnosticosArray.push({
           item_id: item.id,
           item_nome: item.nome,
@@ -89,6 +98,9 @@ const DiagnosticoEstoque = () => {
           dias_cobertura: diasCobertura,
           status,
           sugestao_producao: Math.ceil(sugestaoProducao),
+          ultima_producao_data: ultimaProducao?.data_fim || null,
+          ultima_producao_usuario: ultimaProducao?.usuario_nome || null,
+          ultima_movimentacao_data: estoque?.data_ultima_movimentacao || null,
         });
       });
 
@@ -114,6 +126,15 @@ const DiagnosticoEstoque = () => {
         return <Badge variant="default"><TrendingUp className="mr-1 h-3 w-3" />Normal</Badge>;
       default:
         return <Badge variant="outline">-</Badge>;
+    }
+  };
+
+  const formatDateTime = (dateString: string | null) => {
+    if (!dateString) return '-';
+    try {
+      return format(new Date(dateString), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    } catch {
+      return '-';
     }
   };
 
@@ -192,32 +213,51 @@ const DiagnosticoEstoque = () => {
                 diagnosticos.map((diag) => (
                   <div
                     key={diag.item_id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
+                    className="flex flex-col p-4 border rounded-lg"
                   >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
                         <p className="font-medium text-lg">{diag.item_nome}</p>
                         {getStatusBadge(diag.status)}
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Estoque Atual</p>
-                          <p className="font-medium">{diag.estoque_atual} un</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                      <div>
+                        <p className="text-muted-foreground">Estoque Atual</p>
+                        <p className="font-medium">{diag.estoque_atual} un</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Consumo Médio</p>
+                        <p className="font-medium">{diag.consumo_medio_diario.toFixed(1)} un/dia</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Dias de Cobertura</p>
+                        <p className={`font-medium ${diag.dias_cobertura < 2 ? 'text-destructive' : diag.dias_cobertura < 5 ? 'text-secondary' : 'text-primary'}`}>
+                          {diag.dias_cobertura > 999 ? '∞' : `${diag.dias_cobertura.toFixed(1)} dias`}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Sugestão de Produção</p>
+                        <p className="font-medium text-primary">{diag.sugestao_producao} un</p>
+                      </div>
+                    </div>
+
+                    {/* Data, Hora e Usuário */}
+                    <div className="flex flex-wrap gap-4 pt-3 border-t text-sm">
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>Última produção: {formatDateTime(diag.ultima_producao_data)}</span>
+                      </div>
+                      {diag.ultima_producao_usuario && (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                          <User className="h-3 w-3" />
+                          <span>por {diag.ultima_producao_usuario}</span>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Consumo Médio</p>
-                          <p className="font-medium">{diag.consumo_medio_diario.toFixed(1)} un/dia</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Dias de Cobertura</p>
-                          <p className={`font-medium ${diag.dias_cobertura < 2 ? 'text-destructive' : diag.dias_cobertura < 5 ? 'text-secondary' : 'text-primary'}`}>
-                            {diag.dias_cobertura > 999 ? '∞' : `${diag.dias_cobertura.toFixed(1)} dias`}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Sugestão de Produção</p>
-                          <p className="font-medium text-primary">{diag.sugestao_producao} un</p>
-                        </div>
+                      )}
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>Última movimentação: {formatDateTime(diag.ultima_movimentacao_data)}</span>
                       </div>
                     </div>
                   </div>
