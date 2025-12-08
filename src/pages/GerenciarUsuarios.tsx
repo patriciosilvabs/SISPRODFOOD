@@ -124,6 +124,48 @@ const GerenciarUsuarios = () => {
     }
   }, [organizationId]);
 
+  // Sincronizar lojas com o perfil selecionado no modal de edição
+  useEffect(() => {
+    if (editModalOpen && lojas.length > 0) {
+      const lojasCompativeis = lojas.filter(l => 
+        selectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd'
+      );
+      
+      // Manter apenas lojas que são compatíveis com o novo perfil
+      const lojasValidas = selectedLojas.filter(id => 
+        lojasCompativeis.some(l => l.id === id)
+      );
+      
+      // Se não houver lojas válidas e for CPD, pré-selecionar a loja CPD
+      if (lojasValidas.length === 0 && selectedProfile === 'cpd' && lojasCompativeis.length > 0) {
+        setSelectedLojas([lojasCompativeis[0].id]);
+      } else if (lojasValidas.length !== selectedLojas.length) {
+        setSelectedLojas(lojasValidas);
+      }
+    }
+  }, [selectedProfile, editModalOpen, lojas]);
+
+  // Sincronizar lojas com o perfil selecionado no modal de convite
+  useEffect(() => {
+    if (inviteModalOpen && lojas.length > 0) {
+      const lojasCompativeis = lojas.filter(l => 
+        inviteSelectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd'
+      );
+      
+      // Manter apenas lojas que são compatíveis com o novo perfil
+      const lojasValidas = inviteLojas.filter(id => 
+        lojasCompativeis.some(l => l.id === id)
+      );
+      
+      // Se não houver lojas válidas e for CPD, pré-selecionar a loja CPD
+      if (lojasValidas.length === 0 && inviteSelectedProfile === 'cpd' && lojasCompativeis.length > 0) {
+        setInviteLojas([lojasCompativeis[0].id]);
+      } else if (lojasValidas.length !== inviteLojas.length) {
+        setInviteLojas(lojasValidas);
+      }
+    }
+  }, [inviteSelectedProfile, inviteModalOpen, lojas]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
