@@ -496,7 +496,11 @@ const Romaneio = () => {
         };
       });
 
-      setDemandasPorLoja(demandasProcessadas);
+      // Filtrar apenas lojas que têm demanda real (itens ou itensSelecionados)
+      const lojasComDemanda = demandasProcessadas.filter(d => 
+        d.itens.length > 0 || d.itensSelecionados.length > 0
+      );
+      setDemandasPorLoja(lojasComDemanda);
     } catch (error) {
       console.error('Erro ao buscar demandas:', error);
       toast.error('Erro ao carregar demandas das lojas');
