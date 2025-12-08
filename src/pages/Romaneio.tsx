@@ -276,9 +276,6 @@ const Romaneio = () => {
   const [estoqueMinimoSemanal, setEstoqueMinimoSemanal] = useState<any[]>([]);
   const [estoqueLojaAtual, setEstoqueLojaAtual] = useState<any[]>([]);
   
-  // Estados para recebimento de Romaneio de Produtos
-  const [romaneiosProdutosEnviados, setRomaneiosProdutosEnviados] = useState<RomaneioProduto[]>([]);
-  const [recebimentosProduto, setRecebimentosProduto] = useState<{[itemId: string]: { quantidade_recebida: number; divergencia?: boolean; observacao_divergencia?: string }}>({});
 
   // ==================== EFFECTS ====================
 
@@ -289,7 +286,6 @@ const Romaneio = () => {
     fetchProdutos();
     fetchEstoquesProdutos();
     fetchRomaneiosProdutos();
-    fetchRomaneiosProdutosEnviados();
 
     let isMounted = true;
     
@@ -702,57 +698,6 @@ const Romaneio = () => {
     }
   };
 
-  const fetchRomaneiosProdutosEnviados = async () => {
-    if (!organizationId) return;
-    
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      let query = supabase
-        .from("romaneios_produtos")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .eq("status", "enviado")
-        .order("data_envio", { ascending: false });
-
-      // Se for usuário de loja, filtrar por lojas vinculadas
-      if (!isAdmin() && userLojasIds.length > 0) {
-        query = query.in('loja_id', userLojasIds);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      setRomaneiosProdutosEnviados(data || []);
-      
-      // Buscar itens de cada romaneio enviado
-      for (const romaneio of data || []) {
-        const { data: itens } = await supabase
-          .from("romaneios_produtos_itens")
-          .select("*")
-          .eq("romaneio_id", romaneio.id);
-        
-        setItensRomaneiosProdutos(prev => ({
-          ...prev,
-          [romaneio.id]: itens || []
-        }));
-        
-        // Inicializar estado de recebimento
-        itens?.forEach((item: RomaneioProdutoItem) => {
-          setRecebimentosProduto(prev => ({
-            ...prev,
-            [item.id]: {
-              quantidade_recebida: item.quantidade,
-              divergencia: false,
-              observacao_divergencia: ''
-            }
-          }));
-        });
-      }
-    } catch (error: any) {
-      console.error("Erro ao buscar romaneios de produtos enviados:", error);
-    }
-  };
 
   // ==================== HANDLERS: PORCIONADOS ====================
 
@@ -1127,7 +1072,7 @@ const Romaneio = () => {
     };
 
     fetchRomaneiosPendentesLoja();
-  }, [lojaSelecionadaProduto, organizationId, romaneiosProdutosPendentes, romaneiosProdutosEnviados]);
+  }, [lojaSelecionadaProduto, organizationId, romaneiosProdutosPendentes]);
 
   const produtosParaRomaneio = useMemo(() => {
     // Se não tem loja selecionada, não mostrar nada
@@ -1419,90 +1364,6 @@ const Romaneio = () => {
     }
   };
 
-  const handleConfirmarRecebimentoProduto = async (romaneioId: string) => {
-    if (!organizationId) return;
-    
-    try {
-      setLoadingProdutos(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
-      const romaneio = romaneiosProdutosEnviados.find(r => r.id === romaneioId);
-      if (!romaneio) throw new Error('Romaneio não encontrado');
-
-      const itens = itensRomaneiosProdutos[romaneioId] || [];
-      
-      // Atualizar cada item com quantidade recebida e verificar divergências
-      for (const item of itens) {
-        const recebimento = recebimentosProduto[item.id];
-        const qtdRecebida = recebimento?.quantidade_recebida ?? item.quantidade;
-        const divergencia = qtdRecebida !== item.quantidade;
-        
-        await supabase
-          .from('romaneios_produtos_itens')
-          .update({
-            quantidade_recebida: qtdRecebida,
-            divergencia,
-            observacao_divergencia: divergencia ? (recebimento?.observacao_divergencia || null) : null
-          })
-          .eq('id', item.id);
-
-        // Atualizar estoque da loja
-        const { data: estoqueAtual } = await supabase
-          .from('estoque_loja_produtos')
-          .select('id, quantidade')
-          .eq('produto_id', item.produto_id)
-          .eq('loja_id', romaneio.loja_id)
-          .single();
-
-        if (estoqueAtual) {
-          await supabase
-            .from('estoque_loja_produtos')
-            .update({
-              quantidade: (estoqueAtual.quantidade || 0) + qtdRecebida,
-              data_ultima_atualizacao: new Date().toISOString(),
-              data_confirmacao_recebimento: new Date().toISOString()
-            })
-            .eq('id', estoqueAtual.id);
-        } else {
-          await supabase
-            .from('estoque_loja_produtos')
-            .insert({
-              produto_id: item.produto_id,
-              loja_id: romaneio.loja_id,
-              quantidade: qtdRecebida,
-              data_ultima_atualizacao: new Date().toISOString(),
-              data_confirmacao_recebimento: new Date().toISOString(),
-              organization_id: organizationId
-            });
-        }
-      }
-
-      // Atualizar status do romaneio para recebido
-      const { error: updateError } = await supabase
-        .from('romaneios_produtos')
-        .update({
-          status: 'recebido',
-          data_recebimento: new Date().toISOString(),
-          recebido_por_id: user.id,
-          recebido_por_nome: userProfile?.nome || 'Usuário',
-          observacao_recebimento: observacaoRecebimento[romaneioId] || null
-        })
-        .eq('id', romaneioId);
-
-      if (updateError) throw updateError;
-
-      toast.success('Recebimento de produtos confirmado!');
-      fetchRomaneiosProdutosEnviados();
-      fetchRomaneiosProdutos();
-    } catch (error: any) {
-      console.error('Erro ao confirmar recebimento:', error);
-      toast.error(error.message || 'Erro ao confirmar recebimento');
-    } finally {
-      setLoadingProdutos(false);
-    }
-  };
 
   // ==================== HELPERS ====================
 
@@ -1528,7 +1389,6 @@ const Romaneio = () => {
         fetchProdutos(),
         fetchEstoquesProdutos(),
         fetchRomaneiosProdutos(),
-        fetchRomaneiosProdutosEnviados(),
         lojaSelecionadaProduto ? fetchDadosLojaSelecionada() : Promise.resolve()
       ]);
       toast.success('Dados atualizados!');
@@ -1996,17 +1856,9 @@ const Romaneio = () => {
             </CardDescription>
           </CardHeader>
             <CardContent>
-              <Tabs defaultValue={isLojaOnly ? 'receber-produtos' : 'enviar-produtos'} className="space-y-4">
-                <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              <Tabs defaultValue={isLojaOnly ? 'avulso-produtos' : 'enviar-produtos'} className="space-y-4">
+                <TabsList className="grid w-full grid-cols-2">
                   {!isLojaOnly && <TabsTrigger value="enviar-produtos">Enviar</TabsTrigger>}
-                  <TabsTrigger value="receber-produtos">
-                    Receber
-                    {romaneiosProdutosEnviados.length > 0 && (
-                      <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
-                        {romaneiosProdutosEnviados.length}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
                   <TabsTrigger value="avulso-produtos">
                     <ArrowRightLeft className="w-3 h-3 mr-1" />
                     Romaneio Avulso
@@ -2111,118 +1963,6 @@ const Romaneio = () => {
                   )}
                 </TabsContent>
                 )}
-
-                {/* TAB: RECEBER PRODUTOS */}
-                <TabsContent value="receber-produtos" className="space-y-4">
-                  {romaneiosProdutosEnviados.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                      <Package className="h-12 w-12 mb-4 opacity-50" />
-                      <p>Nenhum romaneio de produtos para receber</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {romaneiosProdutosEnviados.map((romaneio) => {
-                        const itens = itensRomaneiosProdutos[romaneio.id] || [];
-                        return (
-                          <Card key={romaneio.id}>
-                            <CardHeader className="py-3">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <CardTitle className="text-sm flex items-center gap-2">
-                                    <Store className="h-4 w-4" />
-                                    {romaneio.loja_nome}
-                                  </CardTitle>
-                                  <p className="text-xs text-muted-foreground">
-                                    Enviado por: {romaneio.usuario_nome} • {romaneio.data_envio && format(new Date(romaneio.data_envio), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                                  </p>
-                                </div>
-                                <Badge variant="outline" className="text-blue-600">
-                                  <Send className="w-3 h-3 mr-1" />
-                                  Enviado
-                                </Badge>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                              {itens.map((item) => {
-                                const recebimento = recebimentosProduto[item.id];
-                                const qtdRecebida = recebimento?.quantidade_recebida ?? item.quantidade;
-                                const divergencia = qtdRecebida !== item.quantidade;
-                                
-                                return (
-                                  <div key={item.id} className="p-3 border rounded space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <div>
-                                        <p className="font-medium text-sm">{item.produto_nome}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          Enviado: {item.quantidade} {item.unidade || "un"}
-                                        </p>
-                                      </div>
-                                      {divergencia ? (
-                                        <Badge variant="outline" className="text-amber-600 border-amber-300">
-                                          ⚠️ Divergência
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="outline" className="text-green-600 border-green-300">
-                                          ✓ OK
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-muted-foreground">Recebido:</span>
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        step={0.1}
-                                        value={qtdRecebida}
-                                        onChange={(e) => setRecebimentosProduto(prev => ({
-                                          ...prev,
-                                          [item.id]: {
-                                            ...prev[item.id],
-                                            quantidade_recebida: parseFloat(e.target.value) || 0
-                                          }
-                                        }))}
-                                        className="w-24 h-8"
-                                      />
-                                      <span className="text-xs text-muted-foreground">{item.unidade || "un"}</span>
-                                    </div>
-                                    {divergencia && (
-                                      <Input
-                                        placeholder="Motivo da divergência..."
-                                        value={recebimento?.observacao_divergencia || ''}
-                                        onChange={(e) => setRecebimentosProduto(prev => ({
-                                          ...prev,
-                                          [item.id]: {
-                                            ...prev[item.id],
-                                            observacao_divergencia: e.target.value
-                                          }
-                                        }))}
-                                        className="h-8 text-sm"
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                              <Textarea
-                                placeholder="Observação geral (opcional)"
-                                value={observacaoRecebimento[romaneio.id] || ''}
-                                onChange={(e) => setObservacaoRecebimento(prev => ({ ...prev, [romaneio.id]: e.target.value }))}
-                                className="h-16"
-                              />
-                              <Button 
-                                onClick={() => handleConfirmarRecebimentoProduto(romaneio.id)} 
-                                disabled={loadingProdutos}
-                                className="w-full"
-                              >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Confirmar Recebimento
-                              </Button>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )}
-                </TabsContent>
 
                 {/* TAB: ROMANEIO AVULSO (PRODUTOS - LIVRE DIGITAÇÃO) */}
                 <TabsContent value="avulso-produtos" className="space-y-4">
