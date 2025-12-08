@@ -3,10 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Package, AlertTriangle, CheckCircle, History, User, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface EstoqueProduto {
   produto_id: string;
@@ -17,11 +19,26 @@ interface EstoqueProduto {
   quantidade: number;
   estoque_minimo: number;
   status: 'critico' | 'alerta' | 'normal';
+  data_ultima_atualizacao: string | null;
+  usuario_nome: string | null;
+}
+
+interface Movimentacao {
+  id: string;
+  produto_nome: string;
+  tipo: string;
+  quantidade: number;
+  quantidade_anterior: number;
+  quantidade_posterior: number;
+  usuario_nome: string;
+  created_at: string;
+  observacao: string | null;
 }
 
 const RelatorioEstoqueProdutos = () => {
   const [estoques, setEstoques] = useState<EstoqueProduto[]>([]);
   const [filteredEstoques, setFilteredEstoques] = useState<EstoqueProduto[]>([]);
+  const [movimentacoes, setMovimentacoes] = useState<Movimentacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoriaFilter, setCategoriaFilter] = useState('todos');
   const [statusFilter, setStatusFilter] = useState('todos');
@@ -46,7 +63,7 @@ const RelatorioEstoqueProdutos = () => {
 
       const { data: estoquesData, error: estoquesError } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, loja_id, quantidade');
+        .select('produto_id, loja_id, quantidade, data_ultima_atualizacao, usuario_nome');
 
       if (estoquesError) throw estoquesError;
 
@@ -62,6 +79,17 @@ const RelatorioEstoqueProdutos = () => {
         .select('produto_id, loja_id, segunda');
 
       if (minimosError) throw minimosError;
+
+      // Buscar últimas movimentações
+      const { data: movData, error: movError } = await supabase
+        .from('movimentacoes_cpd_produtos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (movError) throw movError;
+
+      setMovimentacoes(movData || []);
 
       // Montar dados consolidados
       const estoquesCompletos: EstoqueProduto[] = [];
@@ -93,6 +121,8 @@ const RelatorioEstoqueProdutos = () => {
             quantidade,
             estoque_minimo: estoqueMinimo,
             status,
+            data_ultima_atualizacao: estoque.data_ultima_atualizacao,
+            usuario_nome: estoque.usuario_nome,
           });
         }
       });
@@ -130,6 +160,28 @@ const RelatorioEstoqueProdutos = () => {
         return <Badge variant="default"><CheckCircle className="mr-1 h-3 w-3" />Normal</Badge>;
       default:
         return <Badge variant="outline">-</Badge>;
+    }
+  };
+
+  const formatDateTime = (dateString: string | null) => {
+    if (!dateString) return '-';
+    try {
+      return format(new Date(dateString), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    } catch {
+      return '-';
+    }
+  };
+
+  const getTipoBadge = (tipo: string) => {
+    switch (tipo) {
+      case 'entrada':
+        return <Badge variant="default" className="bg-green-600">Entrada</Badge>;
+      case 'saida':
+        return <Badge variant="destructive">Saída</Badge>;
+      case 'ajuste':
+        return <Badge variant="secondary">Ajuste</Badge>;
+      default:
+        return <Badge variant="outline">{tipo}</Badge>;
     }
   };
 
@@ -259,12 +311,24 @@ const RelatorioEstoqueProdutos = () => {
                   <TableHead className="text-right">Qtd Atual</TableHead>
                   <TableHead className="text-right">Mínimo</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Última Atualização
+                    </div>
+                  </TableHead>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      Usuário
+                    </div>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredEstoques.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       Nenhum produto encontrado
                     </TableCell>
                   </TableRow>
@@ -278,6 +342,68 @@ const RelatorioEstoqueProdutos = () => {
                       <TableCell className="text-right">{estoque.quantidade}</TableCell>
                       <TableCell className="text-right">{estoque.estoque_minimo}</TableCell>
                       <TableCell>{getStatusBadge(estoque.status)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatDateTime(estoque.data_ultima_atualizacao)}
+                      </TableCell>
+                      <TableCell className="text-sm">{estoque.usuario_nome || '-'}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* Últimas Movimentações */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Últimas Movimentações do CPD
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Data/Hora
+                    </div>
+                  </TableHead>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Quantidade</TableHead>
+                  <TableHead className="text-right">Anterior</TableHead>
+                  <TableHead className="text-right">Posterior</TableHead>
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      Usuário
+                    </div>
+                  </TableHead>
+                  <TableHead>Observação</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movimentacoes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      Nenhuma movimentação registrada
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  movimentacoes.map((mov) => (
+                    <TableRow key={mov.id}>
+                      <TableCell className="text-sm">{formatDateTime(mov.created_at)}</TableCell>
+                      <TableCell className="font-medium">{mov.produto_nome}</TableCell>
+                      <TableCell>{getTipoBadge(mov.tipo)}</TableCell>
+                      <TableCell className="text-right font-medium">{mov.quantidade}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{mov.quantidade_anterior}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{mov.quantidade_posterior}</TableCell>
+                      <TableCell className="text-sm">{mov.usuario_nome}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{mov.observacao || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}
