@@ -471,7 +471,28 @@ const Romaneio = () => {
     if (!selectedLoja || !cpdLojaId) { setItensDisponiveis([]); return; }
 
     try {
-      // Buscar estoque CPD da tabela unificada (itens porcionados)
+      // REGRA OBRIGATÓRIA: Usar data do SERVIDOR para filtrar contagens do dia atual
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const hoje = dataServidor || new Date().toISOString().split('T')[0];
+      
+      // 1. Verificar quais itens a loja selecionada contou HOJE
+      const { data: contagensHoje, error: contagensError } = await supabase
+        .from('contagem_porcionados')
+        .select('item_porcionado_id')
+        .eq('loja_id', selectedLoja)
+        .gte('updated_at', `${hoje}T00:00:00+00:00`)
+        .lt('updated_at', `${hoje}T23:59:59.999+00:00`);
+      
+      if (contagensError) throw contagensError;
+      
+      // Se a loja não contou nada hoje, não há itens disponíveis para ela
+      const itensContadosHoje = new Set(contagensHoje?.map(c => c.item_porcionado_id) || []);
+      if (itensContadosHoje.size === 0) {
+        setItensDisponiveis([]);
+        return;
+      }
+      
+      // 2. Buscar estoque CPD da tabela unificada (itens porcionados)
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_loja_itens')
         .select(`item_porcionado_id, quantidade, itens_porcionados!inner(nome, peso_unitario_g)`)
@@ -480,10 +501,12 @@ const Romaneio = () => {
 
       if (estoqueError) throw estoqueError;
 
+      // 3. Buscar produções finalizadas APENAS do dia atual (data_referencia = hoje)
       const { data: producoes, error: producoesError } = await supabase
         .from('producao_registros')
         .select('item_id, item_nome, detalhes_lojas, data_fim')
         .eq('status', 'finalizado')
+        .eq('data_referencia', hoje)
         .order('data_fim', { ascending: false });
 
       if (producoesError) throw producoesError;
@@ -497,6 +520,9 @@ const Romaneio = () => {
 
       const quantidadesPorItem = new Map<string, number>();
       ultimaProducaoPorItem.forEach((prod, item_id) => {
+        // REGRA: Só incluir se a loja contou esse item HOJE
+        if (!itensContadosHoje.has(item_id)) return;
+        
         const detalhes = prod.detalhes_lojas as any[];
         const detalheLoja = detalhes?.find((d: any) => d.loja_id === selectedLoja);
         if (detalheLoja && detalheLoja.quantidade > 0) {
@@ -519,6 +545,9 @@ const Romaneio = () => {
 
       const itensFinais: ItemDisponivel[] = [];
       estoqueCpd?.forEach(est => {
+        // REGRA: Só incluir se a loja contou esse item HOJE
+        if (!itensContadosHoje.has(est.item_porcionado_id)) return;
+        
         const quantidadeDaLoja = quantidadesPorItem.get(est.item_porcionado_id) || 0;
         const estoqueCpdQtd = est.quantidade || 0;
         const disponivel = Math.min(quantidadeDaLoja, estoqueCpdQtd);
