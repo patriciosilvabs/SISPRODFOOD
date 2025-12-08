@@ -290,7 +290,7 @@ const Romaneio = () => {
     }
   }, [lojas, cpdLojaId, canManageProduction]);
 
-  // Realtime listener para produções finalizadas
+  // Realtime listener para produções finalizadas, romaneios e estoque
   useEffect(() => {
     if (!cpdLojaId || !canManageProduction) return;
     
@@ -301,8 +301,10 @@ const Romaneio = () => {
         schema: 'public', 
         table: 'producao_registros'
       }, (payload) => {
+        console.log('[Romaneio] Produção atualizada:', payload);
         // Atualizar demandas quando produção é finalizada
         if (payload.new && (payload.new as any).status === 'finalizado') {
+          console.log('[Romaneio] Produção finalizada detectada, atualizando demandas...');
           fetchDemandasTodasLojas();
         }
       })
@@ -310,7 +312,25 @@ const Romaneio = () => {
         event: '*',
         schema: 'public',
         table: 'estoque_loja_itens'
-      }, () => {
+      }, (payload) => {
+        console.log('[Romaneio] Estoque CPD atualizado:', payload);
+        fetchDemandasTodasLojas();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'romaneios'
+      }, (payload) => {
+        console.log('[Romaneio] Romaneio atualizado:', payload);
+        fetchDemandasTodasLojas();
+        fetchRomaneiosEnviados();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'romaneio_itens'
+      }, (payload) => {
+        console.log('[Romaneio] Romaneio item atualizado:', payload);
         fetchDemandasTodasLojas();
       })
       .subscribe();
@@ -380,10 +400,15 @@ const Romaneio = () => {
     if (!cpdLojaId || lojas.length === 0) return;
     
     setLoadingDemandas(true);
+    console.log('[Romaneio] Iniciando fetchDemandasTodasLojas...');
+    console.log('[Romaneio] CPD ID:', cpdLojaId);
+    console.log('[Romaneio] Lojas disponíveis:', lojas.map(l => ({ id: l.id, nome: l.nome })));
+    
     try {
       // 0. Buscar data do servidor (timezone-safe)
       const { data: serverDateResult } = await supabase.rpc('get_current_date');
       const serverDate = serverDateResult || new Date().toISOString().split('T')[0];
+      console.log('[Romaneio] Data do servidor:', serverDate);
 
       // 1. Buscar estoque CPD
       const { data: estoqueCpd, error: estoqueError } = await supabase
@@ -393,6 +418,7 @@ const Romaneio = () => {
         .gt('quantidade', 0);
 
       if (estoqueError) throw estoqueError;
+      console.log('[Romaneio] Estoque CPD encontrado:', estoqueCpd?.length, 'itens');
 
       // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas não vazios
       const { data: producoesRaw, error: producoesError } = await supabase
@@ -404,6 +430,7 @@ const Romaneio = () => {
         .order('data_fim', { ascending: false });
 
       if (producoesError) throw producoesError;
+      console.log('[Romaneio] Produções brutas encontradas:', producoesRaw?.length);
 
       // 3. Filtrar produções com detalhes_lojas vazios (traços secundários têm [])
       const producoes = producoesRaw?.filter(prod => {
@@ -411,6 +438,11 @@ const Romaneio = () => {
         // Excluir se detalhes_lojas é null, não é array, ou está vazio
         return detalhes && Array.isArray(detalhes) && detalhes.length > 0;
       }) || [];
+      
+      console.log('[Romaneio] Produções após filtro (detalhes_lojas não vazio):', producoes.length);
+      producoes.forEach(p => {
+        console.log(`[Romaneio] - ${p.item_nome}: detalhes_lojas =`, p.detalhes_lojas);
+      });
 
       // 3. Buscar romaneios pendentes/enviados
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
@@ -419,6 +451,7 @@ const Romaneio = () => {
         .in('romaneios.status', ['pendente', 'enviado']);
 
       if (romaneiosError) throw romaneiosError;
+      console.log('[Romaneio] Romaneios pendentes/enviados:', romaneiosPendentes?.length);
 
       // 4. Construir mapa de estoque CPD
       const estoqueMap: Record<string, { quantidade: number; nome: string }> = {};
@@ -428,6 +461,7 @@ const Romaneio = () => {
           nome: (est.itens_porcionados as any).nome
         };
       });
+      console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
       // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
       const demandaPorLojaItem: Record<string, Record<string, number>> = {};
@@ -453,6 +487,8 @@ const Romaneio = () => {
           }
         });
       });
+      
+      console.log('[Romaneio] Demanda por loja/item:', demandaPorLojaItem);
 
       // 6. Calcular já enviado por loja e item
       const jaEnviadoPorLojaItem: Record<string, Record<string, number>> = {};
@@ -464,6 +500,7 @@ const Romaneio = () => {
         }
         jaEnviadoPorLojaItem[lojaId][itemId] = (jaEnviadoPorLojaItem[lojaId][itemId] || 0) + ri.quantidade;
       });
+      console.log('[Romaneio] Já enviado por loja/item:', jaEnviadoPorLojaItem);
 
       // 7. Construir demandas para cada loja
       const demandasProcessadas: DemandaPorLoja[] = lojas.map(loja => {
@@ -475,11 +512,16 @@ const Romaneio = () => {
         
         Object.entries(demandaItens).forEach(([itemId, quantidade]) => {
           const estoque = estoqueMap[itemId];
-          if (!estoque) return;
+          if (!estoque) {
+            console.log(`[Romaneio] Item ${itemId} não encontrado no estoque CPD`);
+            return;
+          }
           
           const qtdJaEnviada = jaEnviado[itemId] || 0;
           const demandaPendente = Math.max(0, quantidade - qtdJaEnviada);
           const disponivel = Math.min(demandaPendente, estoque.quantidade);
+          
+          console.log(`[Romaneio] ${loja.nome} - ${estoque.nome}: demanda=${quantidade}, jaEnviado=${qtdJaEnviada}, pendente=${demandaPendente}, disponivel=${disponivel}`);
           
           if (disponivel > 0) {
             const itemDemanda: ItemDemandaLoja = {
@@ -518,9 +560,15 @@ const Romaneio = () => {
       const lojasComDemanda = demandasProcessadas.filter(d => 
         d.itens.length > 0 || d.itensSelecionados.length > 0
       );
+      
+      // Log das lojas SEM demanda para debug
+      const lojasSemDemanda = lojas.filter(l => !lojasComDemanda.find(d => d.loja_id === l.id));
+      console.log('[Romaneio] Lojas COM demanda:', lojasComDemanda.map(d => d.loja_nome));
+      console.log('[Romaneio] Lojas SEM demanda:', lojasSemDemanda.map(l => l.nome));
+      
       setDemandasPorLoja(lojasComDemanda);
     } catch (error) {
-      console.error('Erro ao buscar demandas:', error);
+      console.error('[Romaneio] Erro ao buscar demandas:', error);
       toast.error('Erro ao carregar demandas das lojas');
     } finally {
       setLoadingDemandas(false);
@@ -1009,6 +1057,20 @@ const Romaneio = () => {
               {/* TAB: ENVIAR - SEÇÕES INDEPENDENTES POR LOJA */}
               {!isLojaOnly && (
                 <TabsContent value="enviar" className="space-y-4">
+                  {/* Botão de Atualizar */}
+                  <div className="flex justify-end">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => fetchDemandasTodasLojas()}
+                      disabled={loadingDemandas}
+                      className="gap-2"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingDemandas ? 'animate-spin' : ''}`} />
+                      Atualizar
+                    </Button>
+                  </div>
+                  
                   {loadingDemandas ? (
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -1021,6 +1083,25 @@ const Romaneio = () => {
                       <p className="text-sm mt-1">
                         Itens aparecerão automaticamente quando a produção for finalizada
                       </p>
+                      
+                      {/* Indicador de lojas sem demanda */}
+                      {lojas.length > 0 && (
+                        <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-dashed max-w-md mx-auto">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">
+                            Lojas cadastradas ({lojas.length}):
+                          </p>
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {lojas.map(loja => (
+                              <Badge key={loja.id} variant="outline" className="text-xs">
+                                {loja.nome}
+                              </Badge>
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Nenhuma demanda pendente para estas lojas
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -1041,6 +1122,25 @@ const Romaneio = () => {
                           onAddItem={handleAddItemLoja}
                         />
                       ))}
+                      
+                      {/* Indicador de lojas sem demanda quando há algumas com demanda */}
+                      {lojas.length > lojasComItens.length && (
+                        <div className="p-3 bg-muted/30 rounded-lg border border-dashed">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">
+                            Lojas sem demanda pendente ({lojas.length - lojasComItens.length}):
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {lojas
+                              .filter(loja => !lojasComItens.find(d => d.loja_id === loja.id))
+                              .map(loja => (
+                                <Badge key={loja.id} variant="outline" className="text-xs opacity-60">
+                                  {loja.nome}
+                                </Badge>
+                              ))
+                            }
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </TabsContent>
