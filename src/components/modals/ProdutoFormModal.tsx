@@ -94,6 +94,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
     ativo: true,
     modo_envio: 'peso',
     peso_por_unidade_kg: '',
+    dias_cobertura_desejado: '7',
+    lead_time_real_dias: '2',
   });
 
   useEffect(() => {
@@ -108,6 +110,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         ativo: produto.ativo ?? true,
         modo_envio: produto.modo_envio || 'peso',
         peso_por_unidade_kg: produto.peso_por_unidade_kg?.toString() || '',
+        dias_cobertura_desejado: (produto as any).dias_cobertura_desejado?.toString() || '7',
+        lead_time_real_dias: (produto as any).lead_time_real_dias?.toString() || '2',
       });
     } else {
       setFormData({
@@ -120,6 +124,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         ativo: true,
         modo_envio: 'peso',
         peso_por_unidade_kg: '',
+        dias_cobertura_desejado: '7',
+        lead_time_real_dias: '2',
       });
     }
   }, [produto, open]);
@@ -168,6 +174,8 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         peso_por_unidade_kg: formData.modo_envio === 'unidade' && formData.peso_por_unidade_kg 
           ? parseFloat(formData.peso_por_unidade_kg) 
           : null,
+        dias_cobertura_desejado: parseInt(formData.dias_cobertura_desejado) || 7,
+        lead_time_real_dias: parseInt(formData.lead_time_real_dias) || 2,
       };
 
       if (produto) {
@@ -301,6 +309,50 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Parâmetros Lista de Compras */}
+            <div className="pt-2 border-t">
+              <p className="text-sm font-medium text-muted-foreground mb-3">📊 Parâmetros Lista de Compras</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dias_cobertura">Dias de Cobertura</Label>
+                  <Input
+                    id="dias_cobertura"
+                    type="number"
+                    min="1"
+                    value={formData.dias_cobertura_desejado}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        dias_cobertura_desejado: e.target.value,
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Dias de estoque desejado
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lead_time">Lead Time (dias)</Label>
+                  <Input
+                    id="lead_time"
+                    type="number"
+                    min="0"
+                    value={formData.lead_time_real_dias}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        lead_time_real_dias: e.target.value,
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Tempo entrega fornecedor
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
