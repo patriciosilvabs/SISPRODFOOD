@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, Star } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -63,8 +63,6 @@ interface InsumoVinculado {
   nome: string;
   quantidade: number;
   unidade: UnidadeMedida;
-  is_principal: boolean;
-  consumo_por_traco_g?: number | null;
 }
 
 const ItensPorcionados = () => {
@@ -132,32 +130,14 @@ const ItensPorcionados = () => {
       return;
     }
 
-    // Verificar se há insumo principal definido
-    const insumoPrincipal = insumosVinculados.find(i => i.is_principal);
-    
-    // Validação: alertar se consumo_por_traco_g for muito baixo
-    if (insumoPrincipal && formData.unidade_medida === 'traco') {
-      const consumoPorTraco = insumoPrincipal.consumo_por_traco_g || insumoPrincipal.quantidade || 0;
-      if (consumoPorTraco > 0 && consumoPorTraco < 100) {
-        const confirmar = confirm(
-          `⚠️ ATENÇÃO: O valor de "Consumo por Traço" do insumo principal está muito baixo (${consumoPorTraco}g).\n\n` +
-          `Isso parece estar em quilogramas ao invés de gramas.\n\n` +
-          `Exemplo: Se cada traço consome 15kg de farinha, o valor correto é 15000 (gramas).\n\n` +
-          `Deseja continuar mesmo assim?`
-        );
-        if (!confirmar) return;
-      }
-    }
-
     try {
-      // Dados do item (sem insumo_vinculado_id e consumo_por_traco_g)
       const data = {
         nome: formData.nome,
         peso_unitario_g: parseFloat(formData.peso_unitario_g),
-        insumo_vinculado_id: insumoPrincipal?.insumo_id || null, // Manter compatibilidade
+        insumo_vinculado_id: null,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
-        consumo_por_traco_g: insumoPrincipal?.consumo_por_traco_g || insumoPrincipal?.quantidade || 0, // Manter compatibilidade
+        consumo_por_traco_g: 0,
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
         timer_ativo: formData.timer_ativo,
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
@@ -190,8 +170,8 @@ const ItensPorcionados = () => {
             nome: insumo.nome,
             quantidade: insumo.quantidade,
             unidade: insumo.unidade,
-            is_principal: insumo.is_principal,
-            consumo_por_traco_g: insumo.is_principal ? insumo.quantidade : null,
+            is_principal: false,
+            consumo_por_traco_g: null,
             organization_id: organizationId,
           }));
           
@@ -295,8 +275,6 @@ const ItensPorcionados = () => {
         nome: item.nome,
         quantidade: item.quantidade,
         unidade: item.unidade as UnidadeMedida,
-        is_principal: item.is_principal || false,
-        consumo_por_traco_g: item.consumo_por_traco_g,
       }));
       
       setInsumosVinculados(mapped);
@@ -320,16 +298,11 @@ const ItensPorcionados = () => {
     const insumoSelecionado = insumos.find(i => i.id === novoInsumo.insumo_id);
     if (!insumoSelecionado) return;
 
-    // Verificar se já existe um insumo principal
-    const temPrincipal = insumosVinculados.some(i => i.is_principal);
-
     const novoInsumoVinculado: InsumoVinculado = {
       insumo_id: novoInsumo.insumo_id,
       nome: insumoSelecionado.nome,
       quantidade: parseFloat(novoInsumo.quantidade),
       unidade: novoInsumo.unidade,
-      is_principal: !temPrincipal, // Primeiro insumo é automaticamente o principal
-      consumo_por_traco_g: !temPrincipal ? parseFloat(novoInsumo.quantidade) : null,
     };
 
     // Se estamos editando, salvar no banco
@@ -343,8 +316,8 @@ const ItensPorcionados = () => {
             nome: insumoSelecionado.nome,
             quantidade: parseFloat(novoInsumo.quantidade),
             unidade: novoInsumo.unidade,
-            is_principal: !temPrincipal,
-            consumo_por_traco_g: !temPrincipal ? parseFloat(novoInsumo.quantidade) : null,
+            is_principal: false,
+            consumo_por_traco_g: null,
             organization_id: organizationId,
           })
           .select()
@@ -386,60 +359,6 @@ const ItensPorcionados = () => {
     }
 
     const novosInsumos = insumosVinculados.filter((_, i) => i !== index);
-    
-    // Se removemos o principal e ainda há insumos, definir o primeiro como principal
-    if (insumo.is_principal && novosInsumos.length > 0) {
-      novosInsumos[0].is_principal = true;
-      novosInsumos[0].consumo_por_traco_g = novosInsumos[0].quantidade;
-      
-      // Atualizar no banco se tem ID
-      if (novosInsumos[0].id && editingItem) {
-        await supabase
-          .from('insumos_extras')
-          .update({ is_principal: true, consumo_por_traco_g: novosInsumos[0].quantidade })
-          .eq('id', novosInsumos[0].id);
-      }
-    }
-    
-    setInsumosVinculados(novosInsumos);
-  };
-
-  const definirComoPrincipal = async (index: number) => {
-    const novosInsumos = insumosVinculados.map((insumo, i) => ({
-      ...insumo,
-      is_principal: i === index,
-      consumo_por_traco_g: i === index ? insumo.quantidade : null,
-    }));
-
-    // Se estamos editando, atualizar no banco
-    if (editingItem) {
-      try {
-        // Primeiro, remover is_principal de todos
-        await supabase
-          .from('insumos_extras')
-          .update({ is_principal: false, consumo_por_traco_g: null })
-          .eq('item_porcionado_id', editingItem.id);
-
-        // Definir o novo principal
-        const novoInsumo = novosInsumos[index];
-        if (novoInsumo.id) {
-          await supabase
-            .from('insumos_extras')
-            .update({ 
-              is_principal: true, 
-              consumo_por_traco_g: novoInsumo.quantidade 
-            })
-            .eq('id', novoInsumo.id);
-        }
-        
-        toast.success(`${novoInsumo.nome} definido como insumo principal`);
-      } catch (error) {
-        console.error('Erro ao definir principal:', error);
-        toast.error('Erro ao definir insumo principal');
-        return;
-      }
-    }
-
     setInsumosVinculados(novosInsumos);
   };
 
@@ -474,11 +393,6 @@ const ItensPorcionados = () => {
     });
   };
 
-  // Buscar nome do insumo principal para exibir na tabela
-  const getInsumoPrincipalNome = (item: ItemPorcionado) => {
-    const insumo = insumos.find(i => i.id === item.insumo_vinculado_id);
-    return insumo?.nome || '-';
-  };
 
   if (loading) {
     return (
@@ -682,8 +596,7 @@ const ItensPorcionados = () => {
                         📦 Insumos Vinculados
                       </h4>
                       <p className="text-xs text-muted-foreground mb-4">
-                        Configure os insumos que serão debitados automaticamente quando a produção for finalizada. 
-                        <span className="font-medium text-primary"> Marque um como principal (⭐) para cálculo do traço.</span>
+                        Configure os insumos que serão debitados automaticamente quando a produção for finalizada.
                       </p>
                     </div>
 
@@ -693,38 +606,13 @@ const ItensPorcionados = () => {
                         {insumosVinculados.map((insumo, index) => (
                           <div 
                             key={insumo.id || index} 
-                            className={`flex items-center justify-between p-3 rounded-lg border ${
-                              insumo.is_principal 
-                                ? 'bg-primary/10 border-primary/30' 
-                                : 'bg-muted'
-                            }`}
+                            className="flex items-center justify-between p-3 rounded-lg border bg-muted"
                           >
-                            <div className="flex items-center gap-3 flex-1">
-                              <button
-                                type="button"
-                                onClick={() => definirComoPrincipal(index)}
-                                className={`p-1 rounded-full transition-colors ${
-                                  insumo.is_principal 
-                                    ? 'text-yellow-500' 
-                                    : 'text-muted-foreground hover:text-yellow-500'
-                                }`}
-                                title={insumo.is_principal ? 'Insumo principal' : 'Definir como principal'}
-                              >
-                                <Star className={`h-4 w-4 ${insumo.is_principal ? 'fill-current' : ''}`} />
-                              </button>
-                              <div>
-                                <p className="font-medium text-sm flex items-center gap-2">
-                                  {insumo.nome}
-                                  {insumo.is_principal && (
-                                    <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
-                                      Principal
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
-                                </p>
-                              </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{insumo.nome}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
+                              </p>
                             </div>
                             <Button
                               type="button"
@@ -843,7 +731,6 @@ const ItensPorcionados = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Peso Unit. (g)</TableHead>
                   <TableHead>Unidade</TableHead>
-                  <TableHead>Insumo Principal</TableHead>
                   <TableHead>Perda (%)</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -851,7 +738,7 @@ const ItensPorcionados = () => {
               <TableBody>
                 {itens.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       Nenhum item cadastrado
                     </TableCell>
                   </TableRow>
@@ -861,7 +748,6 @@ const ItensPorcionados = () => {
                       <TableCell className="font-medium">{item.nome}</TableCell>
                       <TableCell>{item.peso_unitario_g.toFixed(2)}</TableCell>
                       <TableCell>{item.unidade_medida}</TableCell>
-                      <TableCell>{getInsumoPrincipalNome(item)}</TableCell>
                       <TableCell>{item.perda_percentual_adicional}%</TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
