@@ -421,10 +421,12 @@ const Romaneio = () => {
       
       producoes?.forEach(prod => {
         const detalhes = prod.detalhes_lojas as Array<{ loja_id: string; loja_nome?: string; quantidade: number }> | null;
-        if (!detalhes) return;
+        
+        // Verificar se detalhes_lojas existe E não está vazio
+        if (!detalhes || !Array.isArray(detalhes) || detalhes.length === 0) return;
         
         detalhes.forEach(d => {
-          if (d.quantidade > 0) {
+          if (d.quantidade > 0 && d.loja_id) {
             if (!demandaPorLojaItem[d.loja_id]) {
               demandaPorLojaItem[d.loja_id] = {};
             }
