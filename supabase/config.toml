@@ -1,10 +1,45 @@
 project_id = "cltytxckwretwrqfxdqf"
 
-[functions.processar-produtos-ia]
-verify_jwt = true
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
 
 [functions.criar-organizacao]
 verify_jwt = true
+
+[functions.convidar-funcionario]
+verify_jwt = true
+
+[functions.aceitar-convite]
+verify_jwt = false
 
 [functions.woovi-pix]
 verify_jwt = true
@@ -15,11 +50,11 @@ verify_jwt = false
 [functions.woovi-check-status]
 verify_jwt = true
 
-[functions.convidar-funcionario]
+[functions.processar-produtos-ia]
 verify_jwt = true
 
-[functions.aceitar-convite]
+[functions.send-recovery-email]
 verify_jwt = false
 
-[functions.send-recovery-email]
+[functions.process-password-reset]
 verify_jwt = false
