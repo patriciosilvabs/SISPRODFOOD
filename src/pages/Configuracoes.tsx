@@ -2,11 +2,12 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2 } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ConfigurarReservaDiariaModal } from '@/components/modals/ConfigurarReservaDiariaModal';
+import { ConfigurarAlertasEstoqueModal } from '@/components/modals/ConfigurarAlertasEstoqueModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -17,6 +18,7 @@ const Configuracoes = () => {
   const { organizationId } = useOrganization();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
+  const [alertasModalOpen, setAlertasModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentSoundUrl, setCurrentSoundUrl] = useState<string | null>(null);
 
@@ -143,6 +145,13 @@ const Configuracoes = () => {
       onClick: () => toast.info('Funcionalidade em desenvolvimento'),
     },
     {
+      title: 'Alertas de Estoque',
+      description: 'Configure alertas automáticos por email quando itens atingirem níveis críticos.',
+      icon: Bell,
+      color: 'bg-red-100 text-red-600',
+      onClick: () => setAlertasModalOpen(true),
+    },
+    {
       title: 'Reserva Mínima por Dia',
       description: 'Configure a reserva de segurança do CPD por dia da semana.',
       icon: Calendar,
@@ -205,6 +214,10 @@ const Configuracoes = () => {
       <ConfigurarReservaDiariaModal 
         open={reservaModalOpen} 
         onOpenChange={setReservaModalOpen} 
+      />
+      <ConfigurarAlertasEstoqueModal 
+        open={alertasModalOpen} 
+        onOpenChange={setAlertasModalOpen} 
       />
       
       <div className="space-y-6">

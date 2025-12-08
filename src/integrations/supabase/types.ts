@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      alertas_estoque: {
+        Row: {
+          created_at: string | null
+          dias_cobertura_restante: number | null
+          enviado_em: string | null
+          estoque_atual: number | null
+          id: string
+          item_id: string
+          item_nome: string
+          item_tipo: string
+          organization_id: string | null
+          resolvido_em: string | null
+          status_alerta: string
+        }
+        Insert: {
+          created_at?: string | null
+          dias_cobertura_restante?: number | null
+          enviado_em?: string | null
+          estoque_atual?: number | null
+          id?: string
+          item_id: string
+          item_nome: string
+          item_tipo: string
+          organization_id?: string | null
+          resolvido_em?: string | null
+          status_alerta: string
+        }
+        Update: {
+          created_at?: string | null
+          dias_cobertura_restante?: number | null
+          enviado_em?: string | null
+          estoque_atual?: number | null
+          id?: string
+          item_id?: string
+          item_nome?: string
+          item_tipo?: string
+          organization_id?: string | null
+          resolvido_em?: string | null
+          status_alerta?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alertas_estoque_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -59,6 +109,50 @@ export type Database = {
             foreignKeyName: "audit_logs_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      configuracao_alertas: {
+        Row: {
+          alertas_email_ativos: boolean | null
+          created_at: string | null
+          emails_destinatarios: string[] | null
+          enviar_apenas_criticos: boolean | null
+          frequencia: string | null
+          horario_envio_preferido: string | null
+          id: string
+          organization_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          alertas_email_ativos?: boolean | null
+          created_at?: string | null
+          emails_destinatarios?: string[] | null
+          enviar_apenas_criticos?: boolean | null
+          frequencia?: string | null
+          horario_envio_preferido?: string | null
+          id?: string
+          organization_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          alertas_email_ativos?: boolean | null
+          created_at?: string | null
+          emails_destinatarios?: string[] | null
+          enviar_apenas_criticos?: boolean | null
+          frequencia?: string | null
+          horario_envio_preferido?: string | null
+          id?: string
+          organization_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "configuracao_alertas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },

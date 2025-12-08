@@ -58,3 +58,6 @@ verify_jwt = false
 
 [functions.process-password-reset]
 verify_jwt = false
+
+[functions.verificar-alertas-estoque]
+verify_jwt = false
