@@ -381,7 +381,7 @@ const ResumoDaProducao = () => {
             }
             
             return {
-              nome: insumoVinculado.nome + (insumoVinculado.is_principal ? ' ⭐' : ''),
+              nome: insumoVinculado.nome,
               quantidade_necessaria: quantidadeNecessaria,
               unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
