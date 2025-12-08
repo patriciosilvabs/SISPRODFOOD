@@ -118,10 +118,29 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
       toast.error('Nenhum item para enviar');
       return;
     }
+    
+    // Validação de campos obrigatórios
+    if (!demanda.pesoTotalEnvio || demanda.pesoTotalEnvio === '0') {
+      toast.error('Informe o Peso Total do envio');
+      return;
+    }
+    
+    if (!demanda.quantidadeVolumes || demanda.quantidadeVolumes === '0') {
+      toast.error('Informe a Quantidade de Volumes');
+      return;
+    }
+    
     onEnviar(demanda.loja_id, demanda.itensSelecionados, demanda.pesoTotalEnvio, demanda.quantidadeVolumes);
   };
 
   const totalItens = demanda.itensSelecionados.reduce((acc, item) => acc + item.quantidade, 0);
+  
+  // Verificar se campos obrigatórios estão preenchidos
+  const camposObrigatoriosPreenchidos = 
+    demanda.pesoTotalEnvio && 
+    demanda.pesoTotalEnvio !== '0' && 
+    demanda.quantidadeVolumes && 
+    demanda.quantidadeVolumes !== '0';
 
   // Não renderizar se não há itens disponíveis nem selecionados
   if (demanda.itens.length === 0 && demanda.itensSelecionados.length === 0) {
@@ -145,7 +164,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
             <Button 
               size="sm" 
               onClick={handleEnviar} 
-              disabled={demanda.itensSelecionados.length === 0 || demanda.enviando}
+              disabled={demanda.itensSelecionados.length === 0 || demanda.enviando || !camposObrigatoriosPreenchidos}
               className="gap-1"
             >
               {demanda.enviando ? (
@@ -235,12 +254,13 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
                   ))}
                 </div>
                 
-                {/* Campos de Peso Total e Quantidade de Volumes */}
+                {/* Campos de Peso Total e Quantidade de Volumes - OBRIGATÓRIOS */}
                 <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
                   <WeightInput
                     value={demanda.pesoTotalEnvio}
                     onChange={(v) => onUpdatePesoTotal(demanda.loja_id, v)}
                     label="Peso Total"
+                    required
                     compact
                     showLabel
                     placeholder="Ex: 5500"
@@ -249,6 +269,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
                     value={demanda.quantidadeVolumes}
                     onChange={(v) => onUpdateVolumes(demanda.loja_id, v)}
                     label="Qtd. Volumes"
+                    required
                     compact
                     showLabel
                     placeholder="Ex: 3"
