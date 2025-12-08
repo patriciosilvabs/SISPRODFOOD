@@ -731,6 +731,7 @@ export type Database = {
       }
       insumos: {
         Row: {
+          classificacao: string | null
           created_at: string | null
           data_ultima_movimentacao: string | null
           dias_cobertura_desejado: number | null
@@ -745,6 +746,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          classificacao?: string | null
           created_at?: string | null
           data_ultima_movimentacao?: string | null
           dias_cobertura_desejado?: number | null
@@ -759,6 +761,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          classificacao?: string | null
           created_at?: string | null
           data_ultima_movimentacao?: string | null
           dias_cobertura_desejado?: number | null

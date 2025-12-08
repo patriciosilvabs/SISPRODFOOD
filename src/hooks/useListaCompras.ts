@@ -4,11 +4,12 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { subDays, format } from 'date-fns';
 
 export type UrgencyStatus = 'critico' | 'urgente' | 'alerta' | 'ok';
+export type ItemTipo = 'insumo' | 'produto' | 'porcionado';
 
 export interface ItemCompra {
   id: string;
   nome: string;
-  tipo: 'insumo' | 'produto';
+  tipo: ItemTipo;
   estoqueAtual: number;
   unidade: string;
   consumoMedioDiario: number;
@@ -18,6 +19,7 @@ export interface ItemCompra {
   quantidadeComprar: number;
   coberturaAtual: number;
   status: UrgencyStatus;
+  classificacao: string | null;
 }
 
 interface UseListaComprasReturn {
@@ -68,7 +70,7 @@ export const useListaCompras = (): UseListaComprasReturn => {
       // Buscar insumos
       const { data: insumos, error: insumosError } = await supabase
         .from('insumos')
-        .select('id, nome, quantidade_em_estoque, unidade_medida, dias_cobertura_desejado, lead_time_real_dias, estoque_minimo')
+        .select('id, nome, quantidade_em_estoque, unidade_medida, dias_cobertura_desejado, lead_time_real_dias, estoque_minimo, classificacao')
         .eq('organization_id', organizationId);
 
       if (insumosError) throw insumosError;
@@ -93,7 +95,7 @@ export const useListaCompras = (): UseListaComprasReturn => {
       // Buscar produtos
       const { data: produtos, error: produtosError } = await supabase
         .from('produtos')
-        .select('id, nome, unidade_consumo, dias_cobertura_desejado, lead_time_real_dias')
+        .select('id, nome, unidade_consumo, dias_cobertura_desejado, lead_time_real_dias, classificacao')
         .eq('organization_id', organizationId)
         .eq('ativo', true);
 
@@ -158,7 +160,8 @@ export const useListaCompras = (): UseListaComprasReturn => {
           pontoPedido,
           quantidadeComprar: Math.ceil(quantidadeComprar * 10) / 10,
           coberturaAtual: Math.round(coberturaAtual * 10) / 10,
-          status
+          status,
+          classificacao: insumo.classificacao || 'C'
         });
       });
 
@@ -188,7 +191,8 @@ export const useListaCompras = (): UseListaComprasReturn => {
           pontoPedido,
           quantidadeComprar: Math.ceil(quantidadeComprar * 10) / 10,
           coberturaAtual: Math.round(coberturaAtual * 10) / 10,
-          status
+          status,
+          classificacao: produto.classificacao || 'C'
         });
       });
 
