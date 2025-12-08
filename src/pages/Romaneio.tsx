@@ -394,16 +394,23 @@ const Romaneio = () => {
 
       if (estoqueError) throw estoqueError;
 
-      // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas
-      const { data: producoes, error: producoesError } = await supabase
+      // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas não vazios
+      const { data: producoesRaw, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas, data_fim')
+        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco')
         .eq('status', 'finalizado')
         .eq('data_referencia', serverDate)
         .not('detalhes_lojas', 'is', null)
         .order('data_fim', { ascending: false });
 
       if (producoesError) throw producoesError;
+
+      // 3. Filtrar produções com detalhes_lojas vazios (traços secundários têm [])
+      const producoes = producoesRaw?.filter(prod => {
+        const detalhes = prod.detalhes_lojas as Array<any> | null;
+        // Excluir se detalhes_lojas é null, não é array, ou está vazio
+        return detalhes && Array.isArray(detalhes) && detalhes.length > 0;
+      }) || [];
 
       // 3. Buscar romaneios pendentes/enviados
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
