@@ -472,10 +472,10 @@ const Romaneio = () => {
         console.log(`[Romaneio] - ${p.item_nome}: detalhes_lojas =`, p.detalhes_lojas);
       });
 
-      // 3. Buscar romaneios pendentes/enviados
+      // 3. Buscar romaneios pendentes/enviados COM data_criacao para filtrar por produção
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
-        .select(`item_porcionado_id, quantidade, romaneios!inner(loja_id, status)`)
+        .select(`item_porcionado_id, quantidade, romaneios!inner(loja_id, status, data_criacao)`)
         .in('romaneios.status', ['pendente', 'enviado']);
 
       if (romaneiosError) throw romaneiosError;
@@ -492,7 +492,9 @@ const Romaneio = () => {
       console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
       // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
+      // E criar mapa de data_fim por item para filtrar romaneios
       const demandaPorLojaItem: Record<string, Record<string, number>> = {};
+      const dataFimPorItem: Record<string, string> = {}; // Mapa: item_id -> data_fim da última produção
       const itemsProcessados = new Set<string>();
       
       // Produções já ordenadas por data_fim DESC, então primeira aparição é a mais recente
@@ -500,6 +502,11 @@ const Romaneio = () => {
         // Pular se já processamos este item (usar apenas a última produção)
         if (itemsProcessados.has(prod.item_id)) return;
         itemsProcessados.add(prod.item_id);
+        
+        // Armazenar data_fim desta produção (mais recente)
+        if (prod.data_fim) {
+          dataFimPorItem[prod.item_id] = prod.data_fim;
+        }
         
         const detalhes = prod.detalhes_lojas as Array<{ loja_id: string; loja_nome?: string; quantidade: number }> | null;
         
@@ -517,18 +524,36 @@ const Romaneio = () => {
       });
       
       console.log('[Romaneio] Demanda por loja/item:', demandaPorLojaItem);
+      console.log('[Romaneio] Data fim por item:', dataFimPorItem);
 
-      // 6. Calcular já enviado por loja e item
+      // 6. Calcular já enviado por loja e item - APENAS romaneios criados APÓS a finalização da produção
       const jaEnviadoPorLojaItem: Record<string, Record<string, number>> = {};
       romaneiosPendentes?.forEach(ri => {
         const lojaId = (ri.romaneios as any).loja_id;
         const itemId = ri.item_porcionado_id;
+        const dataCriacaoRomaneio = (ri.romaneios as any).data_criacao;
+        const dataFimProd = dataFimPorItem[itemId];
+        
+        // Só conta como "já enviado" se romaneio foi criado APÓS a finalização da produção atual
+        // Se não há produção para este item, também não conta (produção antiga foi substituída)
+        if (!dataFimProd) {
+          console.log(`[Romaneio] Item ${itemId} sem produção atual - romaneio ignorado`);
+          return;
+        }
+        
+        if (dataCriacaoRomaneio <= dataFimProd) {
+          console.log(`[Romaneio] Romaneio de ${itemId} criado ANTES da produção atual (${dataCriacaoRomaneio} <= ${dataFimProd}) - ignorado`);
+          return;
+        }
+        
+        console.log(`[Romaneio] Romaneio de ${itemId} criado APÓS produção (${dataCriacaoRomaneio} > ${dataFimProd}) - contando...`);
+        
         if (!jaEnviadoPorLojaItem[lojaId]) {
           jaEnviadoPorLojaItem[lojaId] = {};
         }
         jaEnviadoPorLojaItem[lojaId][itemId] = (jaEnviadoPorLojaItem[lojaId][itemId] || 0) + ri.quantidade;
       });
-      console.log('[Romaneio] Já enviado por loja/item:', jaEnviadoPorLojaItem);
+      console.log('[Romaneio] Já enviado por loja/item (após filtro por data):', jaEnviadoPorLojaItem);
 
       // 7. Construir demandas para cada loja
       const demandasProcessadas: DemandaPorLoja[] = lojas.map(loja => {
