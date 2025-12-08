@@ -253,10 +253,7 @@ const Romaneio = () => {
     if (!selectedLoja || !cpdLojaId) { setItensDisponiveis([]); return; }
 
     try {
-      // CORREÇÃO: Usar estoque CPD como fonte principal de disponibilidade
-      // Não depender mais de detalhes_lojas (que pode estar vazio)
-      
-      // 1. Buscar TODO o estoque CPD com quantidade > 0
+      // 1. Buscar estoque CPD com quantidade > 0
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_loja_itens')
         .select(`item_porcionado_id, quantidade, itens_porcionados!inner(nome, peso_unitario_g)`)
@@ -265,28 +262,54 @@ const Romaneio = () => {
 
       if (estoqueError) throw estoqueError;
 
-      // 2. Buscar romaneios pendentes para QUALQUER loja (para deduzir do estoque)
+      // 2. Buscar produções finalizadas com detalhes_lojas preenchido
+      const { data: producoes, error: producoesError } = await supabase
+        .from('producao_registros')
+        .select('id, item_id, item_nome, detalhes_lojas')
+        .eq('status', 'finalizado')
+        .not('detalhes_lojas', 'is', null);
+
+      if (producoesError) throw producoesError;
+
+      // 3. Buscar romaneios pendentes/enviados APENAS para a loja selecionada
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
         .select(`item_porcionado_id, quantidade, romaneios!inner(loja_id, status)`)
+        .eq('romaneios.loja_id', selectedLoja)
         .in('romaneios.status', ['pendente', 'enviado']);
 
       if (romaneiosError) throw romaneiosError;
 
-      // Calcular quantidades já comprometidas em romaneios pendentes
-      const comprometidoPorItem: Record<string, number> = {};
-      romaneiosPendentes?.forEach(ri => {
-        const itemId = ri.item_porcionado_id;
-        comprometidoPorItem[itemId] = (comprometidoPorItem[itemId] || 0) + ri.quantidade;
+      // 4. Calcular demanda específica por item para a loja selecionada
+      const demandaPorItem: Record<string, number> = {};
+      producoes?.forEach(prod => {
+        const detalhes = prod.detalhes_lojas as Array<{ loja_id: string; loja_nome?: string; quantidade: number }> | null;
+        if (!detalhes) return;
+        
+        const lojaInfo = detalhes.find(d => d.loja_id === selectedLoja);
+        if (lojaInfo && lojaInfo.quantidade > 0) {
+          demandaPorItem[prod.item_id] = (demandaPorItem[prod.item_id] || 0) + lojaInfo.quantidade;
+        }
       });
 
-      // 3. Construir lista de itens disponíveis
+      // 5. Calcular quantidades já enviadas para esta loja
+      const jaEnviadoPorItem: Record<string, number> = {};
+      romaneiosPendentes?.forEach(ri => {
+        const itemId = ri.item_porcionado_id;
+        jaEnviadoPorItem[itemId] = (jaEnviadoPorItem[itemId] || 0) + ri.quantidade;
+      });
+
+      // 6. Construir lista final: disponível = min(demanda pendente, estoque CPD)
       const itensFinais: ItemDisponivel[] = [];
       
       estoqueCpd?.forEach(est => {
         const estoqueCpdQtd = est.quantidade || 0;
-        const comprometido = comprometidoPorItem[est.item_porcionado_id] || 0;
-        const disponivel = Math.max(0, estoqueCpdQtd - comprometido);
+        const demandaLoja = demandaPorItem[est.item_porcionado_id] || 0;
+        const jaEnviado = jaEnviadoPorItem[est.item_porcionado_id] || 0;
+        const demandaPendente = Math.max(0, demandaLoja - jaEnviado);
+        
+        // Disponível = mínimo entre demanda pendente e estoque CPD
+        const disponivel = Math.min(demandaPendente, estoqueCpdQtd);
         
         if (disponivel > 0) {
           itensFinais.push({
@@ -294,7 +317,7 @@ const Romaneio = () => {
             item_nome: (est.itens_porcionados as any).nome,
             quantidade_disponivel: disponivel,
             quantidade_estoque_cpd: estoqueCpdQtd,
-            quantidade_demanda_loja: disponivel, // Simplificado: oferecer tudo disponível
+            quantidade_demanda_loja: demandaLoja,
             data_producao: new Date().toISOString(),
             producao_registro_ids: []
           });
