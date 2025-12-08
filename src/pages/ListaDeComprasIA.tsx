@@ -7,16 +7,18 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShoppingCart, RefreshCw, AlertTriangle, AlertCircle, Clock, CheckCircle, Search, FileSpreadsheet, Package, Droplet } from 'lucide-react';
-import { useListaCompras, ItemCompra, UrgencyStatus } from '@/hooks/useListaCompras';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ShoppingCart, RefreshCw, AlertTriangle, AlertCircle, Clock, CheckCircle, Search, FileSpreadsheet, Package, Droplet, Beef } from 'lucide-react';
+import { useListaCompras, ItemCompra, UrgencyStatus, ItemTipo } from '@/hooks/useListaCompras';
 import { CriarPedidoCompraModal } from '@/components/modals/CriarPedidoCompraModal';
 import { toast } from 'sonner';
 
 const ListaDeComprasIA = () => {
   const { itens, loading, resumo, refresh } = useListaCompras();
   const [searchTerm, setSearchTerm] = useState('');
-  const [tipoFilter, setTipoFilter] = useState<'todos' | 'insumo' | 'produto'>('todos');
+  const [tipoFilter, setTipoFilter] = useState<ItemTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<UrgencyStatus | 'todos'>('todos');
+  const [classificacaoFilter, setClassificacaoFilter] = useState<'A' | 'B' | 'C' | 'todos'>('todos');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -26,9 +28,29 @@ const ListaDeComprasIA = () => {
       const matchSearch = item.nome.toLowerCase().includes(searchTerm.toLowerCase());
       const matchTipo = tipoFilter === 'todos' || item.tipo === tipoFilter;
       const matchStatus = statusFilter === 'todos' || item.status === statusFilter;
-      return matchSearch && matchTipo && matchStatus;
+      const matchClassificacao = classificacaoFilter === 'todos' || item.classificacao === classificacaoFilter;
+      return matchSearch && matchTipo && matchStatus && matchClassificacao;
     });
-  }, [itens, searchTerm, tipoFilter, statusFilter]);
+  }, [itens, searchTerm, tipoFilter, statusFilter, classificacaoFilter]);
+
+  // Contagens por tipo
+  const contagensPorTipo = useMemo(() => ({
+    insumos: itens.filter(i => i.tipo === 'insumo').length,
+    produtos: itens.filter(i => i.tipo === 'produto').length,
+    porcionados: itens.filter(i => i.tipo === 'porcionado').length
+  }), [itens]);
+
+  const getClassificacaoBadge = (classificacao: string | null) => {
+    switch (classificacao) {
+      case 'A':
+        return <Badge className="bg-green-500 hover:bg-green-600 text-white">A</Badge>;
+      case 'B':
+        return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">B</Badge>;
+      case 'C':
+      default:
+        return <Badge variant="secondary">C</Badge>;
+    }
+  };
 
   const handleSelectAll = () => {
     if (selectedIds.size === filteredItens.length) {
@@ -64,10 +86,11 @@ const ListaDeComprasIA = () => {
   };
 
   const exportToCSV = () => {
-    const headers = ['Item', 'Tipo', 'Estoque Atual', 'Unidade', 'Consumo/Dia', 'Cobertura (dias)', 'Lead Time', 'Qtd Comprar', 'Status'];
+    const headers = ['Item', 'Tipo', 'Classificação', 'Estoque Atual', 'Unidade', 'Consumo/Dia', 'Cobertura (dias)', 'Lead Time', 'Qtd Comprar', 'Status'];
     const rows = filteredItens.map(item => [
       item.nome,
-      item.tipo === 'insumo' ? 'Insumo' : 'Produto',
+      item.tipo === 'insumo' ? 'Insumo' : item.tipo === 'produto' ? 'Produto' : 'Porcionado',
+      item.classificacao || 'C',
       item.estoqueAtual.toFixed(2),
       item.unidade,
       item.consumoMedioDiario.toFixed(2),
@@ -176,14 +199,27 @@ const ListaDeComprasIA = () => {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar item..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-xs"
-                />
+              <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar item..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="max-w-xs"
+                  />
+                </div>
+                <Select value={classificacaoFilter} onValueChange={(v) => setClassificacaoFilter(v as 'A' | 'B' | 'C' | 'todos')}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Classificação ABC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todas Classes</SelectItem>
+                    <SelectItem value="A">🟢 Classe A</SelectItem>
+                    <SelectItem value="B">🟡 Classe B</SelectItem>
+                    <SelectItem value="C">⚪ Classe C</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -208,21 +244,24 @@ const ListaDeComprasIA = () => {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="todos" className="mb-4">
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="todos" onClick={() => { setStatusFilter('todos'); setTipoFilter('todos'); }}>
                   Todos ({itens.length})
                 </TabsTrigger>
-                <TabsTrigger value="criticos" onClick={() => setStatusFilter('critico')}>
+                <TabsTrigger value="criticos" onClick={() => { setStatusFilter('critico'); setTipoFilter('todos'); }}>
                   🔴 Críticos ({resumo.critico})
                 </TabsTrigger>
-                <TabsTrigger value="urgentes" onClick={() => setStatusFilter('urgente')}>
+                <TabsTrigger value="urgentes" onClick={() => { setStatusFilter('urgente'); setTipoFilter('todos'); }}>
                   🟡 Urgentes ({resumo.urgente})
                 </TabsTrigger>
                 <TabsTrigger value="insumos" onClick={() => { setStatusFilter('todos'); setTipoFilter('insumo'); }}>
-                  <Droplet className="h-4 w-4 mr-1" /> Insumos
+                  <Droplet className="h-4 w-4 mr-1" /> Insumos ({contagensPorTipo.insumos})
                 </TabsTrigger>
                 <TabsTrigger value="produtos" onClick={() => { setStatusFilter('todos'); setTipoFilter('produto'); }}>
-                  <Package className="h-4 w-4 mr-1" /> Produtos
+                  <Package className="h-4 w-4 mr-1" /> Produtos ({contagensPorTipo.produtos})
+                </TabsTrigger>
+                <TabsTrigger value="porcionados" onClick={() => { setStatusFilter('todos'); setTipoFilter('porcionado'); }}>
+                  <Beef className="h-4 w-4 mr-1" /> Porcionados ({contagensPorTipo.porcionados})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -247,6 +286,7 @@ const ListaDeComprasIA = () => {
                         />
                       </TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>ABC</TableHead>
                       <TableHead>Item</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead className="text-right">Estoque</TableHead>
@@ -271,13 +311,16 @@ const ListaDeComprasIA = () => {
                           />
                         </TableCell>
                         <TableCell>{getStatusBadge(item.status)}</TableCell>
+                        <TableCell>{getClassificacaoBadge(item.classificacao)}</TableCell>
                         <TableCell className="font-medium">{item.nome}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
                             {item.tipo === 'insumo' ? (
                               <><Droplet className="h-3 w-3 mr-1" /> Insumo</>
-                            ) : (
+                            ) : item.tipo === 'produto' ? (
                               <><Package className="h-3 w-3 mr-1" /> Produto</>
+                            ) : (
+                              <><Beef className="h-3 w-3 mr-1" /> Porcionado</>
                             )}
                           </Badge>
                         </TableCell>
