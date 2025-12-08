@@ -690,8 +690,10 @@ export type Database = {
       }
       insumos_extras: {
         Row: {
+          consumo_por_traco_g: number | null
           id: string
           insumo_id: string
+          is_principal: boolean
           item_porcionado_id: string
           nome: string
           organization_id: string | null
@@ -699,8 +701,10 @@ export type Database = {
           unidade: Database["public"]["Enums"]["unidade_medida"]
         }
         Insert: {
+          consumo_por_traco_g?: number | null
           id?: string
           insumo_id: string
+          is_principal?: boolean
           item_porcionado_id: string
           nome: string
           organization_id?: string | null
@@ -708,8 +712,10 @@ export type Database = {
           unidade: Database["public"]["Enums"]["unidade_medida"]
         }
         Update: {
+          consumo_por_traco_g?: number | null
           id?: string
           insumo_id?: string
+          is_principal?: boolean
           item_porcionado_id?: string
           nome?: string
           organization_id?: string | null

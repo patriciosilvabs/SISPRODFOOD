@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, Star } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco';
 
@@ -56,25 +57,27 @@ interface Insumo {
   unidade_medida: UnidadeMedida;
 }
 
-interface InsumoExtra {
+interface InsumoVinculado {
   id?: string;
   insumo_id: string;
   nome: string;
   quantidade: number;
   unidade: UnidadeMedida;
+  is_principal: boolean;
+  consumo_por_traco_g?: number | null;
 }
 
 const ItensPorcionados = () => {
   const { organizationId } = useOrganization();
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
-  const [insumosExtras, setInsumosExtras] = useState<InsumoExtra[]>([]);
+  const [insumosVinculados, setInsumosVinculados] = useState<InsumoVinculado[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
   
-  // Estado para novo insumo extra
-  const [novoInsumoExtra, setNovoInsumoExtra] = useState({
+  // Estado para novo insumo vinculado
+  const [novoInsumo, setNovoInsumo] = useState({
     insumo_id: '',
     quantidade: '',
     unidade: 'kg' as UnidadeMedida,
@@ -82,10 +85,8 @@ const ItensPorcionados = () => {
   const [formData, setFormData] = useState({
     nome: '',
     peso_unitario_g: '0',
-    insumo_vinculado_id: '',
     unidade_medida: 'unidade' as UnidadeMedida,
     equivalencia_traco: '',
-    consumo_por_traco_g: '0',
     perda_percentual_adicional: '0',
     timer_ativo: false,
     tempo_timer_minutos: '10',
@@ -131,26 +132,32 @@ const ItensPorcionados = () => {
       return;
     }
 
-    // Validação: alertar se consumo_por_traco_g for muito baixo (provavelmente erro de unidade)
-    const consumoPorTraco = parseFloat(formData.consumo_por_traco_g) || 0;
-    if (formData.unidade_medida === 'traco' && consumoPorTraco > 0 && consumoPorTraco < 100) {
-      const confirmar = confirm(
-        `⚠️ ATENÇÃO: O valor de "Consumo por Traço" está muito baixo (${consumoPorTraco}g).\n\n` +
-        `Isso parece estar em quilogramas ao invés de gramas.\n\n` +
-        `Exemplo: Se cada traço consome 15kg de farinha, o valor correto é 15000 (gramas).\n\n` +
-        `Deseja continuar mesmo assim?`
-      );
-      if (!confirmar) return;
+    // Verificar se há insumo principal definido
+    const insumoPrincipal = insumosVinculados.find(i => i.is_principal);
+    
+    // Validação: alertar se consumo_por_traco_g for muito baixo
+    if (insumoPrincipal && formData.unidade_medida === 'traco') {
+      const consumoPorTraco = insumoPrincipal.consumo_por_traco_g || insumoPrincipal.quantidade || 0;
+      if (consumoPorTraco > 0 && consumoPorTraco < 100) {
+        const confirmar = confirm(
+          `⚠️ ATENÇÃO: O valor de "Consumo por Traço" do insumo principal está muito baixo (${consumoPorTraco}g).\n\n` +
+          `Isso parece estar em quilogramas ao invés de gramas.\n\n` +
+          `Exemplo: Se cada traço consome 15kg de farinha, o valor correto é 15000 (gramas).\n\n` +
+          `Deseja continuar mesmo assim?`
+        );
+        if (!confirmar) return;
+      }
     }
 
     try {
+      // Dados do item (sem insumo_vinculado_id e consumo_por_traco_g)
       const data = {
         nome: formData.nome,
         peso_unitario_g: parseFloat(formData.peso_unitario_g),
-        insumo_vinculado_id: formData.insumo_vinculado_id === 'none' ? null : formData.insumo_vinculado_id || null,
+        insumo_vinculado_id: insumoPrincipal?.insumo_id || null, // Manter compatibilidade
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
-        consumo_por_traco_g: consumoPorTraco,
+        consumo_por_traco_g: insumoPrincipal?.consumo_por_traco_g || insumoPrincipal?.quantidade || 0, // Manter compatibilidade
         perda_percentual_adicional: parseFloat(formData.perda_percentual_adicional),
         timer_ativo: formData.timer_ativo,
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
@@ -167,11 +174,36 @@ const ItensPorcionados = () => {
         if (error) throw error;
         toast.success('Item atualizado com sucesso!');
       } else {
-        const { error } = await supabase
+        const { data: newItem, error } = await supabase
           .from('itens_porcionados')
-          .insert([data]);
+          .insert([data])
+          .select()
+          .single();
 
         if (error) throw error;
+        
+        // Se é um novo item e há insumos vinculados, salvar os insumos
+        if (newItem && insumosVinculados.length > 0) {
+          const insumosToInsert = insumosVinculados.map(insumo => ({
+            item_porcionado_id: newItem.id,
+            insumo_id: insumo.insumo_id,
+            nome: insumo.nome,
+            quantidade: insumo.quantidade,
+            unidade: insumo.unidade,
+            is_principal: insumo.is_principal,
+            consumo_por_traco_g: insumo.is_principal ? insumo.quantidade : null,
+            organization_id: organizationId,
+          }));
+          
+          const { error: insumosError } = await supabase
+            .from('insumos_extras')
+            .insert(insumosToInsert);
+            
+          if (insumosError) {
+            console.error('Erro ao salvar insumos vinculados:', insumosError);
+          }
+        }
+        
         toast.success('Item criado com sucesso!');
       }
 
@@ -247,7 +279,7 @@ const ItensPorcionados = () => {
     }
   };
 
-  const loadInsumosExtras = async (itemId: string) => {
+  const loadInsumosVinculados = async (itemId: string) => {
     try {
       const { data, error } = await supabase
         .from('insumos_extras')
@@ -255,16 +287,28 @@ const ItensPorcionados = () => {
         .eq('item_porcionado_id', itemId);
 
       if (error) throw error;
-      setInsumosExtras(data || []);
+      
+      // Mapear dados para o formato do componente
+      const mapped: InsumoVinculado[] = (data || []).map(item => ({
+        id: item.id,
+        insumo_id: item.insumo_id,
+        nome: item.nome,
+        quantidade: item.quantidade,
+        unidade: item.unidade as UnidadeMedida,
+        is_principal: item.is_principal || false,
+        consumo_por_traco_g: item.consumo_por_traco_g,
+      }));
+      
+      setInsumosVinculados(mapped);
     } catch (error) {
-      console.error('Erro ao carregar insumos extras:', error);
-      toast.error('Erro ao carregar insumos extras');
+      console.error('Erro ao carregar insumos vinculados:', error);
+      toast.error('Erro ao carregar insumos vinculados');
     }
   };
 
-  const adicionarInsumoExtra = async () => {
-    if (!editingItem || !novoInsumoExtra.insumo_id || !novoInsumoExtra.quantidade) {
-      toast.error('Preencha todos os campos do insumo extra');
+  const adicionarInsumoVinculado = async () => {
+    if (!novoInsumo.insumo_id || !novoInsumo.quantidade) {
+      toast.error('Preencha todos os campos do insumo');
       return;
     }
 
@@ -273,49 +317,130 @@ const ItensPorcionados = () => {
       return;
     }
 
-    try {
-      const insumoSelecionado = insumos.find(i => i.id === novoInsumoExtra.insumo_id);
-      if (!insumoSelecionado) return;
+    const insumoSelecionado = insumos.find(i => i.id === novoInsumo.insumo_id);
+    if (!insumoSelecionado) return;
 
-      const { error } = await supabase
-        .from('insumos_extras')
-        .insert({
-          item_porcionado_id: editingItem.id,
-          insumo_id: novoInsumoExtra.insumo_id,
-          nome: insumoSelecionado.nome,
-          quantidade: parseFloat(novoInsumoExtra.quantidade),
-          unidade: novoInsumoExtra.unidade,
-          organization_id: organizationId,
-        });
+    // Verificar se já existe um insumo principal
+    const temPrincipal = insumosVinculados.some(i => i.is_principal);
 
-      if (error) throw error;
+    const novoInsumoVinculado: InsumoVinculado = {
+      insumo_id: novoInsumo.insumo_id,
+      nome: insumoSelecionado.nome,
+      quantidade: parseFloat(novoInsumo.quantidade),
+      unidade: novoInsumo.unidade,
+      is_principal: !temPrincipal, // Primeiro insumo é automaticamente o principal
+      consumo_por_traco_g: !temPrincipal ? parseFloat(novoInsumo.quantidade) : null,
+    };
 
-      toast.success('Insumo extra adicionado');
-      await loadInsumosExtras(editingItem.id);
-      setNovoInsumoExtra({ insumo_id: '', quantidade: '', unidade: 'kg' });
-    } catch (error) {
-      console.error('Erro ao adicionar insumo extra:', error);
-      toast.error('Erro ao adicionar insumo extra');
+    // Se estamos editando, salvar no banco
+    if (editingItem) {
+      try {
+        const { data, error } = await supabase
+          .from('insumos_extras')
+          .insert({
+            item_porcionado_id: editingItem.id,
+            insumo_id: novoInsumo.insumo_id,
+            nome: insumoSelecionado.nome,
+            quantidade: parseFloat(novoInsumo.quantidade),
+            unidade: novoInsumo.unidade,
+            is_principal: !temPrincipal,
+            consumo_por_traco_g: !temPrincipal ? parseFloat(novoInsumo.quantidade) : null,
+            organization_id: organizationId,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        novoInsumoVinculado.id = data.id;
+        toast.success('Insumo vinculado adicionado');
+      } catch (error) {
+        console.error('Erro ao adicionar insumo vinculado:', error);
+        toast.error('Erro ao adicionar insumo vinculado');
+        return;
+      }
     }
+
+    setInsumosVinculados([...insumosVinculados, novoInsumoVinculado]);
+    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg' });
   };
 
-  const removerInsumoExtra = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('insumos_extras')
-        .delete()
-        .eq('id', id);
+  const removerInsumoVinculado = async (index: number) => {
+    const insumo = insumosVinculados[index];
+    
+    // Se tem ID, remover do banco
+    if (insumo.id) {
+      try {
+        const { error } = await supabase
+          .from('insumos_extras')
+          .delete()
+          .eq('id', insumo.id);
 
-      if (error) throw error;
-
-      toast.success('Insumo extra removido');
-      if (editingItem) {
-        await loadInsumosExtras(editingItem.id);
+        if (error) throw error;
+        toast.success('Insumo removido');
+      } catch (error) {
+        console.error('Erro ao remover insumo:', error);
+        toast.error('Erro ao remover insumo');
+        return;
       }
-    } catch (error) {
-      console.error('Erro ao remover insumo extra:', error);
-      toast.error('Erro ao remover insumo extra');
     }
+
+    const novosInsumos = insumosVinculados.filter((_, i) => i !== index);
+    
+    // Se removemos o principal e ainda há insumos, definir o primeiro como principal
+    if (insumo.is_principal && novosInsumos.length > 0) {
+      novosInsumos[0].is_principal = true;
+      novosInsumos[0].consumo_por_traco_g = novosInsumos[0].quantidade;
+      
+      // Atualizar no banco se tem ID
+      if (novosInsumos[0].id && editingItem) {
+        await supabase
+          .from('insumos_extras')
+          .update({ is_principal: true, consumo_por_traco_g: novosInsumos[0].quantidade })
+          .eq('id', novosInsumos[0].id);
+      }
+    }
+    
+    setInsumosVinculados(novosInsumos);
+  };
+
+  const definirComoPrincipal = async (index: number) => {
+    const novosInsumos = insumosVinculados.map((insumo, i) => ({
+      ...insumo,
+      is_principal: i === index,
+      consumo_por_traco_g: i === index ? insumo.quantidade : null,
+    }));
+
+    // Se estamos editando, atualizar no banco
+    if (editingItem) {
+      try {
+        // Primeiro, remover is_principal de todos
+        await supabase
+          .from('insumos_extras')
+          .update({ is_principal: false, consumo_por_traco_g: null })
+          .eq('item_porcionado_id', editingItem.id);
+
+        // Definir o novo principal
+        const novoInsumo = novosInsumos[index];
+        if (novoInsumo.id) {
+          await supabase
+            .from('insumos_extras')
+            .update({ 
+              is_principal: true, 
+              consumo_por_traco_g: novoInsumo.quantidade 
+            })
+            .eq('id', novoInsumo.id);
+        }
+        
+        toast.success(`${novoInsumo.nome} definido como insumo principal`);
+      } catch (error) {
+        console.error('Erro ao definir principal:', error);
+        toast.error('Erro ao definir insumo principal');
+        return;
+      }
+    }
+
+    setInsumosVinculados(novosInsumos);
   };
 
   const openEditDialog = async (item: ItemPorcionado) => {
@@ -323,34 +448,36 @@ const ItensPorcionados = () => {
     setFormData({
       nome: item.nome,
       peso_unitario_g: item.peso_unitario_g.toString(),
-      insumo_vinculado_id: item.insumo_vinculado_id || 'none',
       unidade_medida: item.unidade_medida,
       equivalencia_traco: item.equivalencia_traco?.toString() || '',
-      consumo_por_traco_g: item.consumo_por_traco_g?.toString() || '0',
       perda_percentual_adicional: item.perda_percentual_adicional.toString(),
       timer_ativo: item.timer_ativo || false,
       tempo_timer_minutos: item.tempo_timer_minutos?.toString() || '10',
       usa_traco_massa: item.usa_traco_massa || false,
     });
-    await loadInsumosExtras(item.id);
+    await loadInsumosVinculados(item.id);
     setDialogOpen(true);
   };
 
   const resetForm = () => {
     setEditingItem(null);
-    setInsumosExtras([]);
+    setInsumosVinculados([]);
     setFormData({
       nome: '',
       peso_unitario_g: '0',
-      insumo_vinculado_id: 'none',
       unidade_medida: 'unidade',
       equivalencia_traco: '',
-      consumo_por_traco_g: '0',
       perda_percentual_adicional: '0',
       timer_ativo: false,
       tempo_timer_minutos: '10',
       usa_traco_massa: false,
     });
+  };
+
+  // Buscar nome do insumo principal para exibir na tabela
+  const getInsumoPrincipalNome = (item: ItemPorcionado) => {
+    const insumo = insumos.find(i => i.id === item.insumo_vinculado_id);
+    return insumo?.nome || '-';
   };
 
   if (loading) {
@@ -452,82 +579,39 @@ const ItensPorcionados = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="insumo">Insumo Vinculado</Label>
-                    <Select
-                      value={formData.insumo_vinculado_id}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, insumo_vinculado_id: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um insumo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhum</SelectItem>
-                        {insumos.map((insumo) => (
-                          <SelectItem key={insumo.id} value={insumo.id}>
-                            {insumo.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    {formData.unidade_medida === 'traco' && (
-                      <>
-                        <div className="space-y-2">
-                          <Label htmlFor="equivalencia">Equivalência por Traço</Label>
-                          <Input
-                            id="equivalencia"
-                            type="number"
-                            value={formData.equivalencia_traco}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                equivalencia_traco: e.target.value,
-                              })
-                            }
-                            placeholder="0"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="consumo_traco">Consumo por Traço (Principal)</Label>
-                          <Input
-                            id="consumo_traco"
-                            type="number"
-                            step="0.01"
-                            value={formData.consumo_por_traco_g}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                consumo_por_traco_g: e.target.value,
-                              })
-                            }
-                            placeholder="Em gramas (ex: 1)"
-                          />
-                        </div>
-                      </>
-                    )}
-
+                  {formData.unidade_medida === 'traco' && (
                     <div className="space-y-2">
-                      <Label htmlFor="perda">Perda Adicional (%)</Label>
+                      <Label htmlFor="equivalencia">Equivalência por Traço (unidades)</Label>
                       <Input
-                        id="perda"
+                        id="equivalencia"
                         type="number"
-                        step="0.01"
-                        value={formData.perda_percentual_adicional}
+                        value={formData.equivalencia_traco}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
-                            perda_percentual_adicional: e.target.value,
+                            equivalencia_traco: e.target.value,
                           })
                         }
-                        required
+                        placeholder="Ex: 52 unidades por traço"
                       />
                     </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="perda">Perda Adicional (%)</Label>
+                    <Input
+                      id="perda"
+                      type="number"
+                      step="0.01"
+                      value={formData.perda_percentual_adicional}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          perda_percentual_adicional: e.target.value,
+                        })
+                      }
+                      required
+                    />
                   </div>
 
                   {/* Timer de Produção */}
@@ -591,111 +675,140 @@ const ItensPorcionados = () => {
                     </div>
                   )}
 
-                  {/* Seção de Insumos Adicionais */}
-                  {editingItem && (
-                    <div className="space-y-4 pt-4 border-t">
-                      <div>
-                        <h4 className="font-semibold mb-2">Insumos Adicionais (Baixa na Finalização)</h4>
-                        <p className="text-xs text-muted-foreground mb-4">
-                          Configure insumos extras que serão debitados automaticamente quando a produção for finalizada
-                        </p>
-                      </div>
+                  {/* Seção de Insumos Vinculados */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <div>
+                      <h4 className="font-semibold mb-2 flex items-center gap-2">
+                        📦 Insumos Vinculados
+                      </h4>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Configure os insumos que serão debitados automaticamente quando a produção for finalizada. 
+                        <span className="font-medium text-primary"> Marque um como principal (⭐) para cálculo do traço.</span>
+                      </p>
+                    </div>
 
-                      {/* Lista de insumos extras */}
-                      {insumosExtras.length > 0 && (
-                        <div className="space-y-2 mb-4">
-                          {insumosExtras.map((extra) => (
-                            <div key={extra.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{extra.nome}</p>
+                    {/* Lista de insumos vinculados */}
+                    {insumosVinculados.length > 0 && (
+                      <div className="space-y-2 mb-4">
+                        {insumosVinculados.map((insumo, index) => (
+                          <div 
+                            key={insumo.id || index} 
+                            className={`flex items-center justify-between p-3 rounded-lg border ${
+                              insumo.is_principal 
+                                ? 'bg-primary/10 border-primary/30' 
+                                : 'bg-muted'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <button
+                                type="button"
+                                onClick={() => definirComoPrincipal(index)}
+                                className={`p-1 rounded-full transition-colors ${
+                                  insumo.is_principal 
+                                    ? 'text-yellow-500' 
+                                    : 'text-muted-foreground hover:text-yellow-500'
+                                }`}
+                                title={insumo.is_principal ? 'Insumo principal' : 'Definir como principal'}
+                              >
+                                <Star className={`h-4 w-4 ${insumo.is_principal ? 'fill-current' : ''}`} />
+                              </button>
+                              <div>
+                                <p className="font-medium text-sm flex items-center gap-2">
+                                  {insumo.nome}
+                                  {insumo.is_principal && (
+                                    <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
+                                      Principal
+                                    </span>
+                                  )}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {extra.quantidade} {extra.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
+                                  {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
                                 </p>
                               </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => extra.id && removerInsumoExtra(extra.id)}
-                              >
-                                ✕
-                              </Button>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removerInsumoVinculado(index)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                      {/* Formulário para adicionar novo insumo extra */}
-                      <div className="grid grid-cols-12 gap-2 items-end">
-                        <div className="col-span-5 space-y-2">
-                          <Label>Insumo</Label>
-                          <Select
-                            value={novoInsumoExtra.insumo_id}
-                            onValueChange={(value) => 
-                              setNovoInsumoExtra({ ...novoInsumoExtra, insumo_id: value })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {insumos.map((insumo) => (
-                                <SelectItem key={insumo.id} value={insumo.id}>
-                                  {insumo.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                    {/* Formulário para adicionar novo insumo */}
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-5 space-y-2">
+                        <Label>Insumo</Label>
+                        <Select
+                          value={novoInsumo.insumo_id}
+                          onValueChange={(value) => 
+                            setNovoInsumo({ ...novoInsumo, insumo_id: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {insumos.map((insumo) => (
+                              <SelectItem key={insumo.id} value={insumo.id}>
+                                {insumo.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                        <div className="col-span-3 space-y-2">
-                          <Label>Quantidade</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={novoInsumoExtra.quantidade}
-                            onChange={(e) => 
-                              setNovoInsumoExtra({ ...novoInsumoExtra, quantidade: e.target.value })
-                            }
-                            placeholder="0"
-                          />
-                        </div>
+                      <div className="col-span-3 space-y-2">
+                        <Label>Quantidade {formData.unidade_medida === 'traco' && '(por traço)'}</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={novoInsumo.quantidade}
+                          onChange={(e) => 
+                            setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
+                          }
+                          placeholder="0"
+                        />
+                      </div>
 
-                        <div className="col-span-2 space-y-2">
-                          <Label>Unidade</Label>
-                          <Select
-                            value={novoInsumoExtra.unidade}
-                            onValueChange={(value: UnidadeMedida) => 
-                              setNovoInsumoExtra({ ...novoInsumoExtra, unidade: value })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="kg">kg</SelectItem>
-                              <SelectItem value="g">g</SelectItem>
-                              <SelectItem value="l">l</SelectItem>
-                              <SelectItem value="ml">ml</SelectItem>
-                              <SelectItem value="unidade">un</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                      <div className="col-span-2 space-y-2">
+                        <Label>Unidade</Label>
+                        <Select
+                          value={novoInsumo.unidade}
+                          onValueChange={(value: UnidadeMedida) => 
+                            setNovoInsumo({ ...novoInsumo, unidade: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="kg">kg</SelectItem>
+                            <SelectItem value="g">g</SelectItem>
+                            <SelectItem value="l">l</SelectItem>
+                            <SelectItem value="ml">ml</SelectItem>
+                            <SelectItem value="unidade">un</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                        <div className="col-span-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={adicionarInsumoExtra}
-                            className="w-full"
-                          >
-                            + Adicionar
-                          </Button>
-                        </div>
+                      <div className="col-span-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={adicionarInsumoVinculado}
+                          className="w-full"
+                        >
+                          + Adicionar
+                        </Button>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -730,7 +843,7 @@ const ItensPorcionados = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Peso Unit. (g)</TableHead>
                   <TableHead>Unidade</TableHead>
-                  <TableHead>Insumo Vinculado</TableHead>
+                  <TableHead>Insumo Principal</TableHead>
                   <TableHead>Perda (%)</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -743,34 +856,31 @@ const ItensPorcionados = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  itens.map((item) => {
-                    const insumo = insumos.find(i => i.id === item.insumo_vinculado_id);
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.nome}</TableCell>
-                        <TableCell>{item.peso_unitario_g.toFixed(2)}</TableCell>
-                        <TableCell>{item.unidade_medida}</TableCell>
-                        <TableCell>{insumo?.nome || '-'}</TableCell>
-                        <TableCell>{item.perda_percentual_adicional}%</TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(item)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(item.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                  itens.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.nome}</TableCell>
+                      <TableCell>{item.peso_unitario_g.toFixed(2)}</TableCell>
+                      <TableCell>{item.unidade_medida}</TableCell>
+                      <TableCell>{getInsumoPrincipalNome(item)}</TableCell>
+                      <TableCell>{item.perda_percentual_adicional}%</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(item)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(item.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>
