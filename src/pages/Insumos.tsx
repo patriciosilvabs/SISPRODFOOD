@@ -47,6 +47,8 @@ interface Insumo {
   estoque_minimo: number;
   perda_percentual: number;
   data_ultima_movimentacao: string | null;
+  dias_cobertura_desejado: number | null;
+  lead_time_real_dias: number | null;
 }
 
 const Insumos = () => {
@@ -62,6 +64,8 @@ const Insumos = () => {
     unidade_medida: 'kg' as UnidadeMedida,
     estoque_minimo: '0',
     perda_percentual: '0',
+    dias_cobertura_desejado: '7',
+    lead_time_real_dias: '',
   });
 
   useEffect(() => {
@@ -100,6 +104,8 @@ const Insumos = () => {
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         estoque_minimo: parseFloat(formData.estoque_minimo),
         perda_percentual: parseFloat(formData.perda_percentual),
+        dias_cobertura_desejado: parseInt(formData.dias_cobertura_desejado) || 7,
+        lead_time_real_dias: formData.lead_time_real_dias ? parseInt(formData.lead_time_real_dias) : null,
         organization_id: organizationId,
       };
 
@@ -153,6 +159,8 @@ const Insumos = () => {
       unidade_medida: insumo.unidade_medida,
       estoque_minimo: insumo.estoque_minimo.toString(),
       perda_percentual: insumo.perda_percentual.toString(),
+      dias_cobertura_desejado: insumo.dias_cobertura_desejado?.toString() || '7',
+      lead_time_real_dias: insumo.lead_time_real_dias?.toString() || '',
     });
     setDialogOpen(true);
   };
@@ -165,6 +173,8 @@ const Insumos = () => {
       unidade_medida: 'kg',
       estoque_minimo: '0',
       perda_percentual: '0',
+      dias_cobertura_desejado: '7',
+      lead_time_real_dias: '',
     });
   };
 
@@ -317,6 +327,51 @@ const Insumos = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Parâmetros Lista de Compras */}
+                  <div className="pt-2 border-t">
+                    <p className="text-sm font-medium text-muted-foreground mb-3">📊 Parâmetros Lista de Compras</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="dias_cobertura">Dias de Cobertura</Label>
+                        <Input
+                          id="dias_cobertura"
+                          type="number"
+                          min="1"
+                          value={formData.dias_cobertura_desejado}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              dias_cobertura_desejado: e.target.value,
+                            })
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Dias de estoque desejado
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="lead_time">Lead Time (dias)</Label>
+                        <Input
+                          id="lead_time"
+                          type="number"
+                          min="0"
+                          placeholder="Tempo de entrega"
+                          value={formData.lead_time_real_dias}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              lead_time_real_dias: e.target.value,
+                            })
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Tempo entrega fornecedor
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -353,6 +408,8 @@ const Insumos = () => {
                   <TableHead>Unidade</TableHead>
                   <TableHead>Estoque Mínimo</TableHead>
                   <TableHead>Perda (%)</TableHead>
+                  <TableHead>Cobertura</TableHead>
+                  <TableHead>Lead Time</TableHead>
                   <TableHead>Última Atualização</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -360,7 +417,7 @@ const Insumos = () => {
               <TableBody>
                 {insumos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       Nenhum insumo cadastrado
                     </TableCell>
                   </TableRow>
@@ -382,6 +439,8 @@ const Insumos = () => {
                       <TableCell>{insumo.unidade_medida}</TableCell>
                       <TableCell>{insumo.estoque_minimo.toFixed(2)}</TableCell>
                       <TableCell>{insumo.perda_percentual}%</TableCell>
+                      <TableCell>{insumo.dias_cobertura_desejado || 7} dias</TableCell>
+                      <TableCell>{insumo.lead_time_real_dias ? `${insumo.lead_time_real_dias} dias` : '-'}</TableCell>
                       <TableCell className="text-sm">
                         {insumo.data_ultima_movimentacao ? (
                           <span className="text-muted-foreground">
