@@ -53,6 +53,7 @@ interface Produto {
   categoria: string;
   tipo_produto: string;
   unidade_consumo: string | null;
+  classificacao: string | null;
 }
 
 interface EstoqueProduto {
@@ -102,6 +103,13 @@ const CATEGORIAS = [
   { value: "equipamentos", label: "Equipamentos" },
 ];
 
+const CLASSIFICACOES_ABC = [
+  { value: "todas", label: "Todas as classes" },
+  { value: "A", label: "Classe A" },
+  { value: "B", label: "Classe B" },
+  { value: "C", label: "Classe C" },
+];
+
 const TIPOS_ENTRADA = [
   { value: "entrada_compra", label: "📦 Compra", description: "Chegada de mercadorias compradas" },
   { value: "entrada_producao", label: "🏭 Produção", description: "Produção interna" },
@@ -131,6 +139,7 @@ export default function EstoqueProdutosCPD() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
+  const [classificacaoFiltro, setClassificacaoFiltro] = useState("todas");
 
   // Estados para Registrar Entrada
   const [produtoSelecionado, setProdutoSelecionado] = useState("");
@@ -155,7 +164,7 @@ export default function EstoqueProdutosCPD() {
       // Buscar todos os produtos ativos
       const { data: produtosData, error: produtosError } = await supabase
         .from("produtos")
-        .select("id, nome, codigo, categoria, tipo_produto, unidade_consumo")
+        .select("id, nome, codigo, categoria, tipo_produto, unidade_consumo, classificacao")
         .eq("ativo", true)
         .order("nome");
 
@@ -263,9 +272,10 @@ export default function EstoqueProdutosCPD() {
         p.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategoria = categoriaFiltro === "todas" || p.categoria === categoriaFiltro;
-      return matchSearch && matchCategoria;
+      const matchClassificacao = classificacaoFiltro === "todas" || p.classificacao === classificacaoFiltro;
+      return matchSearch && matchCategoria && matchClassificacao;
     });
-  }, [produtos, searchTerm, categoriaFiltro]);
+  }, [produtos, searchTerm, categoriaFiltro, classificacaoFiltro]);
 
   // Mesclar produtos com estoques
   const produtosComEstoque = useMemo(() => {
@@ -664,6 +674,18 @@ export default function EstoqueProdutosCPD() {
                       {CATEGORIAS.map((cat) => (
                         <SelectItem key={cat.value} value={cat.value}>
                           {cat.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={classificacaoFiltro} onValueChange={setClassificacaoFiltro}>
+                    <SelectTrigger className="w-full sm:w-40">
+                      <SelectValue placeholder="Classificação" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLASSIFICACOES_ABC.map((cls) => (
+                        <SelectItem key={cls.value} value={cls.value}>
+                          {cls.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
