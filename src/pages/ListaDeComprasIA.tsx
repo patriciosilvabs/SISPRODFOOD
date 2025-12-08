@@ -12,10 +12,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ShoppingCart, RefreshCw, AlertTriangle, AlertCircle, Clock, CheckCircle, Search, FileSpreadsheet, Package, Droplet, Beef, PackageX, Truck } from 'lucide-react';
 import { useListaCompras, ItemCompra, UrgencyStatus, ItemTipo } from '@/hooks/useListaCompras';
 import { CriarPedidoCompraModal } from '@/components/modals/CriarPedidoCompraModal';
+import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
 const ListaDeComprasIA = () => {
   const { itens, loading, resumo, refresh } = useListaCompras();
+  const { organizationId } = useOrganization();
+  const { user, profile } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [tipoFilter, setTipoFilter] = useState<ItemTipo | 'todos'>('todos');
   const [statusFilter, setStatusFilter] = useState<UrgencyStatus | 'todos'>('todos');
@@ -152,15 +157,56 @@ const ListaDeComprasIA = () => {
   };
 
   const handleCriarPedido = async (pedidoData: any) => {
+    if (!organizationId || !user || !profile) {
+      toast.error('Erro de autenticação');
+      return;
+    }
+
     setSaving(true);
     try {
-      // Lógica para criar pedido seria implementada aqui
-      // Por ora, apenas fecha o modal
+      // 1. Criar o pedido de compra
+      const { data: pedido, error: pedidoError } = await supabase
+        .from('pedidos_compra')
+        .insert({
+          numero_pedido: pedidoData.numero_pedido,
+          fornecedor: pedidoData.fornecedor,
+          data_prevista_entrega: pedidoData.data_prevista_entrega,
+          observacao: pedidoData.observacao,
+          status: 'pendente',
+          usuario_id: user.id,
+          usuario_nome: profile.nome,
+          organization_id: organizationId
+        })
+        .select()
+        .single();
+
+      if (pedidoError) throw pedidoError;
+
+      // 2. Criar os itens do pedido
+      const itensInsert = pedidoData.itens.map((item: any) => ({
+        pedido_id: pedido.id,
+        produto_id: item.produto_id,
+        produto_nome: item.produto_nome,
+        quantidade_solicitada: item.quantidade,
+        unidade: item.unidade,
+        organization_id: organizationId
+      }));
+
+      const { error: itensError } = await supabase
+        .from('pedidos_compra_itens')
+        .insert(itensInsert);
+
+      if (itensError) throw itensError;
+
       setModalOpen(false);
       setSelectedIds(new Set());
-      toast.success('Pedido de compra criado!');
-    } catch (err) {
-      toast.error('Erro ao criar pedido');
+      toast.success(`Pedido ${pedidoData.numero_pedido} criado com sucesso!`);
+      
+      // Atualizar a lista para refletir os itens bloqueados
+      refresh();
+    } catch (err: any) {
+      console.error('Erro ao criar pedido:', err);
+      toast.error('Erro ao criar pedido: ' + (err.message || 'Erro desconhecido'));
     } finally {
       setSaving(false);
     }
@@ -171,6 +217,13 @@ const ListaDeComprasIA = () => {
     nome: item.nome,
     codigo: null,
     unidade_consumo: item.unidade
+  }));
+
+  const itensPrefilled = selectedItens.map(item => ({
+    id: item.id,
+    nome: item.nome,
+    quantidade: item.quantidadeComprar,
+    unidade: item.unidade
   }));
 
   return (
@@ -451,6 +504,7 @@ const ListaDeComprasIA = () => {
         produtos={produtosParaModal}
         onCriar={handleCriarPedido}
         saving={saving}
+        itensPrefilled={itensPrefilled}
       />
     </Layout>
   );

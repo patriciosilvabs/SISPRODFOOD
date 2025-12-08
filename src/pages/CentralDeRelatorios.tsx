@@ -1,6 +1,6 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Clock, Truck, Box, FileText, Search, TrendingUp, Calendar } from 'lucide-react';
+import { Bot, Clock, Truck, Box, FileText, Search, TrendingUp, Calendar, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -121,6 +121,14 @@ const CentralDeRelatorios = () => {
   };
 
   const reports = [
+    {
+      title: 'Dashboard de Consumo',
+      description: 'Gráficos de tendência e previsão de ruptura de estoque.',
+      icon: BarChart3,
+      color: 'bg-gradient-to-br from-blue-100 to-purple-100 text-blue-700',
+      onClick: () => navigate('/relatorios/dashboard-consumo'),
+      ultimaAtualizacao: ultimasAtualizacoes.monitoramento,
+    },
     {
       title: 'Monitoramento de Consumo (IA)',
       description: 'Acompanhe alertas e ajustes automáticos de estoque.',
