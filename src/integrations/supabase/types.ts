@@ -1741,7 +1741,9 @@ export type Database = {
           classificacao: string | null
           codigo: string | null
           created_at: string | null
+          dias_cobertura_desejado: number | null
           id: string
+          lead_time_real_dias: number | null
           modo_envio: string | null
           nome: string
           organization_id: string | null
@@ -1756,7 +1758,9 @@ export type Database = {
           classificacao?: string | null
           codigo?: string | null
           created_at?: string | null
+          dias_cobertura_desejado?: number | null
           id?: string
+          lead_time_real_dias?: number | null
           modo_envio?: string | null
           nome: string
           organization_id?: string | null
@@ -1771,7 +1775,9 @@ export type Database = {
           classificacao?: string | null
           codigo?: string | null
           created_at?: string | null
+          dias_cobertura_desejado?: number | null
           id?: string
+          lead_time_real_dias?: number | null
           modo_envio?: string | null
           nome?: string
           organization_id?: string | null
