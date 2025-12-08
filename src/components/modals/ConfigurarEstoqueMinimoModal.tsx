@@ -15,6 +15,7 @@ interface Produto {
   nome: string;
   codigo: string | null;
   categoria: string;
+  classificacao: string | null;
 }
 
 interface EstoqueConfig {
@@ -61,6 +62,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
   const [preenchimentoRapido, setPreenchimentoRapido] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState<string>("todas");
+  const [classificacaoFiltro, setClassificacaoFiltro] = useState<string>("todas");
 
   useEffect(() => {
     if (open) {
@@ -95,7 +97,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     try {
       const { data, error } = await supabase
         .from("produtos")
-        .select("id, nome, codigo, categoria")
+        .select("id, nome, codigo, categoria, classificacao")
         .eq("ativo", true)
         .order("nome");
 
@@ -165,9 +167,11 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
         p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategoria = categoriaFiltro === "todas" || 
         p.categoria === categoriaFiltro;
-      return matchSearch && matchCategoria;
+      const matchClassificacao = classificacaoFiltro === "todas" || 
+        p.classificacao === classificacaoFiltro;
+      return matchSearch && matchCategoria && matchClassificacao;
     });
-  }, [produtos, searchTerm, categoriaFiltro]);
+  }, [produtos, searchTerm, categoriaFiltro, classificacaoFiltro]);
 
   // Obter categorias únicas dos produtos
   const categoriasDisponiveis = useMemo(() => {
@@ -294,7 +298,7 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
                   />
                 </div>
                 <Select value={categoriaFiltro} onValueChange={setCategoriaFiltro}>
-                  <SelectTrigger className="w-full sm:w-56">
+                  <SelectTrigger className="w-full sm:w-48">
                     <SelectValue placeholder="Categoria" />
                   </SelectTrigger>
                   <SelectContent>
@@ -304,6 +308,17 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
                         {categoriaLabels[cat] || cat}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+                <Select value={classificacaoFiltro} onValueChange={setClassificacaoFiltro}>
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue placeholder="Classificação ABC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas Classificações</SelectItem>
+                    <SelectItem value="A">Classe A</SelectItem>
+                    <SelectItem value="B">Classe B</SelectItem>
+                    <SelectItem value="C">Classe C</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -383,6 +398,11 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
                                 <Badge variant="outline" className="text-xs">
                                   {categoriaLabels[produto.categoria] || produto.categoria}
                                 </Badge>
+                                {produto.classificacao && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {produto.classificacao}
+                                  </Badge>
+                                )}
                               </div>
                             </td>
                             {(['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'] as const).map(dia => (
