@@ -381,6 +381,10 @@ const Romaneio = () => {
     
     setLoadingDemandas(true);
     try {
+      // 0. Buscar data do servidor (timezone-safe)
+      const { data: serverDateResult } = await supabase.rpc('get_current_date');
+      const serverDate = serverDateResult || new Date().toISOString().split('T')[0];
+
       // 1. Buscar estoque CPD
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_loja_itens')
@@ -390,12 +394,14 @@ const Romaneio = () => {
 
       if (estoqueError) throw estoqueError;
 
-      // 2. Buscar produções finalizadas com detalhes_lojas
+      // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas
       const { data: producoes, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas')
+        .select('id, item_id, item_nome, detalhes_lojas, data_fim')
         .eq('status', 'finalizado')
-        .not('detalhes_lojas', 'is', null);
+        .eq('data_referencia', serverDate)
+        .not('detalhes_lojas', 'is', null)
+        .order('data_fim', { ascending: false });
 
       if (producoesError) throw producoesError;
 
@@ -416,10 +422,16 @@ const Romaneio = () => {
         };
       });
 
-      // 5. Calcular demanda por loja baseado em detalhes_lojas
+      // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
       const demandaPorLojaItem: Record<string, Record<string, number>> = {};
+      const itemsProcessados = new Set<string>();
       
+      // Produções já ordenadas por data_fim DESC, então primeira aparição é a mais recente
       producoes?.forEach(prod => {
+        // Pular se já processamos este item (usar apenas a última produção)
+        if (itemsProcessados.has(prod.item_id)) return;
+        itemsProcessados.add(prod.item_id);
+        
         const detalhes = prod.detalhes_lojas as Array<{ loja_id: string; loja_nome?: string; quantidade: number }> | null;
         
         // Verificar se detalhes_lojas existe E não está vazio
@@ -430,8 +442,7 @@ const Romaneio = () => {
             if (!demandaPorLojaItem[d.loja_id]) {
               demandaPorLojaItem[d.loja_id] = {};
             }
-            demandaPorLojaItem[d.loja_id][prod.item_id] = 
-              (demandaPorLojaItem[d.loja_id][prod.item_id] || 0) + d.quantidade;
+            demandaPorLojaItem[d.loja_id][prod.item_id] = d.quantidade;
           }
         });
       });
