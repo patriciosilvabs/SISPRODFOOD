@@ -31,6 +31,8 @@ interface ItemDisponivel {
   item_id: string;
   item_nome: string;
   quantidade_disponivel: number;
+  quantidade_estoque_cpd: number;
+  quantidade_demanda_loja: number;
   data_producao: string;
   producao_registro_ids: string[];
 }
@@ -518,13 +520,16 @@ const Romaneio = () => {
       const itensFinais: ItemDisponivel[] = [];
       estoqueCpd?.forEach(est => {
         const quantidadeDaLoja = quantidadesPorItem.get(est.item_porcionado_id) || 0;
-        const disponivel = Math.min(quantidadeDaLoja, est.quantidade || 0);
+        const estoqueCpdQtd = est.quantidade || 0;
+        const disponivel = Math.min(quantidadeDaLoja, estoqueCpdQtd);
         
         if (disponivel > 0) {
           itensFinais.push({
             item_id: est.item_porcionado_id,
             item_nome: (est.itens_porcionados as any).nome,
             quantidade_disponivel: disponivel,
+            quantidade_estoque_cpd: estoqueCpdQtd,
+            quantidade_demanda_loja: quantidadeDaLoja,
             data_producao: new Date().toISOString(),
             producao_registro_ids: []
           });
@@ -1591,7 +1596,13 @@ const Romaneio = () => {
                               <div key={item.item_id} className="flex items-center justify-between p-2 border rounded hover:bg-muted/50">
                                 <div>
                                   <p className="font-medium text-sm">{item.item_nome}</p>
-                                  <p className="text-xs text-muted-foreground">{item.quantidade_disponivel} un</p>
+                                  <div className="flex gap-2 text-xs text-muted-foreground">
+                                    <span className="text-primary font-medium">Disponível: {item.quantidade_disponivel} un</span>
+                                    <span>•</span>
+                                    <span>CPD: {item.quantidade_estoque_cpd} un</span>
+                                    <span>•</span>
+                                    <span>Demanda: {item.quantidade_demanda_loja} un</span>
+                                  </div>
                                 </div>
                                 <Button size="sm" variant="ghost" onClick={() => addItem(item)}>
                                   <Plus className="w-4 h-4" />
