@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Factory, FileText, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -96,7 +97,7 @@ const GerenciarUsuarios = () => {
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UsuarioCompleto | null>(null);
-  const [isAdminRole, setIsAdminRole] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<UserProfile>('loja');
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
   const [pageOverrides, setPageOverrides] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -108,7 +109,7 @@ const GerenciarUsuarios = () => {
   // Invite modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteIsAdmin, setInviteIsAdmin] = useState(false);
+  const [inviteSelectedProfile, setInviteSelectedProfile] = useState<UserProfile>('loja');
   const [inviteLojas, setInviteLojas] = useState<string[]>([]);
   const [invitePageOverrides, setInvitePageOverrides] = useState<Record<string, boolean>>({});
   const [sendingInvite, setSendingInvite] = useState(false);
@@ -232,7 +233,7 @@ const GerenciarUsuarios = () => {
 
   const handleEditClick = (usuario: UsuarioCompleto) => {
     setEditingUser(usuario);
-    setIsAdminRole(usuario.isAdmin);
+    setSelectedProfile(usuario.profile);
     setSelectedLojas(usuario.lojas.map(l => l.id));
     // Converter overrides para objeto
     const overridesObj: Record<string, boolean> = {};
@@ -271,30 +272,36 @@ const GerenciarUsuarios = () => {
   const handleSave = async () => {
     if (!editingUser || !organizationId) return;
 
-    // Validação
-    if (editingUser.id === currentUser?.id && editingUser.isAdmin && !isAdminRole) {
+    // Validação - não permitir remover próprio admin
+    if (editingUser.id === currentUser?.id && editingUser.isAdmin && selectedProfile !== 'admin') {
       toast.error('Você não pode remover seu próprio status de Admin');
+      return;
+    }
+
+    // Validação - não-admin precisa de pelo menos uma loja
+    if (selectedProfile !== 'admin' && selectedLojas.length === 0) {
+      toast.error('Selecione pelo menos uma loja');
       return;
     }
 
     try {
       setSaving(true);
 
-      // 1. Detectar perfil e mapear para role correto
-      const detectedProfile = getDetectedProfile(selectedLojas, isAdminRole);
+      // 1. Usar o perfil selecionado diretamente
+      const isAdmin = selectedProfile === 'admin';
       let newRole: 'Admin' | 'Produção' | 'Loja' = 'Loja';
-      if (isAdminRole) {
+      if (selectedProfile === 'admin') {
         newRole = 'Admin';
-      } else if (detectedProfile === 'cpd') {
+      } else if (selectedProfile === 'cpd') {
         newRole = 'Produção';
       }
 
       console.log('[GerenciarUsuarios] Salvando usuário:', {
         userId: editingUser.id,
         email: editingUser.email,
-        detectedProfile,
+        selectedProfile,
         newRole,
-        isAdminRole,
+        isAdmin,
         selectedLojas,
         organizationId
       });
@@ -303,7 +310,7 @@ const GerenciarUsuarios = () => {
       const { error: memberError } = await supabase
         .from('organization_members')
         .update({ 
-          is_admin: isAdminRole,
+          is_admin: isAdmin,
           role: newRole 
         })
         .eq('user_id', editingUser.id)
@@ -382,10 +389,10 @@ const GerenciarUsuarios = () => {
         target_email: editingUser.email,
         lojas: selectedLojas,
         newRole,
-        detectedProfile,
+        selectedProfile,
       });
 
-      toast.success(`Usuário atualizado! Perfil: ${detectedProfile.toUpperCase()}, Role: ${newRole}`);
+      toast.success(`Usuário atualizado! Perfil: ${getProfileLabel(selectedProfile)}, Role: ${newRole}`);
       setEditModalOpen(false);
       fetchData();
     } catch (error) {
@@ -444,7 +451,7 @@ const GerenciarUsuarios = () => {
       return;
     }
 
-    if (!inviteIsAdmin && inviteLojas.length === 0) {
+    if (inviteSelectedProfile !== 'admin' && inviteLojas.length === 0) {
       toast.error('Selecione pelo menos uma loja');
       return;
     }
@@ -458,12 +465,12 @@ const GerenciarUsuarios = () => {
     try {
       setSendingInvite(true);
       
-      // Detectar perfil e mapear para role correto
-      const detectedProfile = getDetectedProfile(inviteLojas, inviteIsAdmin);
+      // Usar perfil selecionado diretamente
+      const isAdmin = inviteSelectedProfile === 'admin';
       let role: string = 'Loja';
-      if (inviteIsAdmin) {
+      if (inviteSelectedProfile === 'admin') {
         role = 'Admin';
-      } else if (detectedProfile === 'cpd') {
+      } else if (inviteSelectedProfile === 'cpd') {
         role = 'Produção';
       }
       
@@ -476,7 +483,7 @@ const GerenciarUsuarios = () => {
           lojas_ids: inviteLojas,
           permissions: [], // Não usa mais permissões granulares
           page_overrides: invitePageOverrides,
-          is_admin: inviteIsAdmin,
+          is_admin: isAdmin,
         },
       });
 
@@ -486,7 +493,7 @@ const GerenciarUsuarios = () => {
       toast.success(data.message || 'Convite enviado!');
       setInviteModalOpen(false);
       setInviteEmail('');
-      setInviteIsAdmin(false);
+      setInviteSelectedProfile('loja');
       setInviteLojas([]);
       setInvitePageOverrides({});
       fetchData();
@@ -794,68 +801,86 @@ const GerenciarUsuarios = () => {
                 />
               </div>
 
-              <div className="flex items-start space-x-3 p-4 rounded-lg border bg-muted/30">
-                <Checkbox
-                  id="invite-admin"
-                  checked={inviteIsAdmin}
-                  onCheckedChange={(checked) => setInviteIsAdmin(!!checked)}
-                />
-                <div className="flex-1">
-                  <label htmlFor="invite-admin" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-red-600" />
-                    Tornar Administrador
-                  </label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Acesso total ao sistema
-                  </p>
-                </div>
+              {/* Seleção de Perfil com RadioGroup */}
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">Perfil do Funcionário *</Label>
+                <RadioGroup 
+                  value={inviteSelectedProfile} 
+                  onValueChange={(value) => setInviteSelectedProfile(value as UserProfile)}
+                  className="space-y-2"
+                >
+                  <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${inviteSelectedProfile === 'admin' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'hover:bg-muted/50'}`}>
+                    <RadioGroupItem value="admin" id="invite-profile-admin" />
+                    <label htmlFor="invite-profile-admin" className="flex-1 cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-red-600" />
+                        <span className="font-medium">Administrador</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">Acesso total ao sistema</p>
+                    </label>
+                  </div>
+                  
+                  <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${inviteSelectedProfile === 'cpd' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-muted/50'}`}>
+                    <RadioGroupItem value="cpd" id="invite-profile-cpd" />
+                    <label htmlFor="invite-profile-cpd" className="flex-1 cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <Factory className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Operador CPD</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">Produção e estoque central</p>
+                    </label>
+                  </div>
+                  
+                  <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${inviteSelectedProfile === 'loja' ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`}>
+                    <RadioGroupItem value="loja" id="invite-profile-loja" />
+                    <label htmlFor="invite-profile-loja" className="flex-1 cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <Store className="h-4 w-4 text-green-600" />
+                        <span className="font-medium">Operador Loja</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">Operações de ponto de venda</p>
+                    </label>
+                  </div>
+                </RadioGroup>
               </div>
 
-              {!inviteIsAdmin && (
-                <>
-                  {/* Perfil detectado */}
-                  <div className="p-3 rounded-lg bg-muted/50 border">
-                    <span className="text-sm text-muted-foreground">Perfil detectado: </span>
-                    <Badge>{getProfileLabel(getDetectedProfile(inviteLojas, inviteIsAdmin))}</Badge>
-                  </div>
-
-                  <Tabs defaultValue="lojas">
-                    <TabsList className="w-full">
-                      <TabsTrigger value="lojas" className="flex-1">
-                        <Store className="h-4 w-4 mr-2" />
-                        Lojas ({inviteLojas.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="pages" className="flex-1">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Páginas
-                      </TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="lojas" className="mt-4">
-                      <div className="space-y-2">
-                        {lojas.map(loja => (
-                          <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                            <Checkbox
-                              id={`invite-loja-${loja.id}`}
-                              checked={inviteLojas.includes(loja.id)}
-                              onCheckedChange={() => handleInviteLojaToggle(loja.id)}
-                            />
-                            <label htmlFor={`invite-loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
-                              {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
-                              {loja.nome}
-                              {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </TabsContent>
-                    <TabsContent value="pages" className="mt-4">
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
-                      </p>
-                      {renderPageCheckboxes(invitePageOverrides, setInvitePageOverrides, getDetectedProfile(inviteLojas, inviteIsAdmin))}
-                    </TabsContent>
-                  </Tabs>
-                </>
+              {inviteSelectedProfile !== 'admin' && (
+                <Tabs defaultValue="lojas">
+                  <TabsList className="w-full">
+                    <TabsTrigger value="lojas" className="flex-1">
+                      <Store className="h-4 w-4 mr-2" />
+                      Lojas ({inviteLojas.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="pages" className="flex-1">
+                      <FileText className="h-4 w-4 mr-2" />
+                      Páginas
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="lojas" className="mt-4">
+                    <div className="space-y-2">
+                      {lojas.filter(l => inviteSelectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd').map(loja => (
+                        <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                          <Checkbox
+                            id={`invite-loja-${loja.id}`}
+                            checked={inviteLojas.includes(loja.id)}
+                            onCheckedChange={() => handleInviteLojaToggle(loja.id)}
+                          />
+                          <label htmlFor={`invite-loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                            {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                            {loja.nome}
+                            {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="pages" className="mt-4">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
+                    </p>
+                    {renderPageCheckboxes(invitePageOverrides, setInvitePageOverrides, inviteSelectedProfile)}
+                  </TabsContent>
+                </Tabs>
               )}
             </div>
           </div>
@@ -864,7 +889,7 @@ const GerenciarUsuarios = () => {
             <Button variant="outline" onClick={() => setInviteModalOpen(false)}>Cancelar</Button>
             <Button 
               onClick={handleSendInvite} 
-              disabled={sendingInvite || !inviteEmail || (!inviteIsAdmin && inviteLojas.length === 0)}
+              disabled={sendingInvite || !inviteEmail || (inviteSelectedProfile !== 'admin' && inviteLojas.length === 0)}
             >
               {sendingInvite ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Enviando...</> : <><Send className="h-4 w-4 mr-2" />Enviar</>}
             </Button>
@@ -890,66 +915,98 @@ const GerenciarUsuarios = () => {
                   <div className="text-sm text-muted-foreground">{editingUser.email}</div>
                 </div>
 
-                <div className="flex items-start space-x-3 p-4 rounded-lg border bg-muted/30">
-                  <Checkbox
-                    id="edit-admin"
-                    checked={isAdminRole}
-                    onCheckedChange={(checked) => setIsAdminRole(!!checked)}
-                    disabled={editingUser.id === currentUser?.id && editingUser.isAdmin}
-                  />
-                  <div className="flex-1">
-                    <label htmlFor="edit-admin" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-red-600" />
-                      Administrador
-                    </label>
-                    <p className="text-sm text-muted-foreground mt-1">Acesso total ao sistema</p>
-                  </div>
+                {/* Seleção de Perfil com RadioGroup */}
+                <div className="space-y-2">
+                  <Label className="text-base font-semibold">Perfil do Usuário *</Label>
+                  <RadioGroup 
+                    value={selectedProfile} 
+                    onValueChange={(value) => setSelectedProfile(value as UserProfile)}
+                    className="space-y-2"
+                  >
+                    <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${selectedProfile === 'admin' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'hover:bg-muted/50'}`}>
+                      <RadioGroupItem 
+                        value="admin" 
+                        id="edit-profile-admin" 
+                        disabled={editingUser.id === currentUser?.id && editingUser.isAdmin}
+                      />
+                      <label htmlFor="edit-profile-admin" className="flex-1 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-red-600" />
+                          <span className="font-medium">Administrador</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">Acesso total ao sistema</p>
+                      </label>
+                    </div>
+                    
+                    <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${selectedProfile === 'cpd' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-muted/50'}`}>
+                      <RadioGroupItem 
+                        value="cpd" 
+                        id="edit-profile-cpd"
+                        disabled={editingUser.id === currentUser?.id && editingUser.isAdmin}
+                      />
+                      <label htmlFor="edit-profile-cpd" className="flex-1 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <Factory className="h-4 w-4 text-blue-600" />
+                          <span className="font-medium">Operador CPD</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">Produção e estoque central</p>
+                      </label>
+                    </div>
+                    
+                    <div className={`flex items-center space-x-3 p-4 rounded-lg border cursor-pointer transition-colors ${selectedProfile === 'loja' ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'hover:bg-muted/50'}`}>
+                      <RadioGroupItem 
+                        value="loja" 
+                        id="edit-profile-loja"
+                        disabled={editingUser.id === currentUser?.id && editingUser.isAdmin}
+                      />
+                      <label htmlFor="edit-profile-loja" className="flex-1 cursor-pointer">
+                        <div className="flex items-center gap-2">
+                          <Store className="h-4 w-4 text-green-600" />
+                          <span className="font-medium">Operador Loja</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">Operações de ponto de venda</p>
+                      </label>
+                    </div>
+                  </RadioGroup>
                 </div>
 
-                {!isAdminRole && (
-                  <>
-                    <div className="p-3 rounded-lg bg-muted/50 border">
-                      <span className="text-sm text-muted-foreground">Perfil detectado: </span>
-                      <Badge>{getProfileLabel(getDetectedProfile(selectedLojas, isAdminRole))}</Badge>
-                    </div>
-
-                    <Tabs defaultValue="lojas">
-                      <TabsList className="w-full">
-                        <TabsTrigger value="lojas" className="flex-1">
-                          <Store className="h-4 w-4 mr-2" />
-                          Lojas ({selectedLojas.length})
-                        </TabsTrigger>
-                        <TabsTrigger value="pages" className="flex-1">
-                          <FileText className="h-4 w-4 mr-2" />
-                          Páginas
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="lojas" className="mt-4">
-                        <div className="space-y-2">
-                          {lojas.map(loja => (
-                            <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                              <Checkbox
-                                id={`loja-${loja.id}`}
-                                checked={selectedLojas.includes(loja.id)}
-                                onCheckedChange={() => handleLojaToggle(loja.id)}
-                              />
-                              <label htmlFor={`loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
-                                {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
-                                {loja.nome}
-                                {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                      <TabsContent value="pages" className="mt-4">
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
-                        </p>
-                        {renderPageCheckboxes(pageOverrides, setPageOverrides, getDetectedProfile(selectedLojas, isAdminRole))}
-                      </TabsContent>
-                    </Tabs>
-                  </>
+                {selectedProfile !== 'admin' && (
+                  <Tabs defaultValue="lojas">
+                    <TabsList className="w-full">
+                      <TabsTrigger value="lojas" className="flex-1">
+                        <Store className="h-4 w-4 mr-2" />
+                        Lojas ({selectedLojas.length})
+                      </TabsTrigger>
+                      <TabsTrigger value="pages" className="flex-1">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Páginas
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="lojas" className="mt-4">
+                      <div className="space-y-2">
+                        {lojas.filter(l => selectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd').map(loja => (
+                          <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                            <Checkbox
+                              id={`loja-${loja.id}`}
+                              checked={selectedLojas.includes(loja.id)}
+                              onCheckedChange={() => handleLojaToggle(loja.id)}
+                            />
+                            <label htmlFor={`loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                              {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                              {loja.nome}
+                              {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="pages" className="mt-4">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Páginas são pré-definidas pelo perfil. Personalize apenas se necessário:
+                      </p>
+                      {renderPageCheckboxes(pageOverrides, setPageOverrides, selectedProfile)}
+                    </TabsContent>
+                  </Tabs>
                 )}
               </div>
             </div>
