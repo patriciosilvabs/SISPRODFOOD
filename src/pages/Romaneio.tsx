@@ -140,13 +140,18 @@ const Romaneio = () => {
     fetchLojas();
     fetchTodasLojas();
     fetchUserLojas();
+  }, []);
 
+  // Realtime listener para estoque CPD
+  useEffect(() => {
+    if (!cpdLojaId) return;
+    
     let isMounted = true;
     
     const channel = supabase
       .channel('estoque-loja-itens-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'estoque_loja_itens' }, () => {
-        if (isMounted && selectedLoja) fetchItensDisponiveis();
+        if (isMounted && selectedLoja && cpdLojaId) fetchItensDisponiveis();
       })
       .subscribe();
 
@@ -154,11 +159,12 @@ const Romaneio = () => {
       isMounted = false;
       channel.unsubscribe().then(() => supabase.removeChannel(channel));
     };
-  }, []);
+  }, [cpdLojaId, selectedLoja]);
 
+  // Buscar itens disponíveis quando loja ou CPD mudam
   useEffect(() => {
-    if (selectedLoja) fetchItensDisponiveis();
-  }, [selectedLoja]);
+    if (selectedLoja && cpdLojaId) fetchItensDisponiveis();
+  }, [selectedLoja, cpdLojaId]);
 
   useEffect(() => {
     if (userLojasIds.length > 0 || isAdmin()) {
