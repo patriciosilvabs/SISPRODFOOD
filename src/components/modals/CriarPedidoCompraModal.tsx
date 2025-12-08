@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -43,6 +42,13 @@ interface ItemPedido {
   unidade: string | null;
 }
 
+interface ItemPrefilled {
+  id: string;
+  nome: string;
+  quantidade: number;
+  unidade: string | null;
+}
+
 interface CriarPedidoCompraModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,6 +61,7 @@ interface CriarPedidoCompraModalProps {
     itens: Array<{ produto_id: string; produto_nome: string; quantidade: number; unidade: string | null }>;
   }) => Promise<void>;
   saving: boolean;
+  itensPrefilled?: ItemPrefilled[];
 }
 
 export function CriarPedidoCompraModal({
@@ -63,14 +70,36 @@ export function CriarPedidoCompraModal({
   produtos,
   onCriar,
   saving,
+  itensPrefilled,
 }: CriarPedidoCompraModalProps) {
-  const [numeroPedido, setNumeroPedido] = useState("");
+  const gerarNumeroPedido = () => {
+    const hoje = new Date();
+    const data = hoje.toISOString().split('T')[0].replace(/-/g, '');
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `PED-${data}-${random}`;
+  };
+
+  const [numeroPedido, setNumeroPedido] = useState(gerarNumeroPedido());
   const [fornecedor, setFornecedor] = useState("");
   const [dataPrevista, setDataPrevista] = useState("");
   const [observacao, setObservacao] = useState("");
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [produtoSelecionado, setProdutoSelecionado] = useState("");
   const [quantidade, setQuantidade] = useState("");
+
+  // Pré-popular itens quando modal abrir com itensPrefilled
+  useEffect(() => {
+    if (open && itensPrefilled && itensPrefilled.length > 0) {
+      const itensIniciais = itensPrefilled.map(item => ({
+        produto_id: item.id,
+        produto_nome: item.nome,
+        quantidade: item.quantidade.toFixed(2),
+        unidade: item.unidade
+      }));
+      setItens(itensIniciais);
+      setNumeroPedido(gerarNumeroPedido());
+    }
+  }, [open, itensPrefilled]);
 
   const handleAdicionarItem = () => {
     if (!produtoSelecionado || !quantidade) return;

@@ -39,6 +39,7 @@ import RelatorioEstoqueProdutos from "./pages/relatorios/RelatorioEstoqueProduto
 import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
 import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
 import RelatorioConsumoHistorico from "./pages/relatorios/RelatorioConsumoHistorico";
+import DashboardConsumo from "./pages/relatorios/DashboardConsumo";
 import NotFound from "./pages/NotFound";
 import AceitarConvite from "./pages/AceitarConvite";
 import {
@@ -287,6 +288,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <RelatorioConsumoHistorico />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/dashboard-consumo"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardConsumo />
                     </ProtectedRoute>
                   }
                 />
