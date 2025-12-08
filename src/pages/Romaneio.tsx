@@ -17,6 +17,8 @@ import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { WeightInput } from '@/components/ui/weight-input';
+import { VolumeInput } from '@/components/ui/volume-input';
 
 // ==================== INTERFACES ====================
 
@@ -48,6 +50,8 @@ interface DemandaPorLoja {
   itens: ItemDemandaLoja[];
   itensSelecionados: ItemSelecionadoLoja[];
   enviando: boolean;
+  pesoTotalEnvio: string;
+  quantidadeVolumes: string;
 }
 
 interface Romaneio {
@@ -96,13 +100,15 @@ interface RomaneioAvulso {
 
 interface SecaoLojaRomaneioProps {
   demanda: DemandaPorLoja;
-  onEnviar: (lojaId: string, itens: ItemSelecionadoLoja[]) => Promise<void>;
+  onEnviar: (lojaId: string, itens: ItemSelecionadoLoja[], pesoTotal: string, volumes: string) => Promise<void>;
   onUpdateQuantidade: (lojaId: string, itemId: string, quantidade: number) => void;
   onRemoveItem: (lojaId: string, itemId: string) => void;
   onAddItem: (lojaId: string, item: ItemDemandaLoja) => void;
+  onUpdatePesoTotal: (lojaId: string, valor: string) => void;
+  onUpdateVolumes: (lojaId: string, valor: string) => void;
 }
 
-const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem, onAddItem }: SecaoLojaRomaneioProps) => {
+const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem, onAddItem, onUpdatePesoTotal, onUpdateVolumes }: SecaoLojaRomaneioProps) => {
   const itensNaoSelecionados = demanda.itens.filter(
     item => !demanda.itensSelecionados.find(sel => sel.item_id === item.item_id)
   );
@@ -112,7 +118,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
       toast.error('Nenhum item para enviar');
       return;
     }
-    onEnviar(demanda.loja_id, demanda.itensSelecionados);
+    onEnviar(demanda.loja_id, demanda.itensSelecionados, demanda.pesoTotalEnvio, demanda.quantidadeVolumes);
   };
 
   const totalItens = demanda.itensSelecionados.reduce((acc, item) => acc + item.quantidade, 0);
@@ -202,31 +208,53 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
                 Adicione itens da lista ao lado
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {demanda.itensSelecionados.map(item => (
-                  <div key={item.item_id} className="flex items-center gap-2 p-2 bg-background border rounded text-sm">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{item.item_nome}</p>
+              <>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  {demanda.itensSelecionados.map(item => (
+                    <div key={item.item_id} className="flex items-center gap-2 p-2 bg-background border rounded text-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{item.item_nome}</p>
+                      </div>
+                      <Input
+                        type="number"
+                        value={item.quantidade || ''}
+                        onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
+                        className="w-16 h-7 text-center text-sm"
+                        min={1}
+                      />
+                      <span className="text-xs text-muted-foreground">un</span>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="h-7 w-7 p-0"
+                        onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
+                      >
+                        <Trash2 className="w-3 h-3 text-destructive" />
+                      </Button>
                     </div>
-                    <Input
-                      type="number"
-                      value={item.quantidade || ''}
-                      onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-                      className="w-16 h-7 text-center text-sm"
-                      min={1}
-                    />
-                    <span className="text-xs text-muted-foreground">un</span>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="h-7 w-7 p-0"
-                      onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
-                    >
-                      <Trash2 className="w-3 h-3 text-destructive" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+                
+                {/* Campos de Peso Total e Quantidade de Volumes */}
+                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
+                  <WeightInput
+                    value={demanda.pesoTotalEnvio}
+                    onChange={(v) => onUpdatePesoTotal(demanda.loja_id, v)}
+                    label="Peso Total"
+                    compact
+                    showLabel
+                    placeholder="Ex: 5500"
+                  />
+                  <VolumeInput
+                    value={demanda.quantidadeVolumes}
+                    onChange={(v) => onUpdateVolumes(demanda.loja_id, v)}
+                    label="Qtd. Volumes"
+                    compact
+                    showLabel
+                    placeholder="Ex: 3"
+                  />
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -552,7 +580,9 @@ const Romaneio = () => {
           loja_nome: loja.nome,
           itens,
           itensSelecionados,
-          enviando: false
+          enviando: false,
+          pesoTotalEnvio: '',
+          quantidadeVolumes: ''
         };
       });
 
@@ -671,11 +701,12 @@ const Romaneio = () => {
 
   // ==================== HANDLERS: ENVIAR POR LOJA ====================
 
-  const handleEnviarRomaneioLoja = async (lojaId: string, itens: ItemSelecionadoLoja[]) => {
+  const handleEnviarRomaneioLoja = async (lojaId: string, itens: ItemSelecionadoLoja[], pesoTotal: string, volumes: string) => {
     if (itens.length === 0) {
       toast.error('Nenhum item selecionado');
       return;
     }
+    console.log(`[Romaneio] Enviando para loja ${lojaId} - Peso Total: ${pesoTotal}, Volumes: ${volumes}`);
 
     // Marcar loja como enviando
     setDemandasPorLoja(prev => prev.map(d => 
@@ -766,6 +797,18 @@ const Romaneio = () => {
         )
       };
     }));
+  };
+
+  const handleUpdatePesoTotalLoja = (lojaId: string, valor: string) => {
+    setDemandasPorLoja(prev => prev.map(d => 
+      d.loja_id === lojaId ? { ...d, pesoTotalEnvio: valor } : d
+    ));
+  };
+
+  const handleUpdateVolumesLoja = (lojaId: string, valor: string) => {
+    setDemandasPorLoja(prev => prev.map(d => 
+      d.loja_id === lojaId ? { ...d, quantidadeVolumes: valor } : d
+    ));
   };
 
   const handleRemoveItemLoja = (lojaId: string, itemId: string) => {
@@ -1120,6 +1163,8 @@ const Romaneio = () => {
                           onUpdateQuantidade={handleUpdateQuantidadeLoja}
                           onRemoveItem={handleRemoveItemLoja}
                           onAddItem={handleAddItemLoja}
+                          onUpdatePesoTotal={handleUpdatePesoTotalLoja}
+                          onUpdateVolumes={handleUpdateVolumesLoja}
                         />
                       ))}
                       
