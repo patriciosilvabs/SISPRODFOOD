@@ -27,6 +27,7 @@ interface Produto {
   codigo: string | null;
   categoria: string;
   unidade_consumo: string | null;
+  classificacao: string | null;
 }
 
 interface EstoqueAtual {
@@ -74,6 +75,7 @@ const EstoqueLoja = () => {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [estoquesAtuais, setEstoquesAtuais] = useState<EstoqueAtual[]>([]);
   const [categoriaFilter, setCategoriaFilter] = useState<string>('todas');
+  const [classificacaoFilter, setClassificacaoFilter] = useState<string>('todas');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<string>('');
@@ -156,7 +158,7 @@ const EstoqueLoja = () => {
         // Buscar produtos
         const { data: produtosData, error: produtosError } = await supabase
           .from('produtos')
-          .select('id, nome, codigo, categoria, unidade_consumo')
+          .select('id, nome, codigo, categoria, unidade_consumo, classificacao')
           .eq('ativo', true)
           .order('nome');
 
@@ -351,11 +353,17 @@ const EstoqueLoja = () => {
     });
   }, [produtos, estoquesAtuais]);
 
-  // Filtrar por categoria
+  // Filtrar por categoria e classificação
   const produtosFiltrados = useMemo(() => {
-    if (categoriaFilter === 'todas') return produtosComEstoque;
-    return produtosComEstoque.filter(p => p.categoria === categoriaFilter);
-  }, [produtosComEstoque, categoriaFilter]);
+    let filtered = produtosComEstoque;
+    if (categoriaFilter !== 'todas') {
+      filtered = filtered.filter(p => p.categoria === categoriaFilter);
+    }
+    if (classificacaoFilter !== 'todas') {
+      filtered = filtered.filter(p => p.classificacao === classificacaoFilter);
+    }
+    return filtered;
+  }, [produtosComEstoque, categoriaFilter, classificacaoFilter]);
 
   // Categorias únicas
   const categorias = useMemo(() => {
@@ -531,7 +539,7 @@ const EstoqueLoja = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Filtros */}
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Selecione a Loja</label>
                     <Select value={lojaSelecionada} onValueChange={setLojaSelecionada}>
@@ -561,6 +569,21 @@ const EstoqueLoja = () => {
                             {cat}
                           </SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Classificação ABC</label>
+                    <Select value={classificacaoFilter} onValueChange={setClassificacaoFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todas classificações" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todas">Todas Classificações</SelectItem>
+                        <SelectItem value="A">Classe A</SelectItem>
+                        <SelectItem value="B">Classe B</SelectItem>
+                        <SelectItem value="C">Classe C</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

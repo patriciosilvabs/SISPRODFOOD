@@ -64,6 +64,7 @@ const GerenciarProdutos = () => {
   const [loading, setLoading] = useState(true);
   const [categoriaFilter, setCategoriaFilter] = useState<string>('todas');
   const [statusFilter, setStatusFilter] = useState<string>('ativos');
+  const [classificacaoFilter, setClassificacaoFilter] = useState<string>('todas');
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduto, setEditingProduto] = useState<Produto | null>(null);
@@ -77,7 +78,7 @@ const GerenciarProdutos = () => {
 
   useEffect(() => {
     filterProdutos();
-  }, [produtos, categoriaFilter, statusFilter, searchQuery]);
+  }, [produtos, categoriaFilter, statusFilter, searchQuery, classificacaoFilter]);
 
   const fetchProdutos = async () => {
     console.log('🔍 fetchProdutos chamado');
@@ -114,6 +115,10 @@ const GerenciarProdutos = () => {
 
     if (categoriaFilter !== 'todas') {
       filtered = filtered.filter(p => p.categoria === categoriaFilter);
+    }
+
+    if (classificacaoFilter !== 'todas') {
+      filtered = filtered.filter(p => p.classificacao === classificacaoFilter);
     }
 
     if (searchQuery.trim()) {
@@ -228,6 +233,17 @@ const GerenciarProdutos = () => {
                       {label}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select value={classificacaoFilter} onValueChange={setClassificacaoFilter}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Classificação ABC" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas Classificações</SelectItem>
+                  <SelectItem value="A">Classe A</SelectItem>
+                  <SelectItem value="B">Classe B</SelectItem>
+                  <SelectItem value="C">Classe C</SelectItem>
                 </SelectContent>
               </Select>
             </div>
