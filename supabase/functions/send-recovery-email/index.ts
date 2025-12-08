@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PRODUCTION_URL = "https://id-preview--dc0b8f1a-0f27-4079-a37f-ebfc55c7280c.lovable.app";
+const PRODUCTION_URL = "https://app.simchef.app";
 
 interface RecoveryEmailRequest {
   email: string;
