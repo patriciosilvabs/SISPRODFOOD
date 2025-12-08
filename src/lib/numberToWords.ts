@@ -109,6 +109,12 @@ export function numberToWords(value: number | string, unidade: string): string {
       const totalTracos = Math.floor(num);
       resultado = numeroParaTexto(totalTracos) + (totalTracos === 1 ? ' traço' : ' traços');
       break;
+
+    case 'volume':
+    case 'volumes':
+      const totalVolumes = Math.floor(num);
+      resultado = numeroParaTexto(totalVolumes) + (totalVolumes === 1 ? ' volume' : ' volumes');
+      break;
       
     default:
       resultado = numeroParaTexto(Math.floor(num));
