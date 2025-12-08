@@ -301,20 +301,30 @@ const ResumoDaProducao = () => {
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
 
-      // Buscar insumos extras para todos os itens
-      const { data: insumosExtrasData } = await supabase
+      // Buscar todos os insumos vinculados (incluindo principal) para todos os itens
+      const { data: insumosVinculadosData } = await supabase
         .from('insumos_extras')
         .select('*, insumos!inner(nome, quantidade_em_estoque, unidade_medida)')
         .in('item_porcionado_id', itemIds);
 
-      // Buscar estoque dos insumos principais
-      const insumoIds = [...new Set(itensData?.map(i => i.insumo_vinculado_id).filter(Boolean) || [])];
-      const { data: insumosData } = await supabase
-        .from('insumos')
-        .select('id, nome, quantidade_em_estoque')
-        .in('id', insumoIds);
-
-      const insumosMap = new Map(insumosData?.map(i => [i.id, i]) || []);
+      // Mapear insumos principais (is_principal = true) por item_porcionado_id
+      const insumoPrincipalMap = new Map<string, {
+        insumo_id: string;
+        nome: string;
+        quantidade_em_estoque: number;
+        consumo_por_traco_g: number | null;
+      }>();
+      
+      insumosVinculadosData?.forEach(iv => {
+        if (iv.is_principal) {
+          insumoPrincipalMap.set(iv.item_porcionado_id, {
+            insumo_id: iv.insumo_id,
+            nome: iv.insumos.nome,
+            quantidade_em_estoque: iv.insumos.quantidade_em_estoque || 0,
+            consumo_por_traco_g: iv.consumo_por_traco_g,
+          });
+        }
+      });
 
       // Organizar registros por status
       const organizedColumns: KanbanColumns = {
@@ -340,39 +350,40 @@ const ResumoDaProducao = () => {
           targetColumn = 'finalizado';
         }
         
-        // Buscar insumo principal
-        const insumo = itemInfo?.insumo_vinculado_id ? insumosMap.get(itemInfo.insumo_vinculado_id) : null;
+        // Buscar insumo principal da tabela unificada
+        const insumoPrincipal = insumoPrincipalMap.get(registro.item_id);
         
-        // Calcular insumos extras necessários (apenas para "a_produzir")
+        // Calcular insumos vinculados necessários (apenas para "a_produzir")
+        // Agora todos os insumos (incluindo principal) estão na tabela insumos_extras
         let insumosExtras: InsumoExtraComEstoque[] | undefined;
         if (targetColumn === 'a_produzir' && registro.unidades_programadas) {
-          const extrasDoItem = insumosExtrasData?.filter(e => e.item_porcionado_id === registro.item_id) || [];
+          const insumosDoItem = insumosVinculadosData?.filter(e => e.item_porcionado_id === registro.item_id) || [];
           
-          insumosExtras = extrasDoItem.map(extra => {
+          insumosExtras = insumosDoItem.map(insumoVinculado => {
             let quantidadeNecessaria = 0;
             
             // Calcular quantidade baseado em traços ou unidades
             if (itemInfo?.unidade_medida === 'traco' && itemInfo.equivalencia_traco) {
               const tracos = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
-              quantidadeNecessaria = tracos * extra.quantidade;
+              quantidadeNecessaria = tracos * insumoVinculado.quantidade;
             } else {
-              quantidadeNecessaria = (registro.unidades_programadas || 0) * extra.quantidade;
+              quantidadeNecessaria = (registro.unidades_programadas || 0) * insumoVinculado.quantidade;
             }
             
             // Estoque disponível (sempre em kg)
-            const estoqueDisponivelKg = extra.insumos.quantidade_em_estoque || 0;
-            const unidadeExtra = (extra.unidade as string)?.toLowerCase() || 'kg';
+            const estoqueDisponivelKg = insumoVinculado.insumos.quantidade_em_estoque || 0;
+            const unidadeInsumo = (insumoVinculado.unidade as string)?.toLowerCase() || 'kg';
             
             // Converter quantidade necessária para kg se estiver em gramas
             let quantidadeNecessariaKg = quantidadeNecessaria;
-            if (unidadeExtra === 'g') {
+            if (unidadeInsumo === 'g') {
               quantidadeNecessariaKg = quantidadeNecessaria / 1000;
             }
             
             return {
-              nome: extra.nome,
+              nome: insumoVinculado.nome + (insumoVinculado.is_principal ? ' ⭐' : ''),
               quantidade_necessaria: quantidadeNecessaria,
-              unidade: extra.unidade,
+              unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
               estoque_suficiente: quantidadeNecessariaKg <= estoqueDisponivelKg
             };
@@ -394,8 +405,8 @@ const ResumoDaProducao = () => {
             : undefined,
           unidade_medida: itemInfo?.unidade_medida,
           equivalencia_traco: itemInfo?.equivalencia_traco,
-          insumo_principal_nome: insumo?.nome,
-          insumo_principal_estoque_kg: insumo?.quantidade_em_estoque,
+          insumo_principal_nome: insumoPrincipal?.nome,
+          insumo_principal_estoque_kg: insumoPrincipal?.quantidade_em_estoque,
           insumosExtras: insumosExtras,
           timer_ativo: itemInfo?.timer_ativo,
           tempo_timer_minutos: itemInfo?.tempo_timer_minutos,
@@ -588,122 +599,81 @@ const ResumoDaProducao = () => {
     if (!selectedRegistro) return;
 
     try {
-      // Buscar dados do item para verificar se deve baixar estoque no fim
+      // Buscar dados do item para verificar configurações
       const itemData = await getItemInsumoData(selectedRegistro.item_id);
       
-      // Se baixar_producao_inicio = false e tem insumo vinculado, deduzir estoque principal
-      if (itemData && !itemData.baixar_producao_inicio && itemData.insumo_vinculado_id) {
-        let quantidadeKg = 0;
-        
-        // Calcular quantidade baseado em traços ou unidades
-        if (itemData.unidade_medida === 'traco' && itemData.consumo_por_traco_g && itemData.equivalencia_traco) {
-          const tracos = data.unidades_reais / itemData.equivalencia_traco;
-          quantidadeKg = (tracos * itemData.consumo_por_traco_g) / 1000; // converter g para kg
-        } else {
-          quantidadeKg = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
-        }
-        
-        await movimentarEstoqueInsumo(
-          itemData.insumo_vinculado_id,
-          quantidadeKg,
-          selectedRegistro.item_nome,
-          'saida'
-        );
-      }
-
-      // Buscar e debitar insumos extras
-      const { data: insumosExtras, error: extrasError } = await supabase
+      // Buscar TODOS os insumos vinculados (agora unificados na tabela insumos_extras)
+      const { data: insumosVinculados, error: insumosError } = await supabase
         .from('insumos_extras')
         .select('*')
         .eq('item_porcionado_id', selectedRegistro.item_id);
 
-      if (extrasError) {
-        console.error('Erro ao buscar insumos extras:', extrasError);
-      } else if (insumosExtras && insumosExtras.length > 0) {
-        // Debitar cada insumo extra
-        for (const extra of insumosExtras) {
+      if (insumosError) {
+        console.error('Erro ao buscar insumos vinculados:', insumosError);
+      } else if (insumosVinculados && insumosVinculados.length > 0) {
+        // Debitar cada insumo vinculado
+        for (const insumoVinculado of insumosVinculados) {
           let quantidadeTotal = 0;
           
           // Calcular quantidade baseado em traços ou unidades
           if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
             const tracos = data.unidades_reais / itemData.equivalencia_traco;
-            quantidadeTotal = tracos * extra.quantidade;
+            // Para insumo principal, usar consumo_por_traco_g se disponível
+            if (insumoVinculado.is_principal && insumoVinculado.consumo_por_traco_g) {
+              quantidadeTotal = tracos * insumoVinculado.consumo_por_traco_g;
+            } else {
+              quantidadeTotal = tracos * insumoVinculado.quantidade;
+            }
           } else {
-            quantidadeTotal = data.unidades_reais * extra.quantidade;
+            quantidadeTotal = data.unidades_reais * insumoVinculado.quantidade;
           }
           
           // Converter para kg se necessário
           let quantidadeKg = quantidadeTotal;
-          if (extra.unidade === 'g') {
+          if (insumoVinculado.unidade === 'g') {
             quantidadeKg = quantidadeTotal / 1000;
-          } else if (extra.unidade === 'l') {
-            quantidadeKg = quantidadeTotal; // manter em litros
-          } else if (extra.unidade === 'ml') {
+          } else if (insumoVinculado.unidade === 'ml') {
             quantidadeKg = quantidadeTotal / 1000;
           }
           
-          try {
-            await movimentarEstoqueInsumo(
-              extra.insumo_id,
-              quantidadeKg,
-              `${selectedRegistro.item_nome} (extra)`,
-              'saida'
-            );
-
-            // Registrar no histórico de consumo (consumo extra) - não bloqueia se falhar
-            const { error: consumoExtraError } = await supabase.from('consumo_historico').insert({
-              producao_registro_id: selectedRegistro.id,
-              item_id: selectedRegistro.item_id,
-              item_nome: selectedRegistro.item_nome,
-              insumo_id: extra.insumo_id,
-              insumo_nome: extra.nome,
-              tipo_insumo: 'extra',
-              consumo_programado: selectedRegistro.peso_programado_kg || 0,
-              consumo_real: quantidadeKg,
-              unidade: extra.unidade,
-              usuario_id: user?.id || '',
-              usuario_nome: profile?.nome || 'Sistema',
-              organization_id: organizationId,
-            });
-            if (consumoExtraError) {
-              console.warn('Aviso: falha ao registrar consumo extra no histórico:', consumoExtraError);
+          // Só debitar se baixar_producao_inicio = false (para principal) ou sempre (para extras)
+          const deveDebitar = insumoVinculado.is_principal 
+            ? !itemData?.baixar_producao_inicio 
+            : true; // Extras sempre debitam na finalização
+          
+          if (deveDebitar) {
+            try {
+              await movimentarEstoqueInsumo(
+                insumoVinculado.insumo_id,
+                quantidadeKg,
+                `${selectedRegistro.item_nome}${insumoVinculado.is_principal ? '' : ' (adicional)'}`,
+                'saida'
+              );
+            } catch (error) {
+              console.error(`Erro ao debitar insumo ${insumoVinculado.nome}:`, error);
+              toast.error(`Erro ao debitar ${insumoVinculado.nome}`);
             }
-          } catch (error) {
-            console.error(`Erro ao debitar insumo extra ${extra.nome}:`, error);
-            toast.error(`Erro ao debitar ${extra.nome}`);
           }
-        }
-      }
 
-      // Registrar consumo do insumo principal no histórico
-      if (itemData?.insumo_vinculado_id) {
-        let consumoProgramado = selectedRegistro.peso_programado_kg || 0;
-        let consumoReal = 0;
-        
-        if (itemData.unidade_medida === 'traco' && itemData.consumo_por_traco_g && itemData.equivalencia_traco) {
-          const tracos = data.unidades_reais / itemData.equivalencia_traco;
-          consumoReal = (tracos * itemData.consumo_por_traco_g) / 1000;
-        } else {
-          consumoReal = data.peso_final_kg || (data.unidades_reais * (itemData.peso_unitario_g / 1000));
-        }
-
-        // Registrar consumo principal no histórico - não bloqueia se falhar
-        const { error: consumoPrincipalError } = await supabase.from('consumo_historico').insert({
-          producao_registro_id: selectedRegistro.id,
-          item_id: selectedRegistro.item_id,
-          item_nome: selectedRegistro.item_nome,
-          insumo_id: itemData.insumo_vinculado_id,
-          insumo_nome: itemData.nome,
-          tipo_insumo: 'principal',
-          consumo_programado: consumoProgramado,
-          consumo_real: consumoReal,
-          unidade: 'kg',
-          usuario_id: user?.id || '',
-          usuario_nome: profile?.nome || 'Sistema',
-          organization_id: organizationId,
-        });
-        if (consumoPrincipalError) {
-          console.warn('Aviso: falha ao registrar consumo principal no histórico:', consumoPrincipalError);
+          // Registrar no histórico de consumo
+          const tipoInsumo = insumoVinculado.is_principal ? 'principal' : 'extra';
+          const { error: consumoError } = await supabase.from('consumo_historico').insert({
+            producao_registro_id: selectedRegistro.id,
+            item_id: selectedRegistro.item_id,
+            item_nome: selectedRegistro.item_nome,
+            insumo_id: insumoVinculado.insumo_id,
+            insumo_nome: insumoVinculado.nome,
+            tipo_insumo: tipoInsumo,
+            consumo_programado: selectedRegistro.peso_programado_kg || 0,
+            consumo_real: quantidadeKg,
+            unidade: insumoVinculado.unidade,
+            usuario_id: user?.id || '',
+            usuario_nome: profile?.nome || 'Sistema',
+            organization_id: organizationId,
+          });
+          if (consumoError) {
+            console.warn(`Aviso: falha ao registrar consumo ${tipoInsumo} no histórico:`, consumoError);
+          }
         }
       }
 
