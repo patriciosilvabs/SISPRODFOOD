@@ -8,7 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShoppingCart, RefreshCw, AlertTriangle, AlertCircle, Clock, CheckCircle, Search, FileSpreadsheet, Package, Droplet, Beef } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ShoppingCart, RefreshCw, AlertTriangle, AlertCircle, Clock, CheckCircle, Search, FileSpreadsheet, Package, Droplet, Beef, PackageX, Truck } from 'lucide-react';
 import { useListaCompras, ItemCompra, UrgencyStatus, ItemTipo } from '@/hooks/useListaCompras';
 import { CriarPedidoCompraModal } from '@/components/modals/CriarPedidoCompraModal';
 import { toast } from 'sonner';
@@ -33,6 +34,9 @@ const ListaDeComprasIA = () => {
     });
   }, [itens, searchTerm, tipoFilter, statusFilter, classificacaoFilter]);
 
+  // Itens disponíveis para seleção (não bloqueados)
+  const itensDisponiveis = useMemo(() => filteredItens.filter(i => !i.bloqueado), [filteredItens]);
+
   // Contagens por tipo
   const contagensPorTipo = useMemo(() => ({
     insumos: itens.filter(i => i.tipo === 'insumo').length,
@@ -53,10 +57,10 @@ const ListaDeComprasIA = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedIds.size === filteredItens.length) {
+    if (selectedIds.size === itensDisponiveis.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredItens.map(i => i.id)));
+      setSelectedIds(new Set(itensDisponiveis.map(i => i.id)));
     }
   };
 
@@ -70,7 +74,7 @@ const ListaDeComprasIA = () => {
     setSelectedIds(newSet);
   };
 
-  const selectedItens = itens.filter(i => selectedIds.has(i.id) && i.quantidadeComprar > 0);
+  const selectedItens = itens.filter(i => selectedIds.has(i.id) && i.quantidadeComprar > 0 && !i.bloqueado);
 
   const getStatusBadge = (status: UrgencyStatus) => {
     switch (status) {
@@ -85,8 +89,44 @@ const ListaDeComprasIA = () => {
     }
   };
 
+  const getBloqueadoBadge = (item: ItemCompra) => {
+    if (item.pedidoEmAberto) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="outline" className="gap-1 border-blue-400 text-blue-600">
+                <PackageX className="h-3 w-3" /> Pedido
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Este item já está em um pedido de compra em aberto</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    if (item.romaneioEmTransito) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="outline" className="gap-1 border-purple-400 text-purple-600">
+                <Truck className="h-3 w-3" /> Trânsito
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Este item está em trânsito (romaneio pendente)</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+    return null;
+  };
+
   const exportToCSV = () => {
-    const headers = ['Item', 'Tipo', 'Classificação', 'Estoque Atual', 'Unidade', 'Consumo/Dia', 'Cobertura (dias)', 'Lead Time', 'Qtd Comprar', 'Status'];
+    const headers = ['Item', 'Tipo', 'Classificação', 'Estoque Atual', 'Unidade', 'Consumo/Dia', 'Cobertura (dias)', 'Lead Time', 'Perda %', 'Qtd Comprar', 'Status', 'Bloqueado'];
     const rows = filteredItens.map(item => [
       item.nome,
       item.tipo === 'insumo' ? 'Insumo' : item.tipo === 'produto' ? 'Produto' : 'Porcionado',
@@ -96,8 +136,10 @@ const ListaDeComprasIA = () => {
       item.consumoMedioDiario.toFixed(2),
       item.coberturaAtual.toFixed(1),
       item.leadTime,
+      item.perdaPercentual.toFixed(1),
       item.quantidadeComprar.toFixed(2),
-      item.status.toUpperCase()
+      item.status.toUpperCase(),
+      item.bloqueado ? item.motivoBloqueio || 'Sim' : 'Não'
     ]);
 
     const csvContent = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n');
@@ -142,7 +184,7 @@ const ListaDeComprasIA = () => {
               Lista de Compras Inteligente
             </h1>
             <p className="text-muted-foreground mt-1">
-              Sugestões baseadas em consumo histórico e lead time
+              Sugestões baseadas em consumo histórico, lead time e perda percentual
             </p>
           </div>
           <Button 
@@ -281,7 +323,7 @@ const ListaDeComprasIA = () => {
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={selectedIds.size === filteredItens.length && filteredItens.length > 0}
+                          checked={selectedIds.size === itensDisponiveis.length && itensDisponiveis.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </TableHead>
@@ -293,6 +335,7 @@ const ListaDeComprasIA = () => {
                       <TableHead className="text-right">Consumo/Dia</TableHead>
                       <TableHead className="text-right">Cobertura</TableHead>
                       <TableHead className="text-right">Lead Time</TableHead>
+                      <TableHead className="text-right">Perda %</TableHead>
                       <TableHead className="text-right font-bold">Comprar</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -300,17 +343,29 @@ const ListaDeComprasIA = () => {
                     {filteredItens.map((item) => (
                       <TableRow 
                         key={item.id}
-                        className={item.status === 'critico' ? 'bg-red-50 dark:bg-red-950/10' : 
-                                   item.status === 'urgente' ? 'bg-amber-50 dark:bg-amber-950/10' : ''}
+                        className={
+                          item.bloqueado 
+                            ? 'bg-muted/50 opacity-60' 
+                            : item.status === 'critico' 
+                              ? 'bg-red-50 dark:bg-red-950/10' 
+                              : item.status === 'urgente' 
+                                ? 'bg-amber-50 dark:bg-amber-950/10' 
+                                : ''
+                        }
                       >
                         <TableCell>
                           <Checkbox
                             checked={selectedIds.has(item.id)}
                             onCheckedChange={() => handleSelectItem(item.id)}
-                            disabled={item.quantidadeComprar === 0}
+                            disabled={item.quantidadeComprar === 0 || item.bloqueado}
                           />
                         </TableCell>
-                        <TableCell>{getStatusBadge(item.status)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            {getStatusBadge(item.status)}
+                            {getBloqueadoBadge(item)}
+                          </div>
+                        </TableCell>
                         <TableCell>{getClassificacaoBadge(item.classificacao)}</TableCell>
                         <TableCell className="font-medium">{item.nome}</TableCell>
                         <TableCell>
@@ -336,9 +391,18 @@ const ListaDeComprasIA = () => {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">{item.leadTime} dias</TableCell>
+                        <TableCell className="text-right">
+                          {item.perdaPercentual > 0 ? (
+                            <span className="text-orange-600">{item.perdaPercentual.toFixed(1)}%</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-bold">
                           {item.quantidadeComprar > 0 ? (
-                            <span className="text-primary">{item.quantidadeComprar.toFixed(2)} {item.unidade}</span>
+                            <span className={item.bloqueado ? 'text-muted-foreground' : 'text-primary'}>
+                              {item.quantidadeComprar.toFixed(2)} {item.unidade}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -358,7 +422,7 @@ const ListaDeComprasIA = () => {
             <div className="flex flex-wrap gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <Badge variant="destructive" className="gap-1"><AlertCircle className="h-3 w-3" /> Crítico</Badge>
-                <span className="text-muted-foreground">Estoque abaixo do lead time - já deveria ter pedido!</span>
+                <span className="text-muted-foreground">Estoque ≤ mínimo ou abaixo do lead time</span>
               </div>
               <div className="flex items-center gap-2">
                 <Badge className="bg-amber-500 gap-1"><AlertTriangle className="h-3 w-3" /> Urgente</Badge>
@@ -366,7 +430,15 @@ const ListaDeComprasIA = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="border-orange-400 text-orange-600 gap-1"><Clock className="h-3 w-3" /> Alerta</Badge>
-                <span className="text-muted-foreground">Próximo do ponto de pedido - pedir em breve</span>
+                <span className="text-muted-foreground">Próximo do ponto de pedido</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="gap-1 border-blue-400 text-blue-600"><PackageX className="h-3 w-3" /> Pedido</Badge>
+                <span className="text-muted-foreground">Já tem pedido de compra em aberto</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="gap-1 border-purple-400 text-purple-600"><Truck className="h-3 w-3" /> Trânsito</Badge>
+                <span className="text-muted-foreground">Romaneio aguardando recebimento</span>
               </div>
             </div>
           </CardContent>
