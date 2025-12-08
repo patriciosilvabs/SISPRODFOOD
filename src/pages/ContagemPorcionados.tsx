@@ -50,6 +50,7 @@ interface Contagem {
   a_produzir: number;
   usuario_nome: string;
   updated_at: string;
+  dia_operacional: string;
   item_nome?: string;
 }
 
@@ -143,16 +144,17 @@ const ContagemPorcionados = () => {
       
       if (itensError) throw itensError;
 
-      // Carregar contagens APENAS do dia atual (REGRA OBRIGATÓRIA)
+      // Carregar contagens APENAS do dia operacional atual (REGRA OBRIGATÓRIA)
       // Usar data do SERVIDOR para funcionar em qualquer timezone
       const { data: dataServidor } = await supabase.rpc('get_current_date');
       const hoje = dataServidor || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       
+      // Buscar contagens do dia operacional atual de cada loja
+      // Cada loja pode ter um dia operacional diferente baseado em seu fuso/cutoff
       const { data: contagensData, error: contagensError } = await supabase
         .from('contagem_porcionados')
         .select('*')
-        .gte('updated_at', `${hoje}T00:00:00+00:00`)
-        .lt('updated_at', `${hoje}T23:59:59.999+00:00`)
+        .eq('dia_operacional', hoje)
         .order('updated_at', { ascending: false });
       
       if (contagensError) throw contagensError;
@@ -288,6 +290,15 @@ const ContagemPorcionados = () => {
         .eq('id', itemId)
         .single();
 
+      // CALCULAR DIA OPERACIONAL DA LOJA (usando função do banco)
+      const { data: diaOperacional, error: diaOpError } = await supabase
+        .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
+      
+      if (diaOpError) {
+        console.error('Erro ao calcular dia operacional:', diaOpError);
+        throw diaOpError;
+      }
+
       const finalSobra = parseInt(values?.final_sobra) || 0;
       
       // Se o usuário não editou ideal_amanha, buscar dos estoques ideais semanais
@@ -309,6 +320,7 @@ const ContagemPorcionados = () => {
       const dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
+        dia_operacional: diaOperacional, // NOVO CAMPO OBRIGATÓRIO
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
@@ -317,10 +329,11 @@ const ContagemPorcionados = () => {
         organization_id: organizationId,
       };
 
+      // UPSERT usa nova constraint com dia_operacional
       const { error } = await supabase
         .from('contagem_porcionados')
         .upsert(dataToSave, {
-          onConflict: 'loja_id,item_porcionado_id',
+          onConflict: 'loja_id,item_porcionado_id,dia_operacional',
         });
 
       if (error) throw error;
