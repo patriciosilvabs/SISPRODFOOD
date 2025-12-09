@@ -2691,7 +2691,6 @@ export type Database = {
       criar_ou_atualizar_producao_registro:
         | {
             Args: {
-              p_dia_operacional?: string
               p_item_id: string
               p_organization_id: string
               p_usuario_id: string
@@ -2701,6 +2700,7 @@ export type Database = {
           }
         | {
             Args: {
+              p_dia_operacional?: string
               p_item_id: string
               p_organization_id: string
               p_usuario_id: string
