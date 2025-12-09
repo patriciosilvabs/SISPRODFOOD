@@ -74,7 +74,7 @@ export function VolumeInput({
         required={required}
       />
       {extenso && !isFocused && (
-        <p className="text-xs text-muted-foreground italic truncate">
+        <p className="text-primary text-xs font-medium">
           {extenso}
         </p>
       )}
@@ -143,7 +143,7 @@ export function VolumeInputInline({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="text-xs text-muted-foreground italic truncate cursor-help">
+              <p className="text-primary text-xs font-medium truncate cursor-help">
                 {extenso}
               </p>
             </TooltipTrigger>
