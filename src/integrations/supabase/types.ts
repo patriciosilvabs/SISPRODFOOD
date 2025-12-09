@@ -2075,6 +2075,10 @@ export type Database = {
           loja_nome: string
           observacao: string | null
           organization_id: string | null
+          peso_total_envio_g: number | null
+          peso_total_recebido_g: number | null
+          quantidade_volumes_envio: number | null
+          quantidade_volumes_recebido: number | null
           recebido_por_id: string | null
           recebido_por_nome: string | null
           status: string | null
@@ -2091,6 +2095,10 @@ export type Database = {
           loja_nome: string
           observacao?: string | null
           organization_id?: string | null
+          peso_total_envio_g?: number | null
+          peso_total_recebido_g?: number | null
+          quantidade_volumes_envio?: number | null
+          quantidade_volumes_recebido?: number | null
           recebido_por_id?: string | null
           recebido_por_nome?: string | null
           status?: string | null
@@ -2107,6 +2115,10 @@ export type Database = {
           loja_nome?: string
           observacao?: string | null
           organization_id?: string | null
+          peso_total_envio_g?: number | null
+          peso_total_recebido_g?: number | null
+          quantidade_volumes_envio?: number | null
+          quantidade_volumes_recebido?: number | null
           recebido_por_id?: string | null
           recebido_por_nome?: string | null
           status?: string | null

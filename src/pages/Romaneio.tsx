@@ -65,6 +65,10 @@ interface Romaneio {
   usuario_nome: string;
   recebido_por_nome: string | null;
   observacao: string | null;
+  peso_total_envio_g?: number;
+  quantidade_volumes_envio?: number;
+  peso_total_recebido_g?: number;
+  quantidade_volumes_recebido?: number;
   romaneio_itens: Array<{
     id?: string;
     item_nome: string;
@@ -323,6 +327,10 @@ const Romaneio = () => {
   }>({});
   const [observacaoRecebimento, setObservacaoRecebimento] = useState<{ [romaneioId: string]: string }>({});
   const [loadingRecebimento, setLoadingRecebimento] = useState(false);
+  
+  // Estados para peso e volumes no recebimento
+  const [pesoRecebido, setPesoRecebido] = useState<{ [romaneioId: string]: string }>({});
+  const [volumesRecebido, setVolumesRecebido] = useState<{ [romaneioId: string]: string }>({});
 
   // ==================== EFFECTS ====================
 
@@ -658,7 +666,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, romaneio_itens (id, item_nome, quantidade, peso_total_kg)`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, romaneio_itens (id, item_nome, quantidade, peso_total_kg)`)
         .eq('status', 'enviado')
         .order('data_envio', { ascending: false });
 
@@ -786,7 +794,7 @@ const Romaneio = () => {
       const loja = lojas.find(l => l.id === lojaId);
       const agora = new Date().toISOString();
 
-      // Criar romaneio como ENVIADO
+      // Criar romaneio como ENVIADO com peso e volumes
       const { data: romaneio, error: romaneioError } = await supabase.from('romaneios').insert({
         loja_id: lojaId,
         loja_nome: loja?.nome || '',
@@ -795,7 +803,9 @@ const Romaneio = () => {
         data_envio: agora,
         usuario_id: user.id,
         usuario_nome: userProfile?.nome || 'Usuário',
-        organization_id: organizationId
+        organization_id: organizationId,
+        peso_total_envio_g: parseInt(pesoTotal) || 0,
+        quantidade_volumes_envio: parseInt(volumes) || 0
       }).select().single();
 
       if (romaneioError) throw romaneioError;
@@ -886,6 +896,16 @@ const Romaneio = () => {
   // ==================== HANDLERS: RECEBIMENTO ====================
 
   const handleConfirmarRecebimento = async (romaneioId: string) => {
+    // Validar campos obrigatórios de peso e volumes
+    if (!pesoRecebido[romaneioId] || pesoRecebido[romaneioId] === '0') {
+      toast.error('Informe o Peso Total Recebido');
+      return;
+    }
+    if (!volumesRecebido[romaneioId] || volumesRecebido[romaneioId] === '0') {
+      toast.error('Informe a Quantidade de Volumes Recebida');
+      return;
+    }
+    
     try {
       setLoadingRecebimento(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -919,7 +939,9 @@ const Romaneio = () => {
         data_recebimento: new Date().toISOString(),
         recebido_por_id: user.id,
         recebido_por_nome: userProfile?.nome || 'Usuário',
-        observacao: observacaoRecebimento[romaneioId] || null
+        observacao: observacaoRecebimento[romaneioId] || null,
+        peso_total_recebido_g: parseInt(pesoRecebido[romaneioId]) || 0,
+        quantidade_volumes_recebido: parseInt(volumesRecebido[romaneioId]) || 0
       }).eq('id', romaneioId);
 
       toast.success('Recebimento confirmado!');
@@ -1263,6 +1285,28 @@ const Romaneio = () => {
                               </div>
                             </CardHeader>
                             <CardContent className="space-y-3">
+                              {/* Informações do Envio */}
+                              {(romaneio.peso_total_envio_g || romaneio.quantidade_volumes_envio) && (
+                                <div className="flex gap-4 p-3 bg-muted/50 rounded-lg">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Peso Enviado</p>
+                                    <p className="font-medium text-sm">
+                                      {romaneio.peso_total_envio_g 
+                                        ? romaneio.peso_total_envio_g >= 1000 
+                                          ? `${(romaneio.peso_total_envio_g / 1000).toFixed(2).replace('.', ',')} kg`
+                                          : `${romaneio.peso_total_envio_g} g`
+                                        : '-'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Volumes Enviados</p>
+                                    <p className="font-medium text-sm">
+                                      {romaneio.quantidade_volumes_envio || '-'} vol
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              
                               {romaneio.romaneio_itens.map((item, idx) => {
                                 const itemId = item.id || `${romaneio.id}-${idx}`;
                                 return (
@@ -1284,13 +1328,47 @@ const Romaneio = () => {
                                   </div>
                                 );
                               })}
+                              
+                              {/* Campos obrigatórios de Peso e Volumes Recebidos */}
+                              <Separator />
+                              <div className="grid grid-cols-2 gap-3">
+                                <WeightInput
+                                  value={pesoRecebido[romaneio.id] || ''}
+                                  onChange={(v) => setPesoRecebido(prev => ({...prev, [romaneio.id]: v}))}
+                                  label="Peso Recebido"
+                                  required
+                                  compact
+                                  showLabel
+                                  placeholder="Ex: 5500"
+                                />
+                                <VolumeInput
+                                  value={volumesRecebido[romaneio.id] || ''}
+                                  onChange={(v) => setVolumesRecebido(prev => ({...prev, [romaneio.id]: v}))}
+                                  label="Volumes Recebidos"
+                                  required
+                                  compact
+                                  showLabel
+                                  placeholder="Ex: 3"
+                                />
+                              </div>
+                              
                               <Textarea
                                 placeholder="Observação (opcional)"
                                 value={observacaoRecebimento[romaneio.id] || ''}
                                 onChange={(e) => setObservacaoRecebimento(prev => ({ ...prev, [romaneio.id]: e.target.value }))}
                                 className="h-16"
                               />
-                              <Button onClick={() => handleConfirmarRecebimento(romaneio.id)} disabled={loadingRecebimento} className="w-full">
+                              <Button 
+                                onClick={() => handleConfirmarRecebimento(romaneio.id)} 
+                                disabled={
+                                  loadingRecebimento || 
+                                  !pesoRecebido[romaneio.id] || 
+                                  pesoRecebido[romaneio.id] === '0' ||
+                                  !volumesRecebido[romaneio.id] || 
+                                  volumesRecebido[romaneio.id] === '0'
+                                } 
+                                className="w-full"
+                              >
                                 <CheckCircle className="w-4 h-4 mr-1" />
                                 Confirmar Recebimento
                               </Button>
