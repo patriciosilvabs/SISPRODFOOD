@@ -43,6 +43,8 @@ export interface ProtecaoAntiExplosao {
   mensagemErro: string | null;
 }
 
+export type StatusValidacao = 'validado' | 'suspeito' | 'bloqueado';
+
 export interface ResultadoCalculo {
   consumoCalculado: number;
   consumoEmKg: number;
@@ -52,6 +54,8 @@ export interface ResultadoCalculo {
   protecao: ProtecaoAntiExplosao;
   escalaInvalida?: boolean;
   motivoBloqueio?: string;
+  statusValidacao: StatusValidacao;
+  motivoSuspeita?: string;
 }
 
 /**
@@ -124,7 +128,9 @@ export function calcularConsumoInsumo(params: ParametrosCalculoInsumo): Resultad
         mensagemErro: validacaoEscala.violacao
       },
       escalaInvalida: true,
-      motivoBloqueio: validacaoEscala.violacao
+      motivoBloqueio: validacaoEscala.violacao,
+      statusValidacao: 'bloqueado',
+      motivoSuspeita: validacaoEscala.violacao
     };
   }
   const {
@@ -212,13 +218,29 @@ export function calcularConsumoInsumo(params: ParametrosCalculoInsumo): Resultad
     );
   }
 
+  // Determinar status de validação
+  let statusValidacao: StatusValidacao;
+  let motivoSuspeita: string | undefined;
+  
+  if (consumoExcedeLimite) {
+    statusValidacao = 'bloqueado';
+    motivoSuspeita = protecao.mensagemErro || 'Consumo acima do limite físico possível';
+  } else if (alertaConsumoExcessivo) {
+    statusValidacao = 'suspeito';
+    motivoSuspeita = 'Consumo acima do esperado, verificando cálculo...';
+  } else {
+    statusValidacao = 'validado';
+  }
+
   return {
     consumoCalculado,
     consumoEmKg,
     pesoTotalFinalKg,
     pesoTotalComPerdaKg,
     alertaConsumoExcessivo,
-    protecao
+    protecao,
+    statusValidacao,
+    motivoSuspeita
   };
 }
 
