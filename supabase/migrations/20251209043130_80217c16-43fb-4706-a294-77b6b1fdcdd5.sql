@@ -1,0 +1,219 @@
+-- Atualizar função para receber p_dia_operacional como parâmetro
+CREATE OR REPLACE FUNCTION public.criar_ou_atualizar_producao_registro(
+  p_item_id uuid, 
+  p_organization_id uuid, 
+  p_usuario_id uuid, 
+  p_usuario_nome text,
+  p_dia_operacional date DEFAULT NULL
+)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_item_data record;
+  v_contagens record;
+  v_demanda_lojas integer := 0;
+  v_reserva_dia integer := 0;
+  v_necessidade_total integer;
+  v_unidades_programadas integer;
+  v_peso_programado_total numeric;
+  v_sobra_reserva integer := 0;
+  v_detalhes_lojas jsonb := '[]'::jsonb;
+  v_dia_semana text;
+  v_hoje date;
+  v_tracos_necessarios integer;
+  v_lote_id uuid;
+  v_seq integer;
+  v_registro_existente uuid;
+BEGIN
+  -- USAR DIA OPERACIONAL DO PARÂMETRO OU CALCULAR SE NÃO FORNECIDO
+  IF p_dia_operacional IS NOT NULL THEN
+    v_hoje := p_dia_operacional;
+  ELSE
+    v_hoje := (NOW() AT TIME ZONE 'America/Sao_Paulo')::date;
+  END IF;
+
+  -- 1. Buscar dados do item
+  SELECT 
+    nome, peso_unitario_g, unidade_medida, equivalencia_traco, 
+    consumo_por_traco_g, usa_traco_massa
+  INTO v_item_data
+  FROM itens_porcionados
+  WHERE id = p_item_id AND organization_id = p_organization_id;
+  
+  IF v_item_data IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Item não encontrado');
+  END IF;
+  
+  -- 2. Calcular demanda total de todas as lojas usando dia_operacional
+  SELECT 
+    COALESCE(SUM(GREATEST(0, ideal_amanha - final_sobra)), 0)::integer
+  INTO v_demanda_lojas
+  FROM contagem_porcionados
+  WHERE item_porcionado_id = p_item_id
+    AND organization_id = p_organization_id
+    AND dia_operacional = v_hoje
+    AND GREATEST(0, ideal_amanha - final_sobra) > 0;
+  
+  -- Se não há demanda, não criar registro
+  IF v_demanda_lojas = 0 THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Sem demanda para produção', 'dia_operacional_usado', v_hoje);
+  END IF;
+  
+  -- 3. Determinar dia da semana de amanhã
+  v_dia_semana := CASE EXTRACT(DOW FROM v_hoje + interval '1 day')
+    WHEN 0 THEN 'domingo'
+    WHEN 1 THEN 'segunda'
+    WHEN 2 THEN 'terca'
+    WHEN 3 THEN 'quarta'
+    WHEN 4 THEN 'quinta'
+    WHEN 5 THEN 'sexta'
+    WHEN 6 THEN 'sabado'
+  END;
+  
+  -- 4. Buscar reserva configurada para o dia
+  EXECUTE format(
+    'SELECT COALESCE(%I, 0) FROM itens_reserva_diaria WHERE item_porcionado_id = $1 AND organization_id = $2',
+    v_dia_semana
+  ) INTO v_reserva_dia USING p_item_id, p_organization_id;
+  
+  v_reserva_dia := COALESCE(v_reserva_dia, 0);
+  
+  -- 5. Calcular necessidade total
+  v_necessidade_total := v_demanda_lojas + v_reserva_dia;
+  
+  -- 6. Construir detalhes por loja usando dia_operacional
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'loja_id', c.loja_id,
+      'loja_nome', l.nome,
+      'quantidade', GREATEST(0, c.ideal_amanha - c.final_sobra)
+    )
+  )
+  INTO v_detalhes_lojas
+  FROM contagem_porcionados c
+  JOIN lojas l ON l.id = c.loja_id
+  WHERE c.item_porcionado_id = p_item_id
+    AND c.organization_id = p_organization_id
+    AND c.dia_operacional = v_hoje
+    AND GREATEST(0, c.ideal_amanha - c.final_sobra) > 0;
+  
+  v_detalhes_lojas := COALESCE(v_detalhes_lojas, '[]'::jsonb);
+  
+  -- 7. Calcular unidades programadas e peso
+  IF v_item_data.unidade_medida = 'traco' AND v_item_data.equivalencia_traco IS NOT NULL AND v_item_data.consumo_por_traco_g IS NOT NULL THEN
+    v_tracos_necessarios := CEIL(v_necessidade_total::numeric / v_item_data.equivalencia_traco);
+    v_unidades_programadas := v_tracos_necessarios * v_item_data.equivalencia_traco;
+    v_sobra_reserva := v_unidades_programadas - v_necessidade_total;
+    v_peso_programado_total := (v_tracos_necessarios * v_item_data.consumo_por_traco_g) / 1000.0;
+  ELSE
+    v_unidades_programadas := v_necessidade_total;
+    v_peso_programado_total := (v_unidades_programadas * COALESCE(v_item_data.peso_unitario_g, 0)) / 1000.0;
+  END IF;
+  
+  -- 8. Criar/atualizar registros de produção
+  IF v_item_data.usa_traco_massa = true AND v_item_data.unidade_medida = 'traco' AND v_item_data.equivalencia_traco IS NOT NULL THEN
+    v_lote_id := gen_random_uuid();
+    
+    DELETE FROM producao_registros
+    WHERE item_id = p_item_id
+      AND status = 'a_produzir'
+      AND organization_id = p_organization_id;
+    
+    FOR v_seq IN 1..v_tracos_necessarios LOOP
+      INSERT INTO producao_registros (
+        item_id, item_nome, status, unidades_programadas, peso_programado_kg,
+        demanda_lojas, reserva_configurada, sobra_reserva, detalhes_lojas,
+        usuario_id, usuario_nome, organization_id,
+        sequencia_traco, lote_producao_id, bloqueado_por_traco_anterior,
+        timer_status, data_referencia
+      ) VALUES (
+        p_item_id,
+        v_item_data.nome,
+        'a_produzir',
+        v_item_data.equivalencia_traco,
+        v_item_data.consumo_por_traco_g / 1000.0,
+        CASE WHEN v_seq = 1 THEN v_demanda_lojas ELSE NULL END,
+        CASE WHEN v_seq = 1 THEN v_reserva_dia ELSE NULL END,
+        CASE WHEN v_seq = v_tracos_necessarios THEN v_sobra_reserva ELSE 0 END,
+        CASE WHEN v_seq = 1 THEN v_detalhes_lojas ELSE '[]'::jsonb END,
+        p_usuario_id,
+        p_usuario_nome,
+        p_organization_id,
+        v_seq,
+        v_lote_id,
+        v_seq > 1,
+        'aguardando',
+        v_hoje
+      );
+    END LOOP;
+    
+    RETURN jsonb_build_object(
+      'success', true,
+      'type', 'traco_queue',
+      'tracos_criados', v_tracos_necessarios,
+      'dia_operacional_usado', v_hoje
+    );
+  ELSE
+    SELECT id INTO v_registro_existente
+    FROM producao_registros
+    WHERE item_id = p_item_id
+      AND status = 'a_produzir'
+      AND lote_producao_id IS NULL
+      AND organization_id = p_organization_id
+    LIMIT 1;
+    
+    IF v_registro_existente IS NOT NULL THEN
+      UPDATE producao_registros
+      SET 
+        unidades_programadas = v_unidades_programadas,
+        peso_programado_kg = v_peso_programado_total,
+        demanda_lojas = v_demanda_lojas,
+        reserva_configurada = v_reserva_dia,
+        sobra_reserva = v_sobra_reserva,
+        detalhes_lojas = v_detalhes_lojas,
+        usuario_id = p_usuario_id,
+        usuario_nome = p_usuario_nome,
+        data_referencia = v_hoje
+      WHERE id = v_registro_existente;
+      
+      RETURN jsonb_build_object(
+        'success', true,
+        'type', 'updated',
+        'registro_id', v_registro_existente,
+        'dia_operacional_usado', v_hoje
+      );
+    ELSE
+      INSERT INTO producao_registros (
+        item_id, item_nome, status, unidades_programadas, peso_programado_kg,
+        demanda_lojas, reserva_configurada, sobra_reserva, detalhes_lojas,
+        usuario_id, usuario_nome, organization_id, data_referencia
+      ) VALUES (
+        p_item_id,
+        v_item_data.nome,
+        'a_produzir',
+        v_unidades_programadas,
+        v_peso_programado_total,
+        v_demanda_lojas,
+        v_reserva_dia,
+        v_sobra_reserva,
+        v_detalhes_lojas,
+        p_usuario_id,
+        p_usuario_nome,
+        p_organization_id,
+        v_hoje
+      )
+      RETURNING id INTO v_registro_existente;
+      
+      RETURN jsonb_build_object(
+        'success', true,
+        'type', 'created',
+        'registro_id', v_registro_existente,
+        'dia_operacional_usado', v_hoje
+      );
+    END IF;
+  END IF;
+END;
+$function$;
