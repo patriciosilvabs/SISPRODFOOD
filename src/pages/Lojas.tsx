@@ -39,6 +39,7 @@ interface Loja {
   responsavel: string;
   fuso_horario: string;
   cutoff_operacional: string;
+  tipo: string | null;
 }
 
 // Lista de fusos horários brasileiros
@@ -72,11 +73,11 @@ const Lojas = () => {
 
   const fetchLojas = async () => {
     try {
-      // Excluir CPD da listagem de lojas gerenciáveis
+      // Incluir todas as lojas (incluindo CPD)
       const { data, error } = await supabase
         .from('lojas')
         .select('*')
-        .neq('tipo', 'cpd')
+        .order('tipo', { ascending: true }) // CPD primeiro
         .order('nome');
 
       if (error) throw error;
@@ -128,14 +129,20 @@ const Lojas = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (loja: Loja) => {
+    // Impedir exclusão do CPD
+    if (loja.tipo === 'cpd') {
+      toast.error('O CPD é obrigatório e não pode ser excluído.');
+      return;
+    }
+
     if (!confirm('Tem certeza que deseja excluir esta loja?')) return;
 
     try {
       const { error } = await supabase
         .from('lojas')
         .delete()
-        .eq('id', id);
+        .eq('id', loja.id);
 
       if (error) throw error;
       toast.success('Loja excluída com sucesso!');
@@ -327,9 +334,19 @@ const Lojas = () => {
                 ) : (
                   lojas.map((loja) => {
                     const fusoLabel = FUSOS_HORARIOS.find(f => f.value === loja.fuso_horario)?.label || loja.fuso_horario;
+                    const isCPD = loja.tipo === 'cpd';
                     return (
-                      <TableRow key={loja.id}>
-                        <TableCell className="font-medium">{loja.nome}</TableCell>
+                      <TableRow key={loja.id} className={isCPD ? 'bg-primary/5' : ''}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {loja.nome}
+                            {isCPD && (
+                              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full font-medium">
+                                CPD
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{loja.responsavel}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fusoLabel}</TableCell>
                         <TableCell className="text-xs">{loja.cutoff_operacional?.slice(0, 5) || '03:00'}</TableCell>
@@ -344,9 +361,11 @@ const Lojas = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDelete(loja.id)}
+                            onClick={() => handleDelete(loja)}
+                            disabled={isCPD}
+                            title={isCPD ? 'CPD não pode ser excluído' : 'Excluir loja'}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className={`h-4 w-4 ${isCPD ? 'opacity-30' : ''}`} />
                           </Button>
                         </TableCell>
                       </TableRow>
