@@ -895,6 +895,7 @@ const Romaneio = () => {
 
   // ==================== HELPERS: DIVERGÊNCIA ====================
 
+  // Cálculo de divergência em tempo real
   const calcularDivergencia = (romaneioId: string, romaneio: Romaneio) => {
     const pesoEnviado = romaneio.peso_total_envio_g || 0;
     const volumesEnviados = romaneio.quantidade_volumes_envio || 0;
@@ -903,14 +904,50 @@ const Romaneio = () => {
     
     const temDivergenciaPeso = pesoInformado > 0 && pesoInformado !== pesoEnviado;
     const temDivergenciaVolumes = volumesInformados > 0 && volumesInformados !== volumesEnviados;
+    const diferencaPeso = pesoInformado - pesoEnviado;
+    const diferencaVolumes = volumesInformados - volumesEnviados;
     
     return {
       temDivergencia: temDivergenciaPeso || temDivergenciaVolumes,
       temDivergenciaPeso,
       temDivergenciaVolumes,
-      diferencaPeso: pesoInformado - pesoEnviado,
-      diferencaVolumes: volumesInformados - volumesEnviados
+      diferencaPeso,
+      diferencaVolumes,
+      pesoEnviado,
+      pesoInformado
     };
+  };
+
+  // Classificar tipo de divergência para cores e ícones
+  const getStatusDivergencia = (diferencaPeso: number, diferencaVolumes: number) => {
+    const temDivergenciaPeso = diferencaPeso !== 0;
+    const temDivergenciaVolumes = diferencaVolumes !== 0;
+    
+    if (!temDivergenciaPeso && !temDivergenciaVolumes) {
+      return { tipo: 'ok' as const, icone: '✅', descricao: 'Conferência perfeita' };
+    }
+    
+    // Prioriza análise do peso (mais importante)
+    if (diferencaPeso > 0 || (diferencaPeso === 0 && diferencaVolumes > 0)) {
+      return { tipo: 'excedente' as const, icone: '🟢', descricao: 'Recebido a mais' };
+    }
+    
+    return { tipo: 'falta' as const, icone: '🔻', descricao: 'Recebido a menos' };
+  };
+
+  // Calcular percentual de divergência para regra anti-fraude
+  const calcularPercentualDivergencia = (enviado: number, recebido: number) => {
+    if (enviado === 0) return 0;
+    return Math.abs((recebido - enviado) / enviado) * 100;
+  };
+
+  // Formatar peso para exibição (g ou kg)
+  const formatarPesoDivergencia = (gramas: number) => {
+    const abs = Math.abs(gramas);
+    const sinal = gramas > 0 ? '+' : '';
+    return abs >= 1000 
+      ? `${sinal}${(gramas / 1000).toFixed(2).replace('.', ',')} kg` 
+      : `${sinal}${gramas} g`;
   };
 
   // ==================== HANDLERS: RECEBIMENTO ====================
@@ -926,13 +963,22 @@ const Romaneio = () => {
       return;
     }
     
-    // Verificar divergência para alertar
     const romaneio = romaneiosEnviados.find(r => r.id === romaneioId);
-    if (romaneio) {
-      const div = calcularDivergencia(romaneioId, romaneio);
-      if (div.temDivergencia) {
-        toast.warning('Recebimento registrado COM DIVERGÊNCIA!');
-      }
+    if (!romaneio) {
+      toast.error('Romaneio não encontrado');
+      return;
+    }
+
+    const div = calcularDivergencia(romaneioId, romaneio);
+    const status = getStatusDivergencia(div.diferencaPeso, div.diferencaVolumes);
+    
+    // Regra anti-fraude: divergência > 2% exige justificativa obrigatória
+    const percentual = calcularPercentualDivergencia(div.pesoEnviado, div.pesoInformado);
+    const divergenciaCritica = percentual > 2;
+    
+    if (divergenciaCritica && !observacaoRecebimento[romaneioId]?.trim()) {
+      toast.error('Divergência acima de 2%! Justificativa obrigatória no campo de observação.');
+      return;
     }
     
     try {
@@ -941,8 +987,6 @@ const Romaneio = () => {
       if (!user) return;
 
       const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
-      const romaneio = romaneiosEnviados.find(r => r.id === romaneioId);
-      if (!romaneio) throw new Error('Romaneio não encontrado');
 
       const { data: itensData, error: itensError } = await supabase
         .from('romaneio_itens')
@@ -963,17 +1007,56 @@ const Romaneio = () => {
         await supabase.from('romaneio_itens').update({ quantidade_recebida: item.quantidade_recebida, peso_recebido_kg: item.peso_recebido_kg }).eq('id', item.id);
       }
 
+      const pesoRecebidoNum = parseInt(pesoRecebido[romaneioId]) || 0;
+      const volumesRecebidoNum = parseInt(volumesRecebido[romaneioId]) || 0;
+      const divergenciaCalculada = pesoRecebidoNum - (romaneio.peso_total_envio_g || 0);
+
       await supabase.from('romaneios').update({
         status: 'recebido',
         data_recebimento: new Date().toISOString(),
         recebido_por_id: user.id,
         recebido_por_nome: userProfile?.nome || 'Usuário',
         observacao: observacaoRecebimento[romaneioId] || null,
-        peso_total_recebido_g: parseInt(pesoRecebido[romaneioId]) || 0,
-        quantidade_volumes_recebido: parseInt(volumesRecebido[romaneioId]) || 0
+        peso_total_recebido_g: pesoRecebidoNum,
+        quantidade_volumes_recebido: volumesRecebidoNum
       }).eq('id', romaneioId);
 
-      toast.success('Recebimento confirmado!');
+      // Registro de auditoria completo
+      await supabase.from('audit_logs').insert({
+        action: 'romaneio.recebimento',
+        entity_type: 'romaneio',
+        entity_id: romaneioId,
+        organization_id: organizationId,
+        user_id: user.id,
+        user_email: user.email || '',
+        details: {
+          id_romaneio: romaneioId,
+          loja_nome: romaneio.loja_nome,
+          peso_enviado: romaneio.peso_total_envio_g,
+          peso_recebido: pesoRecebidoNum,
+          divergencia_calculada: divergenciaCalculada,
+          status_divergencia: status.tipo,
+          percentual_divergencia: percentual.toFixed(2),
+          volumes_enviados: romaneio.quantidade_volumes_envio,
+          volumes_recebidos: volumesRecebidoNum,
+          usuario_que_recebeu: userProfile?.nome,
+          data_hora: new Date().toISOString(),
+          justificativa_se_existente: observacaoRecebimento[romaneioId] || null,
+          divergencia_critica: divergenciaCritica
+        }
+      });
+
+      // Alertar sobre divergência (mas não bloquear)
+      if (div.temDivergencia) {
+        if (status.tipo === 'falta') {
+          toast.warning(`Recebimento registrado com divergência: ${formatarPesoDivergencia(divergenciaCalculada)} (Recebido a menos)`);
+        } else if (status.tipo === 'excedente') {
+          toast.info(`Recebimento registrado com divergência: ${formatarPesoDivergencia(divergenciaCalculada)} (Recebido a mais)`);
+        }
+      } else {
+        toast.success('Recebimento confirmado! Conferência perfeita.');
+      }
+      
       fetchRomaneiosEnviados();
       fetchRomaneiosHistorico();
     } catch (error: any) {
@@ -1386,23 +1469,41 @@ const Romaneio = () => {
                                 const div = calcularDivergencia(romaneio.id, romaneio);
                                 if (!pesoRecebido[romaneio.id] && !volumesRecebido[romaneio.id]) return null;
                                 
-                                return div.temDivergencia ? (
-                                  <div className="flex items-center gap-2 p-2 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
-                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                                    <div>
-                                      <span className="font-medium">⚠️ Divergência detectada:</span>
-                                      {div.temDivergenciaPeso && (
-                                        <span className="ml-2">Peso: {div.diferencaPeso > 0 ? '+' : ''}{div.diferencaPeso}g</span>
-                                      )}
-                                      {div.temDivergenciaVolumes && (
-                                        <span className="ml-2">Volumes: {div.diferencaVolumes > 0 ? '+' : ''}{div.diferencaVolumes}</span>
-                                      )}
+                                const status = getStatusDivergencia(div.diferencaPeso, div.diferencaVolumes);
+                                const percentual = calcularPercentualDivergencia(div.pesoEnviado, div.pesoInformado);
+                                const divergenciaCritica = percentual > 2;
+                                
+                                if (status.tipo === 'ok') {
+                                  return (
+                                    <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-700 dark:text-blue-400 text-sm">
+                                      <span className="text-lg">{status.icone}</span>
+                                      <span className="font-medium">Sem divergência (Conferência perfeita)</span>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg text-green-700 dark:text-green-400 text-sm">
-                                    <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                                    <span className="font-medium">✓ Conferência OK - valores conferem</span>
+                                  );
+                                }
+                                
+                                const bgClass = status.tipo === 'excedente' 
+                                  ? 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400' 
+                                  : 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400';
+                                
+                                return (
+                                  <div className={`p-3 border rounded-lg text-sm space-y-1 ${bgClass}`}>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-lg">{status.icone}</span>
+                                      <div>
+                                        <span className="font-medium">Divergência: </span>
+                                        {div.temDivergenciaPeso && <span>{formatarPesoDivergencia(div.diferencaPeso)}</span>}
+                                        {div.temDivergenciaPeso && div.temDivergenciaVolumes && <span> | </span>}
+                                        {div.temDivergenciaVolumes && <span>Volumes: {div.diferencaVolumes > 0 ? '+' : ''}{div.diferencaVolumes}</span>}
+                                        <span className="ml-2 font-medium">({status.descricao})</span>
+                                      </div>
+                                    </div>
+                                    {divergenciaCritica && (
+                                      <p className="text-xs font-medium flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3" />
+                                        Divergência &gt;2% - Justificativa obrigatória
+                                      </p>
+                                    )}
                                   </div>
                                 );
                               })()}
@@ -1515,13 +1616,20 @@ const Romaneio = () => {
                 ) : (
                   <div className="space-y-3">
                     {romaneiosHistorico.map(romaneio => {
-                      const temDivergencia = romaneio.status === 'recebido' && (
-                        romaneio.peso_total_envio_g !== romaneio.peso_total_recebido_g ||
-                        romaneio.quantidade_volumes_envio !== romaneio.quantidade_volumes_recebido
-                      );
+                      const divergenciaPeso = (romaneio.peso_total_recebido_g || 0) - (romaneio.peso_total_envio_g || 0);
+                      const divergenciaVolumes = (romaneio.quantidade_volumes_recebido || 0) - (romaneio.quantidade_volumes_envio || 0);
+                      const temDivergencia = romaneio.status === 'recebido' && (divergenciaPeso !== 0 || divergenciaVolumes !== 0);
+                      const statusDiv = getStatusDivergencia(divergenciaPeso, divergenciaVolumes);
+                      
+                      // Determinar cor da borda baseado no tipo de divergência
+                      const borderClass = romaneio.status === 'recebido' && temDivergencia
+                        ? statusDiv.tipo === 'falta' 
+                          ? 'border-red-500/50 bg-red-500/5' 
+                          : 'border-green-500/50 bg-green-500/5'
+                        : '';
                       
                       return (
-                        <div key={romaneio.id} className={`border rounded-lg p-3 ${temDivergencia ? 'border-destructive/50 bg-destructive/5' : ''}`}>
+                        <div key={romaneio.id} className={`border rounded-lg p-3 ${borderClass}`}>
                           <div className="flex items-center justify-between mb-2">
                             <div>
                               <p className="font-medium">{romaneio.loja_nome}</p>
@@ -1531,8 +1639,11 @@ const Romaneio = () => {
                             </div>
                             <div className="flex items-center gap-2">
                               {temDivergencia && (
-                                <Badge variant="destructive" className="text-xs">
-                                  ⚠️ Divergência
+                                <Badge 
+                                  variant={statusDiv.tipo === 'falta' ? 'destructive' : 'default'} 
+                                  className={`text-xs ${statusDiv.tipo === 'excedente' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                                >
+                                  {statusDiv.icone} {formatarPesoDivergencia(divergenciaPeso)} ({statusDiv.descricao})
                                 </Badge>
                               )}
                               {getStatusBadge(romaneio.status)}
