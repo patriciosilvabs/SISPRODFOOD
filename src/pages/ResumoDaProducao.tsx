@@ -16,7 +16,6 @@ import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
-import { calcularConsumoInsumo, determinarTipoInsumo } from '@/lib/calculoInsumos';
 
 
 interface DetalheLojaProducao {
@@ -25,18 +24,12 @@ interface DetalheLojaProducao {
   quantidade: number;
 }
 
-type StatusValidacao = 'validado' | 'suspeito' | 'bloqueado';
-
 interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
   unidade: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
-  protecao_ativa?: boolean;
-  mensagem_erro?: string;
-  status_validacao?: StatusValidacao;
-  motivo_suspeita?: string;
 }
 
 interface ProducaoRegistro {
@@ -318,11 +311,11 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado, timer_ativo, tempo_timer_minutos, peso_unitario_g, perda_percentual_adicional)
+      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado, timer_ativo, tempo_timer_minutos)
       const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
       const { data: itensData } = await supabase
         .from('itens_porcionados')
-        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos, peso_unitario_g, perda_percentual_adicional')
+        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos')
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
@@ -379,62 +372,39 @@ const ResumoDaProducao = () => {
         // Buscar insumo principal da tabela unificada
         const insumoPrincipal = insumoPrincipalMap.get(registro.item_id);
         
-        // REGRA-MÃE: Calcular insumos vinculados necessários (apenas para "a_produzir")
+        // Calcular insumos vinculados necessários (apenas para "a_produzir")
         // Agora todos os insumos (incluindo principal) estão na tabela insumos_extras
         let insumosExtras: InsumoExtraComEstoque[] | undefined;
         if (targetColumn === 'a_produzir' && registro.unidades_programadas) {
           const insumosDoItem = insumosVinculadosData?.filter(e => e.item_porcionado_id === registro.item_id) || [];
           
-          // Usar peso unitário e perda do item já carregados
-          const pesoUnitarioG = itemInfo?.peso_unitario_g || 0;
-          const perdaPercentual = itemInfo?.perda_percentual_adicional || 0;
-          
           insumosExtras = insumosDoItem.map(insumoVinculado => {
-            // Determinar tipo de insumo pela unidade
-            const tipoInsumo = determinarTipoInsumo(insumoVinculado.unidade);
+            let quantidadeNecessaria = 0;
             
-            // Obter escala de configuração do insumo
-            const escalaConfiguracao = (insumoVinculado as any).escala_configuracao || 'por_unidade';
-            
-            // REGRA-MÃE: Calcular consumo proporcional ao peso real
-            const resultado = calcularConsumoInsumo({
-              demandaTotalUnidades: registro.unidades_programadas || 0,
-              pesoUnitarioFinalG: pesoUnitarioG,
-              equivalenciaPorLoteUnidades: itemInfo?.equivalencia_traco || null,
-              perdaPercentual: perdaPercentual,
-              itemUnidadeMedida: itemInfo?.unidade_medida as any || 'unidade',
-              insumo: {
-                quantidadePorLote: insumoVinculado.quantidade,
-                tipo: tipoInsumo,
-                unidade: insumoVinculado.unidade,
-                escalaConfiguracao: escalaConfiguracao
-              }
-            });
+            // Calcular quantidade baseado em traços ou unidades
+            if (itemInfo?.unidade_medida === 'traco' && itemInfo.equivalencia_traco) {
+              const tracos = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
+              quantidadeNecessaria = tracos * insumoVinculado.quantidade;
+            } else {
+              quantidadeNecessaria = (registro.unidades_programadas || 0) * insumoVinculado.quantidade;
+            }
             
             // Estoque disponível (sempre em kg)
             const estoqueDisponivelKg = insumoVinculado.insumos.quantidade_em_estoque || 0;
+            const unidadeInsumo = (insumoVinculado.unidade as string)?.toLowerCase() || 'kg';
             
-            // Verificar se foi bloqueado por escala inválida
-            const bloqueadoPorEscala = resultado.escalaInvalida === true;
-            const bloqueadoPorProtecao = resultado.protecao.consumoExcedeLimite;
-            
-            // PROTEÇÃO ESTOQUE FANTASMA: Usar status de validação do cálculo
-            const statusValidacao = resultado.statusValidacao;
-            const consumoValidado = statusValidacao === 'validado';
+            // Converter quantidade necessária para kg se estiver em gramas
+            let quantidadeNecessariaKg = quantidadeNecessaria;
+            if (unidadeInsumo === 'g') {
+              quantidadeNecessariaKg = quantidadeNecessaria / 1000;
+            }
             
             return {
               nome: insumoVinculado.nome,
-              quantidade_necessaria: resultado.consumoCalculado,
+              quantidade_necessaria: quantidadeNecessaria,
               unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
-              // REGRA ÚNICA: estoque_insuficiente = consumo_validado > estoque_disponivel
-              estoque_suficiente: consumoValidado 
-                ? resultado.consumoEmKg <= estoqueDisponivelKg 
-                : true, // Forçar true se não validado
-              protecao_ativa: bloqueadoPorEscala || bloqueadoPorProtecao,
-              mensagem_erro: resultado.motivoBloqueio || resultado.protecao.mensagemErro || undefined,
-              status_validacao: statusValidacao,
-              motivo_suspeita: resultado.motivoSuspeita
+              estoque_suficiente: quantidadeNecessariaKg <= estoqueDisponivelKg
             };
           });
         }
@@ -660,47 +630,30 @@ const ResumoDaProducao = () => {
       if (insumosError) {
         console.error('Erro ao buscar insumos vinculados:', insumosError);
       } else if (insumosVinculados && insumosVinculados.length > 0) {
-        // Buscar peso unitário e perda do item para cálculo correto
-        const { data: itemCompleto } = await supabase
-          .from('itens_porcionados')
-          .select('peso_unitario_g, perda_percentual_adicional')
-          .eq('id', selectedRegistro.item_id)
-          .maybeSingle();
-        
-        const pesoUnitarioG = itemCompleto?.peso_unitario_g || 0;
-        const perdaPercentual = itemCompleto?.perda_percentual_adicional || 0;
-        
-        // REGRA-MÃE: Debitar cada insumo vinculado usando cálculo proporcional
+        // Debitar cada insumo vinculado
         for (const insumoVinculado of insumosVinculados) {
-          // Determinar tipo de insumo pela unidade
-          const tipoInsumo = determinarTipoInsumo(insumoVinculado.unidade);
+          let quantidadeTotal = 0;
           
-          // Obter escala de configuração do insumo
-          const escalaConfiguracao = (insumoVinculado as any).escala_configuracao || 'por_unidade';
-          
-          // REGRA-MÃE: Calcular consumo proporcional ao peso real
-          const resultado = calcularConsumoInsumo({
-            demandaTotalUnidades: data.unidades_reais,
-            pesoUnitarioFinalG: pesoUnitarioG,
-            equivalenciaPorLoteUnidades: itemData?.equivalencia_traco || null,
-            perdaPercentual: perdaPercentual,
-            itemUnidadeMedida: itemData?.unidade_medida as any || 'unidade',
-            insumo: {
-              quantidadePorLote: insumoVinculado.quantidade,
-              tipo: tipoInsumo,
-              unidade: insumoVinculado.unidade,
-              escalaConfiguracao: escalaConfiguracao
+          // Calcular quantidade baseado em traços ou unidades
+          if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
+            const tracos = data.unidades_reais / itemData.equivalencia_traco;
+            // Para insumo principal, usar consumo_por_traco_g se disponível
+            if (insumoVinculado.is_principal && insumoVinculado.consumo_por_traco_g) {
+              quantidadeTotal = tracos * insumoVinculado.consumo_por_traco_g;
+            } else {
+              quantidadeTotal = tracos * insumoVinculado.quantidade;
             }
-          });
-          
-          // Se escala inválida, pular este insumo com log de erro
-          if (resultado.escalaInvalida) {
-            console.error(`⛔ INSUMO BLOQUEADO POR ESCALA INVÁLIDA: ${insumoVinculado.nome}`, resultado.motivoBloqueio);
-            toast.error(`Insumo ${insumoVinculado.nome} bloqueado: ${resultado.motivoBloqueio}`);
-            continue;
+          } else {
+            quantidadeTotal = data.unidades_reais * insumoVinculado.quantidade;
           }
           
-          const quantidadeKg = resultado.consumoEmKg;
+          // Converter para kg se necessário
+          let quantidadeKg = quantidadeTotal;
+          if (insumoVinculado.unidade === 'g') {
+            quantidadeKg = quantidadeTotal / 1000;
+          } else if (insumoVinculado.unidade === 'ml') {
+            quantidadeKg = quantidadeTotal / 1000;
+          }
           
           // Só debitar se baixar_producao_inicio = false (para principal) ou sempre (para extras)
           const deveDebitar = insumoVinculado.is_principal 
@@ -722,14 +675,14 @@ const ResumoDaProducao = () => {
           }
 
           // Registrar no histórico de consumo
-          const tipoInsumoLabel = insumoVinculado.is_principal ? 'principal' : 'extra';
+          const tipoInsumo = insumoVinculado.is_principal ? 'principal' : 'extra';
           const { error: consumoError } = await supabase.from('consumo_historico').insert({
             producao_registro_id: selectedRegistro.id,
             item_id: selectedRegistro.item_id,
             item_nome: selectedRegistro.item_nome,
             insumo_id: insumoVinculado.insumo_id,
             insumo_nome: insumoVinculado.nome,
-            tipo_insumo: tipoInsumoLabel,
+            tipo_insumo: tipoInsumo,
             consumo_programado: selectedRegistro.peso_programado_kg || 0,
             consumo_real: quantidadeKg,
             unidade: insumoVinculado.unidade,
@@ -738,7 +691,7 @@ const ResumoDaProducao = () => {
             organization_id: organizationId,
           });
           if (consumoError) {
-            console.warn(`Aviso: falha ao registrar consumo ${tipoInsumoLabel} no histórico:`, consumoError);
+            console.warn(`Aviso: falha ao registrar consumo ${tipoInsumo} no histórico:`, consumoError);
           }
         }
       }

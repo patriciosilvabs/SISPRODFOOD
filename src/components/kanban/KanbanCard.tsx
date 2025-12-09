@@ -8,18 +8,12 @@ import { TimerDisplay } from './TimerDisplay';
 import { useProductionTimer } from '@/hooks/useProductionTimer';
 import { useEffect } from 'react';
 
-type StatusValidacao = 'validado' | 'suspeito' | 'bloqueado';
-
 interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
   unidade: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
-  protecao_ativa?: boolean;
-  mensagem_erro?: string;
-  status_validacao?: StatusValidacao;
-  motivo_suspeita?: string;
 }
 
 interface DetalheLojaProducao {
@@ -134,23 +128,8 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     registro.peso_programado_kg !== null &&
     registro.peso_programado_kg > registro.insumo_principal_estoque_kg;
 
-  // PROTEÇÃO: Ignorar alertas de estoque se proteção ativa (bloqueado)
-  const temProtecaoAtiva = columnId === 'a_produzir' &&
-    registro.insumosExtras?.some(extra => extra.protecao_ativa || extra.status_validacao === 'bloqueado');
-
-  // Detectar estado suspeito (consumo em validação)
-  const temConsumoSuspeito = columnId === 'a_produzir' &&
-    !temProtecaoAtiva &&
-    registro.insumosExtras?.some(extra => extra.status_validacao === 'suspeito');
-
-  // REGRA ÚNICA: Alerta de estoque APENAS para consumo validado
   const temInsumosExtrasInsuficientes = columnId === 'a_produzir' &&
-    !temProtecaoAtiva &&
-    !temConsumoSuspeito &&
-    registro.insumosExtras?.some(extra => 
-      extra.status_validacao === 'validado' && 
-      !extra.estoque_suficiente
-    );
+    registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
   // Verificar se está bloqueado (fila de traços)
   const estaBloqueadoPorTraco = registro.bloqueado_por_traco_anterior === true;
@@ -243,19 +222,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   </div>
                 )}
 
-                {/* BANNER DE ERRO CRÍTICO - Proteção Anti-Explosão */}
-                {temProtecaoAtiva && (
-                  <div className="flex items-center gap-2 text-white bg-red-700 dark:bg-red-800 rounded p-2 mt-2 border-2 border-red-900">
-                    <XCircle className="h-5 w-5 flex-shrink-0" />
-                    <div className="text-xs">
-                      <p className="font-bold">⛔ ERRO LÓGICO CRÍTICO</p>
-                      <p className="text-[10px] mt-0.5 opacity-90">
-                        Consumo acima do limite físico possível. Verifique cadastro por lote/traço.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Insumos Necessários */}
                 {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
                   <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-900 rounded p-2">
@@ -272,44 +238,21 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       </div>
                     )}
                     
-                    {/* Insumos Extras - Bloquear exibição se proteção ativa */}
+                    {/* Insumos Extras */}
                     {registro.insumosExtras?.map((extra, idx) => (
-                      extra.protecao_ativa ? (
-                        <div key={idx} className="flex justify-between text-xs text-red-600 dark:text-red-400">
-                          <span>{extra.nome}:</span>
-                          <span className="font-medium flex items-center gap-1">
-                            <XCircle className="h-3 w-3" />
-                            BLOQUEADO
-                          </span>
-                        </div>
-                      ) : (
-                        <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
-                          <span>{extra.nome}:</span>
-                          <span className="font-medium flex items-center gap-1">
-                            {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
-                            {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
-                          </span>
-                        </div>
-                      )
+                      <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
+                        <span>{extra.nome}:</span>
+                        <span className="font-medium flex items-center gap-1">
+                          {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
+                          {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}
 
-                {/* ALERTA AMARELO - Consumo em Validação (prioridade 2) */}
-                {temConsumoSuspeito && (
-                  <div className="flex items-center gap-1.5 text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950 rounded p-2 mt-2 border border-yellow-200 dark:border-yellow-800">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                    <div className="text-xs">
-                      <p className="font-semibold">Consumo em validação automática</p>
-                      <p className="text-[10px] mt-0.5 opacity-80">
-                        Estoque não confirmado como insuficiente. Verificando cálculo...
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Alerta de Estoque Insuficiente (prioridade 3 - apenas para consumo validado) */}
-                {!temConsumoSuspeito && (estoqueInsuficiente || temInsumosExtrasInsuficientes) && (
+                {/* Alerta de Estoque Insuficiente */}
+                {(estoqueInsuficiente || temInsumosExtrasInsuficientes) && (
                   <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 rounded p-2 mt-2">
                     <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                     <div className="text-xs">
