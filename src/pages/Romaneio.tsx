@@ -308,7 +308,7 @@ const Romaneio = () => {
   
   const [romaneiosEnviados, setRomaneiosEnviados] = useState<Romaneio[]>([]);
   const [romaneiosHistorico, setRomaneiosHistorico] = useState<Romaneio[]>([]);
-  const [filtroStatus, setFiltroStatus] = useState<string>('todos');
+  const [filtroStatus, setFiltroStatus] = useState<string>('recebido'); // Padrão: finalizados
   const [userLojasIds, setUserLojasIds] = useState<string[]>([]);
   
   // Romaneio Avulso
@@ -896,16 +896,33 @@ const Romaneio = () => {
   // ==================== HELPERS: DIVERGÊNCIA ====================
 
   // Cálculo de divergência em tempo real
+  // REGRA: Só calcula divergência se houver peso enviado registrado (não NULL)
   const calcularDivergencia = (romaneioId: string, romaneio: Romaneio) => {
-    const pesoEnviado = romaneio.peso_total_envio_g || 0;
-    const volumesEnviados = romaneio.quantidade_volumes_envio || 0;
+    const pesoEnviado = romaneio.peso_total_envio_g ?? null;
+    const volumesEnviados = romaneio.quantidade_volumes_envio ?? null;
     const pesoInformado = parseInt(pesoRecebido[romaneioId]) || 0;
     const volumesInformados = parseInt(volumesRecebido[romaneioId]) || 0;
     
+    // Se não há dados de envio, não é possível calcular divergência
+    const dadosEnvioCompletos = pesoEnviado !== null && pesoEnviado > 0;
+    
+    if (!dadosEnvioCompletos) {
+      return {
+        temDivergencia: false,
+        temDivergenciaPeso: false,
+        temDivergenciaVolumes: false,
+        diferencaPeso: 0,
+        diferencaVolumes: 0,
+        pesoEnviado: pesoEnviado || 0,
+        pesoInformado,
+        dadosEnvioIncompletos: true
+      };
+    }
+    
     const temDivergenciaPeso = pesoInformado > 0 && pesoInformado !== pesoEnviado;
-    const temDivergenciaVolumes = volumesInformados > 0 && volumesInformados !== volumesEnviados;
+    const temDivergenciaVolumes = volumesInformados > 0 && volumesInformados !== (volumesEnviados || 0);
     const diferencaPeso = pesoInformado - pesoEnviado;
-    const diferencaVolumes = volumesInformados - volumesEnviados;
+    const diferencaVolumes = volumesInformados - (volumesEnviados || 0);
     
     return {
       temDivergencia: temDivergenciaPeso || temDivergenciaVolumes,
@@ -914,7 +931,8 @@ const Romaneio = () => {
       diferencaPeso,
       diferencaVolumes,
       pesoEnviado,
-      pesoInformado
+      pesoInformado,
+      dadosEnvioIncompletos: false
     };
   };
 
@@ -1469,6 +1487,16 @@ const Romaneio = () => {
                                 const div = calcularDivergencia(romaneio.id, romaneio);
                                 if (!pesoRecebido[romaneio.id] && !volumesRecebido[romaneio.id]) return null;
                                 
+                                // Se dados de envio estão incompletos (romaneio antigo), não calcular divergência
+                                if (div.dadosEnvioIncompletos) {
+                                  return (
+                                    <div className="flex items-center gap-2 p-3 bg-muted/50 border border-dashed rounded-lg text-muted-foreground text-sm">
+                                      <span className="text-lg">ℹ️</span>
+                                      <span>Romaneio criado antes do registro de peso/volumes - divergência não disponível</span>
+                                    </div>
+                                  );
+                                }
+                                
                                 const status = getStatusDivergencia(div.diferencaPeso, div.diferencaVolumes);
                                 const percentual = calcularPercentualDivergencia(div.pesoEnviado, div.pesoInformado);
                                 const divergenciaCritica = percentual > 2;
@@ -1592,7 +1620,7 @@ const Romaneio = () => {
                 )}
               </TabsContent>
 
-              {/* TAB: HISTÓRICO */}
+              {/* TAB: HISTÓRICO - Filtro padrão "recebido" para evitar confusão com romaneios pendentes */}
               <TabsContent value="historico" className="space-y-4">
                 <div className="flex gap-2">
                   <Select value={filtroStatus} onValueChange={setFiltroStatus}>
@@ -1600,12 +1628,16 @@ const Romaneio = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="pendente">Pendentes</SelectItem>
-                      <SelectItem value="enviado">Enviados</SelectItem>
-                      <SelectItem value="recebido">Recebidos</SelectItem>
+                      <SelectItem value="recebido">✅ Finalizados</SelectItem>
+                      <SelectItem value="enviado">📦 Aguardando Receb.</SelectItem>
+                      <SelectItem value="todos">📋 Todos</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground self-center ml-2">
+                    {filtroStatus === 'recebido' && 'Romaneios já confirmados pela loja'}
+                    {filtroStatus === 'enviado' && 'Romaneios enviados aguardando confirmação'}
+                    {filtroStatus === 'todos' && 'Todos os romaneios'}
+                  </p>
                 </div>
 
                 {romaneiosHistorico.length === 0 ? (
@@ -1655,16 +1687,18 @@ const Romaneio = () => {
                             ))}
                           </div>
                           
-                          {/* Detalhes de Peso/Volumes para romaneios recebidos */}
-                          {romaneio.status === 'recebido' && (romaneio.peso_total_envio_g || romaneio.quantidade_volumes_envio) && (
+                          {/* Detalhes de Peso/Volumes - exibir para TODOS os romaneios com dados */}
+                          {(romaneio.peso_total_envio_g || romaneio.quantidade_volumes_envio) && (
                             <div className="mt-2 pt-2 border-t text-xs space-y-1">
                               <div className="flex flex-wrap gap-x-4 gap-y-1">
                                 <span className="text-muted-foreground">
-                                  📦 Enviado: {romaneio.peso_total_envio_g ? `${romaneio.peso_total_envio_g}g` : '-'} / {romaneio.quantidade_volumes_envio || '-'} vol
+                                  📦 Enviado: {romaneio.peso_total_envio_g ? `${romaneio.peso_total_envio_g >= 1000 ? `${(romaneio.peso_total_envio_g / 1000).toFixed(2).replace('.', ',')} kg` : `${romaneio.peso_total_envio_g} g`}` : '-'} / {romaneio.quantidade_volumes_envio || '-'} vol
                                 </span>
-                                <span className="text-muted-foreground">
-                                  📥 Recebido: {romaneio.peso_total_recebido_g ? `${romaneio.peso_total_recebido_g}g` : '-'} / {romaneio.quantidade_volumes_recebido || '-'} vol
-                                </span>
+                                {romaneio.status === 'recebido' && (
+                                  <span className="text-muted-foreground">
+                                    📥 Recebido: {romaneio.peso_total_recebido_g ? `${romaneio.peso_total_recebido_g >= 1000 ? `${(romaneio.peso_total_recebido_g / 1000).toFixed(2).replace('.', ',')} kg` : `${romaneio.peso_total_recebido_g} g`}` : '-'} / {romaneio.quantidade_volumes_recebido || '-'} vol
+                                  </span>
+                                )}
                               </div>
                             </div>
                           )}
