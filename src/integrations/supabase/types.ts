@@ -851,6 +851,7 @@ export type Database = {
       insumos_extras: {
         Row: {
           consumo_por_traco_g: number | null
+          escala_configuracao: string | null
           id: string
           insumo_id: string
           is_principal: boolean
@@ -862,6 +863,7 @@ export type Database = {
         }
         Insert: {
           consumo_por_traco_g?: number | null
+          escala_configuracao?: string | null
           id?: string
           insumo_id: string
           is_principal?: boolean
@@ -873,6 +875,7 @@ export type Database = {
         }
         Update: {
           consumo_por_traco_g?: number | null
+          escala_configuracao?: string | null
           id?: string
           insumo_id?: string
           is_principal?: boolean
@@ -2691,7 +2694,6 @@ export type Database = {
       criar_ou_atualizar_producao_registro:
         | {
             Args: {
-              p_dia_operacional?: string
               p_item_id: string
               p_organization_id: string
               p_usuario_id: string
@@ -2701,6 +2703,7 @@ export type Database = {
           }
         | {
             Args: {
+              p_dia_operacional?: string
               p_item_id: string
               p_organization_id: string
               p_usuario_id: string
@@ -2771,7 +2774,7 @@ export type Database = {
         | "equipamentos"
       tipo_movimento: "entrada" | "saida"
       tipo_produto: "lacrado" | "porcionado" | "lote" | "simples"
-      unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco"
+      unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco" | "lote"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2913,7 +2916,7 @@ export const Constants = {
       ],
       tipo_movimento: ["entrada", "saida"],
       tipo_produto: ["lacrado", "porcionado", "lote", "simples"],
-      unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco"],
+      unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco", "lote"],
     },
   },
 } as const
