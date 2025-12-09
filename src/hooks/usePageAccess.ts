@@ -93,6 +93,7 @@ export const usePageAccess = (): UsePageAccessReturn => {
         // Admin não precisa de overrides - tem acesso a tudo
         setOverrides([]);
         setLoading(false);
+        hasFetched.current = true;
         return;
       }
 
