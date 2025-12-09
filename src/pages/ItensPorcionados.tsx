@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
-type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco';
+type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote';
 
 interface ItemPorcionado {
   id: string;
@@ -487,15 +487,15 @@ const ItensPorcionados = () => {
                           <SelectItem value="unidade">unidade</SelectItem>
                           <SelectItem value="kg">kg</SelectItem>
                           <SelectItem value="g">g</SelectItem>
-                          <SelectItem value="traco">traço</SelectItem>
+                          <SelectItem value="lote">lote</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
 
-                  {formData.unidade_medida === 'traco' && (
+                  {(formData.unidade_medida === 'traco' || formData.unidade_medida === 'lote') && (
                     <div className="space-y-2">
-                      <Label htmlFor="equivalencia">Equivalência por Traço (unidades)</Label>
+                      <Label htmlFor="equivalencia">Equivalência por Lote (unidades)</Label>
                       <Input
                         id="equivalencia"
                         type="number"
@@ -506,7 +506,7 @@ const ItensPorcionados = () => {
                             equivalencia_traco: e.target.value,
                           })
                         }
-                        placeholder="Ex: 52 unidades por traço"
+                        placeholder="Ex: 52 unidades por lote"
                       />
                     </div>
                   )}
@@ -567,8 +567,8 @@ const ItensPorcionados = () => {
                     )}
                   </div>
 
-                  {/* Produção por Lote (Fila de Traços) */}
-                  {formData.unidade_medida === 'traco' && (
+                  {/* Produção por Lote (Fila de Lotes) */}
+                  {(formData.unidade_medida === 'traco' || formData.unidade_medida === 'lote') && (
                     <div className="flex items-start space-x-3 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
                       <Checkbox
                         id="usa_traco_massa"
@@ -579,11 +579,11 @@ const ItensPorcionados = () => {
                       />
                       <div className="space-y-1 flex-1">
                         <Label htmlFor="usa_traco_massa" className="font-medium cursor-pointer flex items-center gap-2">
-                          📋 Produção por lote (fila de traços)
+                          📋 Produção por lote (fila de lotes)
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Quando ativo, cada traço será produzido sequencialmente. 
-                          O próximo traço só pode iniciar quando o timer do anterior terminar.
+                          Quando ativo, cada lote será produzido sequencialmente. 
+                          O próximo lote só pode iniciar quando o timer do anterior terminar.
                         </p>
                       </div>
                     </div>

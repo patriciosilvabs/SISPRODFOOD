@@ -381,11 +381,13 @@ const ResumoDaProducao = () => {
           insumosExtras = insumosDoItem.map(insumoVinculado => {
             let quantidadeNecessaria = 0;
             
-            // Calcular quantidade baseado em traços ou unidades
-            if (itemInfo?.unidade_medida === 'traco' && itemInfo.equivalencia_traco) {
-              const tracos = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
-              quantidadeNecessaria = tracos * insumoVinculado.quantidade;
+            // Calcular quantidade baseado em lotes (traços) ou unidades
+            // 'traco' e 'lote' usam a mesma lógica: dividir unidades por equivalencia
+            if ((itemInfo?.unidade_medida === 'traco' || itemInfo?.unidade_medida === 'lote') && itemInfo.equivalencia_traco) {
+              const lotes = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
+              quantidadeNecessaria = lotes * insumoVinculado.quantidade;
             } else {
+              // Por unidade: cada unidade consome a quantidade configurada
               quantidadeNecessaria = (registro.unidades_programadas || 0) * insumoVinculado.quantidade;
             }
             
