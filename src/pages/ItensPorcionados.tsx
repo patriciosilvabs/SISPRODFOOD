@@ -77,34 +77,12 @@ const ItensPorcionados = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
   
-  // Função para determinar escala permitida baseada na unidade do item
-  const getEscalaParaUnidade = (unidade: UnidadeMedida): EscalaConfiguracao => {
-    switch (unidade) {
-      case 'lote':
-        return 'por_lote';
-      case 'traco':
-        return 'por_traco';
-      default:
-        return 'por_unidade';
-    }
-  };
-
-  const getEscalaLabel = (unidade: UnidadeMedida): string => {
-    switch (unidade) {
-      case 'lote':
-        return 'Por Lote';
-      case 'traco':
-        return 'Por Traço';
-      default:
-        return 'Por Unidade';
-    }
-  };
-
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
     insumo_id: '',
     quantidade: '',
     unidade: 'kg' as UnidadeMedida,
+    escala: 'por_unidade' as EscalaConfiguracao,
   });
   const [formData, setFormData] = useState({
     nome: '',
@@ -326,15 +304,12 @@ const ItensPorcionados = () => {
     const insumoSelecionado = insumos.find(i => i.id === novoInsumo.insumo_id);
     if (!insumoSelecionado) return;
 
-    // Escala é determinada automaticamente pela unidade do item
-    const escalaAutomatica = getEscalaParaUnidade(formData.unidade_medida);
-
     const novoInsumoVinculado: InsumoVinculado = {
       insumo_id: novoInsumo.insumo_id,
       nome: insumoSelecionado.nome,
       quantidade: parseFloat(novoInsumo.quantidade),
       unidade: novoInsumo.unidade,
-      escala_configuracao: escalaAutomatica,
+      escala_configuracao: novoInsumo.escala,
     };
 
     // Se estamos editando, salvar no banco
@@ -350,7 +325,7 @@ const ItensPorcionados = () => {
             unidade: novoInsumo.unidade,
             is_principal: false,
             consumo_por_traco_g: null,
-            escala_configuracao: escalaAutomatica,
+            escala_configuracao: novoInsumo.escala,
             organization_id: organizationId,
           })
           .select()
@@ -368,7 +343,7 @@ const ItensPorcionados = () => {
     }
 
     setInsumosVinculados([...insumosVinculados, novoInsumoVinculado]);
-    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg' });
+    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg', escala: 'por_unidade' });
   };
 
   const removerInsumoVinculado = async (index: number) => {
@@ -731,15 +706,21 @@ const ItensPorcionados = () => {
 
                         <div className="col-span-2 space-y-2">
                           <Label>Escala</Label>
-                          <div className="flex items-center gap-2 h-9 px-3 rounded-md border bg-muted/50">
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              formData.unidade_medida === 'lote' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
-                              formData.unidade_medida === 'traco' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                            }`}>
-                              {getEscalaLabel(formData.unidade_medida)}
-                            </span>
-                          </div>
+                          <Select
+                            value={novoInsumo.escala}
+                            onValueChange={(value: EscalaConfiguracao) => 
+                              setNovoInsumo({ ...novoInsumo, escala: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="por_unidade">Por Unidade</SelectItem>
+                              <SelectItem value="por_traco">Por Traço</SelectItem>
+                              <SelectItem value="por_lote">Por Lote</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
 
                         <div className="col-span-2">
@@ -756,7 +737,8 @@ const ItensPorcionados = () => {
                       </div>
                       
                       <p className="text-[10px] text-muted-foreground">
-                        🔒 Escala automática: determinada pela unidade do item ({getEscalaLabel(formData.unidade_medida)}) para evitar erros de cálculo.
+                        ⚠️ A escala define como o consumo é calculado: "Por Unidade" multiplica pela demanda total, 
+                        "Por Traço/Lote" multiplica pelo número de traços/lotes.
                       </p>
                     </div>
                   </div>
