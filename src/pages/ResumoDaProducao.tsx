@@ -380,15 +380,22 @@ const ResumoDaProducao = () => {
           
           insumosExtras = insumosDoItem.map(insumoVinculado => {
             let quantidadeNecessaria = 0;
+            const unidadesProgramadas = registro.unidades_programadas || 0;
+            const escalaInsumo = (insumoVinculado as any).escala_configuracao || 'por_unidade';
             
-            // Calcular quantidade baseado em lotes (traços) ou unidades
-            // 'traco' e 'lote' usam a mesma lógica: dividir unidades por equivalencia
-            if ((itemInfo?.unidade_medida === 'traco' || itemInfo?.unidade_medida === 'lote') && itemInfo.equivalencia_traco) {
-              const lotes = Math.ceil((registro.unidades_programadas || 0) / itemInfo.equivalencia_traco);
-              quantidadeNecessaria = lotes * insumoVinculado.quantidade;
+            // Usar ESCALA DO INSUMO para determinar cálculo, não unidade_medida do item
+            if (escalaInsumo === 'por_lote' || escalaInsumo === 'por_traco') {
+              // Insumo configurado para consumir por lote/traço
+              if (itemInfo?.equivalencia_traco) {
+                const lotes = Math.ceil(unidadesProgramadas / itemInfo.equivalencia_traco);
+                quantidadeNecessaria = lotes * insumoVinculado.quantidade;
+              } else {
+                // Fallback se não há equivalência definida
+                quantidadeNecessaria = unidadesProgramadas * insumoVinculado.quantidade;
+              }
             } else {
-              // Por unidade: cada unidade consome a quantidade configurada
-              quantidadeNecessaria = (registro.unidades_programadas || 0) * insumoVinculado.quantidade;
+              // por_unidade: cada unidade produzida consome a quantidade configurada
+              quantidadeNecessaria = unidadesProgramadas * insumoVinculado.quantidade;
             }
             
             // Estoque disponível (sempre em kg)
