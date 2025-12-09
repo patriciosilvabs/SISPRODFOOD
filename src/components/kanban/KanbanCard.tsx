@@ -158,10 +158,10 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             <h4 className="font-semibold text-sm leading-tight flex-1">
               {registro.item_nome}
             </h4>
-            {/* Badge de sequência do traço */}
+            {/* Badge de sequência do lote */}
             {temSequenciaTraco && temLote && (
               <Badge variant="outline" className="text-xs shrink-0">
-                Traço {registro.sequencia_traco}
+                Lote {registro.sequencia_traco}
                 {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
               </Badge>
             )}
@@ -172,7 +172,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             <div className="flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
               <Lock className="h-4 w-4 text-slate-500" />
               <span className="text-xs text-slate-600 dark:text-slate-400">
-                Aguardando traço {(registro.sequencia_traco || 1) - 1} finalizar
+                Aguardando lote {(registro.sequencia_traco || 1) - 1} finalizar
               </span>
             </div>
           )}
@@ -186,9 +186,9 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">📦 Total:</span>
                     <Badge variant="secondary" className="font-semibold">
-                      {registro.unidade_medida === 'traco' && registro.equivalencia_traco ? (
+                      {(registro.unidade_medida === 'traco' || registro.unidade_medida === 'lote') && registro.equivalencia_traco ? (
                         <>
-                          {Math.ceil(registro.unidades_programadas / registro.equivalencia_traco)} traços ({Math.ceil(registro.unidades_programadas / registro.equivalencia_traco) * registro.equivalencia_traco} un)
+                          {Math.ceil(registro.unidades_programadas / registro.equivalencia_traco)} lotes ({Math.ceil(registro.unidades_programadas / registro.equivalencia_traco) * registro.equivalencia_traco} un)
                         </>
                       ) : (
                         `${registro.unidades_programadas} un`
