@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
-type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco';
+type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote';
 
 interface ItemPorcionado {
   id: string;
@@ -488,14 +488,17 @@ const ItensPorcionados = () => {
                           <SelectItem value="kg">kg</SelectItem>
                           <SelectItem value="g">g</SelectItem>
                           <SelectItem value="traco">traço</SelectItem>
+                          <SelectItem value="lote">lote</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
 
-                  {formData.unidade_medida === 'traco' && (
+                  {(formData.unidade_medida === 'traco' || formData.unidade_medida === 'lote') && (
                     <div className="space-y-2">
-                      <Label htmlFor="equivalencia">Equivalência por Traço (unidades)</Label>
+                      <Label htmlFor="equivalencia">
+                        Equivalência por {formData.unidade_medida === 'lote' ? 'Lote' : 'Traço'} (unidades)
+                      </Label>
                       <Input
                         id="equivalencia"
                         type="number"
@@ -506,7 +509,7 @@ const ItensPorcionados = () => {
                             equivalencia_traco: e.target.value,
                           })
                         }
-                        placeholder="Ex: 52 unidades por traço"
+                        placeholder={`Ex: 52 unidades por ${formData.unidade_medida === 'lote' ? 'lote' : 'traço'}`}
                       />
                     </div>
                   )}
@@ -567,8 +570,8 @@ const ItensPorcionados = () => {
                     )}
                   </div>
 
-                  {/* Produção por Lote (Fila de Traços) */}
-                  {formData.unidade_medida === 'traco' && (
+                  {/* Produção por Lote (Fila de Traços/Lotes) */}
+                  {(formData.unidade_medida === 'traco' || formData.unidade_medida === 'lote') && (
                     <div className="flex items-start space-x-3 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
                       <Checkbox
                         id="usa_traco_massa"
@@ -579,11 +582,11 @@ const ItensPorcionados = () => {
                       />
                       <div className="space-y-1 flex-1">
                         <Label htmlFor="usa_traco_massa" className="font-medium cursor-pointer flex items-center gap-2">
-                          📋 Produção por lote (fila de traços)
+                          📋 Produção por lote (fila de {formData.unidade_medida === 'lote' ? 'lotes' : 'traços'})
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Quando ativo, cada traço será produzido sequencialmente. 
-                          O próximo traço só pode iniciar quando o timer do anterior terminar.
+                          Quando ativo, cada {formData.unidade_medida === 'lote' ? 'lote' : 'traço'} será produzido sequencialmente. 
+                          O próximo só pode iniciar quando o timer do anterior terminar.
                         </p>
                       </div>
                     </div>
@@ -611,7 +614,7 @@ const ItensPorcionados = () => {
                             <div className="flex-1">
                               <p className="font-medium text-sm">{insumo.nome}</p>
                               <p className="text-xs text-muted-foreground">
-                                {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
+                                {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : formData.unidade_medida === 'lote' ? 'lote' : 'unidade'}
                               </p>
                             </div>
                             <Button
