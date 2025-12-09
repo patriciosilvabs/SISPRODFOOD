@@ -228,6 +228,42 @@ serve(async (req) => {
       console.log(`${ALL_PERMISSIONS.length} permissões concedidas ao Admin`);
     }
 
+    // 5. Criar loja CPD obrigatória automaticamente
+    const { data: lojaCPD, error: lojaCPDError } = await supabaseAdmin
+      .from('lojas')
+      .insert({
+        nome: 'CPD - Centro de Produção e Distribuição',
+        responsavel: user.email || 'Administrador',
+        tipo: 'cpd',
+        organization_id: org.id,
+        fuso_horario: 'America/Sao_Paulo',
+        cutoff_operacional: '03:00:00'
+      })
+      .select()
+      .single();
+
+    if (lojaCPDError) {
+      console.error('Erro ao criar loja CPD:', lojaCPDError);
+      // Não falhar - organização foi criada, CPD pode ser adicionado manualmente depois
+    } else {
+      console.log('Loja CPD criada automaticamente:', lojaCPD.id);
+
+      // 6. Vincular Admin à loja CPD
+      const { error: acessoError } = await supabaseAdmin
+        .from('lojas_acesso')
+        .insert({
+          user_id: userId,
+          loja_id: lojaCPD.id,
+          organization_id: org.id
+        });
+
+      if (acessoError) {
+        console.error('Erro ao vincular Admin ao CPD:', acessoError);
+      } else {
+        console.log('Admin vinculado à loja CPD');
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
