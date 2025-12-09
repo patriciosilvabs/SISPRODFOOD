@@ -1,29 +1,40 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
 export function useAlarmSound() {
+  const { organizationId } = useOrganization();
   const [alarmUrl, setAlarmUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
+  const hasFetchedRef = useRef(false);
 
-  useEffect(() => {
-    fetchAlarmUrl();
-  }, []);
-
-  const fetchAlarmUrl = async () => {
+  const fetchAlarmUrl = useCallback(async () => {
+    if (!organizationId || hasFetchedRef.current) return;
+    
     try {
+      hasFetchedRef.current = true;
       const { data, error } = await supabase
         .from('configuracoes_sistema')
         .select('valor')
         .eq('chave', 'alarm_sound_url')
+        .eq('organization_id', organizationId)
         .maybeSingle();
 
       if (error) throw error;
       setAlarmUrl(data?.valor || null);
     } catch (error) {
       console.error('Erro ao buscar som do alarme:', error);
+      hasFetchedRef.current = false;
     }
-  };
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (organizationId) {
+      hasFetchedRef.current = false;
+      fetchAlarmUrl();
+    }
+  }, [organizationId, fetchAlarmUrl]);
 
   const playAlarm = () => {
     // Se tem URL configurada, tocar o arquivo
