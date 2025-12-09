@@ -909,34 +909,43 @@ export type Database = {
       insumos_log: {
         Row: {
           data: string | null
+          estoque_anterior: number | null
+          estoque_resultante: number | null
           id: string
           insumo_id: string
           insumo_nome: string
           organization_id: string | null
           quantidade: number
           tipo: Database["public"]["Enums"]["tipo_movimento"]
+          unidade_origem: string | null
           usuario_id: string
           usuario_nome: string
         }
         Insert: {
           data?: string | null
+          estoque_anterior?: number | null
+          estoque_resultante?: number | null
           id?: string
           insumo_id: string
           insumo_nome: string
           organization_id?: string | null
           quantidade: number
           tipo: Database["public"]["Enums"]["tipo_movimento"]
+          unidade_origem?: string | null
           usuario_id: string
           usuario_nome: string
         }
         Update: {
           data?: string | null
+          estoque_anterior?: number | null
+          estoque_resultante?: number | null
           id?: string
           insumo_id?: string
           insumo_nome?: string
           organization_id?: string | null
           quantidade?: number
           tipo?: Database["public"]["Enums"]["tipo_movimento"]
+          unidade_origem?: string | null
           usuario_id?: string
           usuario_nome?: string
         }
@@ -1242,6 +1251,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      movimentacoes_estoque_log: {
+        Row: {
+          created_at: string
+          data_hora_servidor: string
+          documento_url: string | null
+          entidade_id: string
+          entidade_nome: string
+          entidade_tipo: string
+          estoque_anterior: number
+          estoque_resultante: number
+          id: string
+          observacao: string | null
+          organization_id: string
+          quantidade: number
+          referencia_id: string | null
+          referencia_tipo: string | null
+          tipo_movimentacao: string
+          unidade_destino: string | null
+          unidade_origem: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string
+          data_hora_servidor?: string
+          documento_url?: string | null
+          entidade_id: string
+          entidade_nome: string
+          entidade_tipo: string
+          estoque_anterior: number
+          estoque_resultante: number
+          id?: string
+          observacao?: string | null
+          organization_id: string
+          quantidade: number
+          referencia_id?: string | null
+          referencia_tipo?: string | null
+          tipo_movimentacao: string
+          unidade_destino?: string | null
+          unidade_origem: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string
+          data_hora_servidor?: string
+          documento_url?: string | null
+          entidade_id?: string
+          entidade_nome?: string
+          entidade_tipo?: string
+          estoque_anterior?: number
+          estoque_resultante?: number
+          id?: string
+          observacao?: string | null
+          organization_id?: string
+          quantidade?: number
+          referencia_id?: string | null
+          referencia_tipo?: string | null
+          tipo_movimentacao?: string
+          unidade_destino?: string | null
+          unidade_origem?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: []
       }
       organization_members: {
         Row: {
@@ -2652,6 +2727,24 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
+      registrar_movimentacao_estoque: {
+        Args: {
+          p_entidade_id: string
+          p_entidade_nome: string
+          p_entidade_tipo: string
+          p_observacao?: string
+          p_organization_id?: string
+          p_quantidade: number
+          p_referencia_id?: string
+          p_referencia_tipo?: string
+          p_tipo_movimentacao: string
+          p_unidade_destino?: string
+          p_unidade_origem: string
+          p_usuario_id: string
+          p_usuario_nome: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "Admin" | "Produção" | "Loja" | "SuperAdmin"

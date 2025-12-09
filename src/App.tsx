@@ -40,6 +40,7 @@ import RelatorioInsumos from "./pages/relatorios/RelatorioInsumos";
 import DiagnosticoEstoque from "./pages/relatorios/DiagnosticoEstoque";
 import RelatorioConsumoHistorico from "./pages/relatorios/RelatorioConsumoHistorico";
 import DashboardConsumo from "./pages/relatorios/DashboardConsumo";
+import RelatorioMovimentacoes from "./pages/relatorios/RelatorioMovimentacoes";
 import NotFound from "./pages/NotFound";
 import AceitarConvite from "./pages/AceitarConvite";
 import {
@@ -296,6 +297,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <DashboardConsumo />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios/movimentacoes"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <RelatorioMovimentacoes />
                     </ProtectedRoute>
                   }
                 />

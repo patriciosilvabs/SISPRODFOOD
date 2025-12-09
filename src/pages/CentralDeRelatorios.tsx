@@ -1,6 +1,6 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Clock, Truck, Box, FileText, Search, TrendingUp, Calendar, BarChart3 } from 'lucide-react';
+import { Bot, Clock, Truck, Box, FileText, Search, TrendingUp, Calendar, BarChart3, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +15,7 @@ interface UltimaAtualizacao {
   estoqueProdutos: string | null;
   insumos: string | null;
   diagnostico: string | null;
+  movimentacoes: string | null;
 }
 
 const CentralDeRelatorios = () => {
@@ -27,6 +28,7 @@ const CentralDeRelatorios = () => {
     estoqueProdutos: null,
     insumos: null,
     diagnostico: null,
+    movimentacoes: null,
   });
 
   useEffect(() => {
@@ -97,6 +99,13 @@ const CentralDeRelatorios = () => {
         .order('updated_at', { ascending: false })
         .limit(1);
 
+      // Buscar última movimentação de estoque (log unificado)
+      const { data: movimentacoesData } = await supabase
+        .from('movimentacoes_estoque_log')
+        .select('data_hora_servidor')
+        .order('data_hora_servidor', { ascending: false })
+        .limit(1);
+
       setUltimasAtualizacoes({
         monitoramento: consumoData?.[0]?.created_at || null,
         producao: producaoData?.[0]?.data_fim || null,
@@ -105,6 +114,7 @@ const CentralDeRelatorios = () => {
         estoqueProdutos: estoqueData?.[0]?.data_ultima_movimentacao || null,
         insumos: insumosData?.[0]?.data || null,
         diagnostico: contagemData?.[0]?.updated_at || null,
+        movimentacoes: movimentacoesData?.[0]?.data_hora_servidor || null,
       });
     } catch (error) {
       console.error('Erro ao buscar últimas atualizações:', error);
@@ -184,6 +194,14 @@ const CentralDeRelatorios = () => {
       color: 'bg-purple-100 text-purple-600',
       onClick: () => navigate('/relatorios/diagnostico-estoque'),
       ultimaAtualizacao: ultimasAtualizacoes.diagnostico,
+    },
+    {
+      title: 'Histórico de Movimentações',
+      description: 'Auditoria completa de todas as movimentações de estoque.',
+      icon: History,
+      color: 'bg-slate-100 text-slate-600',
+      onClick: () => navigate('/relatorios/movimentacoes'),
+      ultimaAtualizacao: ultimasAtualizacoes.movimentacoes,
     },
   ];
 
