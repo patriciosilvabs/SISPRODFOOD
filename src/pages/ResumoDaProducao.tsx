@@ -25,6 +25,8 @@ interface DetalheLojaProducao {
   quantidade: number;
 }
 
+type StatusValidacao = 'validado' | 'suspeito' | 'bloqueado';
+
 interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
@@ -33,6 +35,8 @@ interface InsumoExtraComEstoque {
   estoque_suficiente: boolean;
   protecao_ativa?: boolean;
   mensagem_erro?: string;
+  status_validacao?: StatusValidacao;
+  motivo_suspeita?: string;
 }
 
 interface ProducaoRegistro {
@@ -414,17 +418,23 @@ const ResumoDaProducao = () => {
             const bloqueadoPorEscala = resultado.escalaInvalida === true;
             const bloqueadoPorProtecao = resultado.protecao.consumoExcedeLimite;
             
+            // PROTEÇÃO ESTOQUE FANTASMA: Usar status de validação do cálculo
+            const statusValidacao = resultado.statusValidacao;
+            const consumoValidado = statusValidacao === 'validado';
+            
             return {
               nome: insumoVinculado.nome,
               quantidade_necessaria: resultado.consumoCalculado,
               unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
-              // PROTEÇÃO: Se limite excedido OU escala inválida, bloquear alerta de estoque falso
-              estoque_suficiente: (bloqueadoPorEscala || bloqueadoPorProtecao) 
-                ? true  // Forçar true para bloquear falso alerta
-                : resultado.consumoEmKg <= estoqueDisponivelKg,
+              // REGRA ÚNICA: estoque_insuficiente = consumo_validado > estoque_disponivel
+              estoque_suficiente: consumoValidado 
+                ? resultado.consumoEmKg <= estoqueDisponivelKg 
+                : true, // Forçar true se não validado
               protecao_ativa: bloqueadoPorEscala || bloqueadoPorProtecao,
-              mensagem_erro: resultado.motivoBloqueio || resultado.protecao.mensagemErro || undefined
+              mensagem_erro: resultado.motivoBloqueio || resultado.protecao.mensagemErro || undefined,
+              status_validacao: statusValidacao,
+              motivo_suspeita: resultado.motivoSuspeita
             };
           });
         }
