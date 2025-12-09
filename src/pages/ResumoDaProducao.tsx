@@ -389,33 +389,42 @@ const ResumoDaProducao = () => {
             // Determinar tipo de insumo pela unidade
             const tipoInsumo = determinarTipoInsumo(insumoVinculado.unidade);
             
+            // Obter escala de configuração do insumo
+            const escalaConfiguracao = (insumoVinculado as any).escala_configuracao || 'por_unidade';
+            
             // REGRA-MÃE: Calcular consumo proporcional ao peso real
             const resultado = calcularConsumoInsumo({
               demandaTotalUnidades: registro.unidades_programadas || 0,
               pesoUnitarioFinalG: pesoUnitarioG,
               equivalenciaPorLoteUnidades: itemInfo?.equivalencia_traco || null,
               perdaPercentual: perdaPercentual,
+              itemUnidadeMedida: itemInfo?.unidade_medida as any || 'unidade',
               insumo: {
                 quantidadePorLote: insumoVinculado.quantidade,
                 tipo: tipoInsumo,
-                unidade: insumoVinculado.unidade
+                unidade: insumoVinculado.unidade,
+                escalaConfiguracao: escalaConfiguracao
               }
             });
             
             // Estoque disponível (sempre em kg)
             const estoqueDisponivelKg = insumoVinculado.insumos.quantidade_em_estoque || 0;
             
+            // Verificar se foi bloqueado por escala inválida
+            const bloqueadoPorEscala = resultado.escalaInvalida === true;
+            const bloqueadoPorProtecao = resultado.protecao.consumoExcedeLimite;
+            
             return {
               nome: insumoVinculado.nome,
               quantidade_necessaria: resultado.consumoCalculado,
               unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
-              // PROTEÇÃO: Se limite excedido, bloquear alerta de estoque falso
-              estoque_suficiente: resultado.protecao.consumoExcedeLimite 
+              // PROTEÇÃO: Se limite excedido OU escala inválida, bloquear alerta de estoque falso
+              estoque_suficiente: (bloqueadoPorEscala || bloqueadoPorProtecao) 
                 ? true  // Forçar true para bloquear falso alerta
                 : resultado.consumoEmKg <= estoqueDisponivelKg,
-              protecao_ativa: resultado.protecao.consumoExcedeLimite,
-              mensagem_erro: resultado.protecao.mensagemErro || undefined
+              protecao_ativa: bloqueadoPorEscala || bloqueadoPorProtecao,
+              mensagem_erro: resultado.motivoBloqueio || resultado.protecao.mensagemErro || undefined
             };
           });
         }
@@ -656,18 +665,30 @@ const ResumoDaProducao = () => {
           // Determinar tipo de insumo pela unidade
           const tipoInsumo = determinarTipoInsumo(insumoVinculado.unidade);
           
+          // Obter escala de configuração do insumo
+          const escalaConfiguracao = (insumoVinculado as any).escala_configuracao || 'por_unidade';
+          
           // REGRA-MÃE: Calcular consumo proporcional ao peso real
           const resultado = calcularConsumoInsumo({
             demandaTotalUnidades: data.unidades_reais,
             pesoUnitarioFinalG: pesoUnitarioG,
             equivalenciaPorLoteUnidades: itemData?.equivalencia_traco || null,
             perdaPercentual: perdaPercentual,
+            itemUnidadeMedida: itemData?.unidade_medida as any || 'unidade',
             insumo: {
               quantidadePorLote: insumoVinculado.quantidade,
               tipo: tipoInsumo,
-              unidade: insumoVinculado.unidade
+              unidade: insumoVinculado.unidade,
+              escalaConfiguracao: escalaConfiguracao
             }
           });
+          
+          // Se escala inválida, pular este insumo com log de erro
+          if (resultado.escalaInvalida) {
+            console.error(`⛔ INSUMO BLOQUEADO POR ESCALA INVÁLIDA: ${insumoVinculado.nome}`, resultado.motivoBloqueio);
+            toast.error(`Insumo ${insumoVinculado.nome} bloqueado: ${resultado.motivoBloqueio}`);
+            continue;
+          }
           
           const quantidadeKg = resultado.consumoEmKg;
           

@@ -12,16 +12,26 @@
  */
 
 export type TipoInsumo = 'peso' | 'unidade';
+export type EscalaConfiguracao = 'por_unidade' | 'por_traco' | 'por_lote';
+export type ItemUnidadeMedida = 'unidade' | 'traco' | 'lote' | 'kg' | 'g';
+
+export interface ValidacaoEscala {
+  escalaValida: boolean;
+  violacao: string | null;
+  bloqueado: boolean;
+}
 
 export interface ParametrosCalculoInsumo {
   demandaTotalUnidades: number;
   pesoUnitarioFinalG: number;
   equivalenciaPorLoteUnidades: number | null;
   perdaPercentual: number;
+  itemUnidadeMedida?: ItemUnidadeMedida;
   insumo: {
     quantidadePorLote: number; // quantidade configurada por lote/traço
     tipo: TipoInsumo; // 'peso' = proporcional ao peso, 'unidade' = por unidade produzida
     unidade: string;
+    escalaConfiguracao?: EscalaConfiguracao;
   };
 }
 
@@ -40,6 +50,48 @@ export interface ResultadoCalculo {
   pesoTotalComPerdaKg: number;
   alertaConsumoExcessivo: boolean;
   protecao: ProtecaoAntiExplosao;
+  escalaInvalida?: boolean;
+  motivoBloqueio?: string;
+}
+
+/**
+ * Valida coerência de escalas entre insumo e item
+ * 
+ * Impede que valores configurados por uma escala (unidade, traço, lote)
+ * sejam aplicados em outra escala incorretamente.
+ */
+export function validarCoerenciaEscala(params: ParametrosCalculoInsumo): ValidacaoEscala {
+  const { itemUnidadeMedida, insumo, equivalenciaPorLoteUnidades } = params;
+  const escala = insumo.escalaConfiguracao || 'por_unidade';
+  
+  // Se não temos informação de escala, assumir válido (compatibilidade)
+  if (!itemUnidadeMedida) {
+    return { escalaValida: true, violacao: null, bloqueado: false };
+  }
+  
+  // REGRA 1: Se insumo configurado "por_lote" ou "por_traco", item precisa ter equivalência
+  if (escala === 'por_lote' || escala === 'por_traco') {
+    if (itemUnidadeMedida === 'unidade' && !equivalenciaPorLoteUnidades) {
+      return {
+        escalaValida: false,
+        violacao: `Insumo configurado ${escala.replace('_', ' ')} requer item com equivalência de traço/lote`,
+        bloqueado: true
+      };
+    }
+  }
+  
+  // REGRA 2: Se insumo configurado "por_unidade", não pode usar em item tipo traço/lote sem equivalência
+  if (escala === 'por_unidade') {
+    if ((itemUnidadeMedida === 'traco' || itemUnidadeMedida === 'lote') && !equivalenciaPorLoteUnidades) {
+      return {
+        escalaValida: false,
+        violacao: 'Insumo configurado por unidade requer equivalência de traço/lote definida',
+        bloqueado: true
+      };
+    }
+  }
+  
+  return { escalaValida: true, violacao: null, bloqueado: false };
 }
 
 /**
@@ -51,6 +103,30 @@ export interface ResultadoCalculo {
  * PASSO 4: Se tipo == "unidade" → consumo = demanda × quantidade_por_unidade
  */
 export function calcularConsumoInsumo(params: ParametrosCalculoInsumo): ResultadoCalculo {
+  // ═══════════════════════════════════════════════════════════════
+  // PROTEÇÃO DE COERÊNCIA DE ESCALA (antes de qualquer cálculo)
+  // ═══════════════════════════════════════════════════════════════
+  const validacaoEscala = validarCoerenciaEscala(params);
+  
+  if (!validacaoEscala.escalaValida) {
+    console.error(`⛔ VIOLAÇÃO DE ESCALA: ${validacaoEscala.violacao}`);
+    return {
+      consumoCalculado: 0,
+      consumoEmKg: 0,
+      pesoTotalFinalKg: 0,
+      pesoTotalComPerdaKg: 0,
+      alertaConsumoExcessivo: false,
+      protecao: {
+        consumoExcedeLimite: true,
+        limiteMaximo: 0,
+        consumoCalculado: 0,
+        razaoExcedente: 0,
+        mensagemErro: validacaoEscala.violacao
+      },
+      escalaInvalida: true,
+      motivoBloqueio: validacaoEscala.violacao
+    };
+  }
   const {
     demandaTotalUnidades,
     pesoUnitarioFinalG,

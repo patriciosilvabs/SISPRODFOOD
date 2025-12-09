@@ -851,6 +851,7 @@ export type Database = {
       insumos_extras: {
         Row: {
           consumo_por_traco_g: number | null
+          escala_configuracao: string | null
           id: string
           insumo_id: string
           is_principal: boolean
@@ -862,6 +863,7 @@ export type Database = {
         }
         Insert: {
           consumo_por_traco_g?: number | null
+          escala_configuracao?: string | null
           id?: string
           insumo_id: string
           is_principal?: boolean
@@ -873,6 +875,7 @@ export type Database = {
         }
         Update: {
           consumo_por_traco_g?: number | null
+          escala_configuracao?: string | null
           id?: string
           insumo_id?: string
           is_principal?: boolean
