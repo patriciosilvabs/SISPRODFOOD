@@ -238,6 +238,8 @@ const ResumoDaProducao = () => {
   };
 
   useEffect(() => {
+    if (!organizationId) return;
+    
     let isMounted = true;
     let reloadTimeout: NodeJS.Timeout | null = null;
 
@@ -269,7 +271,7 @@ const ResumoDaProducao = () => {
       if (reloadTimeout) clearTimeout(reloadTimeout);
       channel.unsubscribe().then(() => supabase.removeChannel(channel));
     };
-  }, []);
+  }, [organizationId]);
 
   const loadProducaoRegistros = async (silent = false) => {
     try {
@@ -279,10 +281,27 @@ const ResumoDaProducao = () => {
         setIsRefreshing(true);
       }
       
-      // REGRA OBRIGATÓRIA: Buscar apenas registros com data_referencia = hoje
-      // Usar data do SERVIDOR para funcionar em qualquer timezone
-      const { data: dataServidor } = await supabase.rpc('get_current_date');
-      const hoje = dataServidor || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      // REGRA OBRIGATÓRIA: Usar dia operacional do CPD (não data do servidor)
+      // Isso sincroniza com ContagemPorcionados e criar_ou_atualizar_producao_registro
+      let hoje: string;
+      
+      // Buscar loja CPD da organização
+      const { data: cpdLoja } = await supabase
+        .from('lojas')
+        .select('id')
+        .eq('tipo', 'cpd')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      
+      if (cpdLoja?.id) {
+        // Usar dia operacional do CPD (respeitando timezone e cutoff)
+        const { data: diaOp } = await supabase.rpc('calcular_dia_operacional', { p_loja_id: cpdLoja.id });
+        hoje = diaOp || new Date().toISOString().split('T')[0];
+      } else {
+        // Fallback para data do servidor se não houver CPD
+        const { data: dataServidor } = await supabase.rpc('get_current_date');
+        hoje = dataServidor || new Date().toISOString().split('T')[0];
+      }
       
       const { data, error } = await supabase
         .from('producao_registros')
