@@ -57,12 +57,15 @@ interface Insumo {
   unidade_medida: UnidadeMedida;
 }
 
+type EscalaConfiguracao = 'por_unidade' | 'por_traco' | 'por_lote';
+
 interface InsumoVinculado {
   id?: string;
   insumo_id: string;
   nome: string;
   quantidade: number;
   unidade: UnidadeMedida;
+  escala_configuracao: EscalaConfiguracao;
 }
 
 const ItensPorcionados = () => {
@@ -79,6 +82,7 @@ const ItensPorcionados = () => {
     insumo_id: '',
     quantidade: '',
     unidade: 'kg' as UnidadeMedida,
+    escala: 'por_unidade' as EscalaConfiguracao,
   });
   const [formData, setFormData] = useState({
     nome: '',
@@ -164,7 +168,7 @@ const ItensPorcionados = () => {
         
         // Se é um novo item e há insumos vinculados, salvar os insumos
         if (newItem && insumosVinculados.length > 0) {
-          const insumosToInsert = insumosVinculados.map(insumo => ({
+        const insumosToInsert = insumosVinculados.map(insumo => ({
             item_porcionado_id: newItem.id,
             insumo_id: insumo.insumo_id,
             nome: insumo.nome,
@@ -172,6 +176,7 @@ const ItensPorcionados = () => {
             unidade: insumo.unidade,
             is_principal: false,
             consumo_por_traco_g: null,
+            escala_configuracao: insumo.escala_configuracao,
             organization_id: organizationId,
           }));
           
@@ -275,6 +280,7 @@ const ItensPorcionados = () => {
         nome: item.nome,
         quantidade: item.quantidade,
         unidade: item.unidade as UnidadeMedida,
+        escala_configuracao: (item as any).escala_configuracao || 'por_unidade',
       }));
       
       setInsumosVinculados(mapped);
@@ -303,6 +309,7 @@ const ItensPorcionados = () => {
       nome: insumoSelecionado.nome,
       quantidade: parseFloat(novoInsumo.quantidade),
       unidade: novoInsumo.unidade,
+      escala_configuracao: novoInsumo.escala,
     };
 
     // Se estamos editando, salvar no banco
@@ -318,6 +325,7 @@ const ItensPorcionados = () => {
             unidade: novoInsumo.unidade,
             is_principal: false,
             consumo_por_traco_g: null,
+            escala_configuracao: novoInsumo.escala,
             organization_id: organizationId,
           })
           .select()
@@ -335,7 +343,7 @@ const ItensPorcionados = () => {
     }
 
     setInsumosVinculados([...insumosVinculados, novoInsumoVinculado]);
-    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg' });
+    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg', escala: 'por_unidade' });
   };
 
   const removerInsumoVinculado = async (index: number) => {
@@ -614,7 +622,15 @@ const ItensPorcionados = () => {
                             <div className="flex-1">
                               <p className="font-medium text-sm">{insumo.nome}</p>
                               <p className="text-xs text-muted-foreground">
-                                {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : formData.unidade_medida === 'lote' ? 'lote' : 'unidade'}
+                                {insumo.quantidade} {insumo.unidade} • 
+                                <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  insumo.escala_configuracao === 'por_traco' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                  insumo.escala_configuracao === 'por_lote' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                                  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                }`}>
+                                  {insumo.escala_configuracao === 'por_traco' ? 'por traço' : 
+                                   insumo.escala_configuracao === 'por_lote' ? 'por lote' : 'por unidade'}
+                                </span>
                               </p>
                             </div>
                             <Button
@@ -631,73 +647,99 @@ const ItensPorcionados = () => {
                     )}
 
                     {/* Formulário para adicionar novo insumo */}
-                    <div className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-5 space-y-2">
-                        <Label>Insumo</Label>
-                        <Select
-                          value={novoInsumo.insumo_id}
-                          onValueChange={(value) => 
-                            setNovoInsumo({ ...novoInsumo, insumo_id: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {insumos.map((insumo) => (
-                              <SelectItem key={insumo.id} value={insumo.id}>
-                                {insumo.nome}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-4 space-y-2">
+                          <Label>Insumo</Label>
+                          <Select
+                            value={novoInsumo.insumo_id}
+                            onValueChange={(value) => 
+                              setNovoInsumo({ ...novoInsumo, insumo_id: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {insumos.map((insumo) => (
+                                <SelectItem key={insumo.id} value={insumo.id}>
+                                  {insumo.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                      <div className="col-span-3 space-y-2">
-                        <Label>Quantidade {formData.unidade_medida === 'traco' && '(por traço)'}</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={novoInsumo.quantidade}
-                          onChange={(e) => 
-                            setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
-                          }
-                          placeholder="0"
-                        />
-                      </div>
+                        <div className="col-span-2 space-y-2">
+                          <Label>Quantidade</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={novoInsumo.quantidade}
+                            onChange={(e) => 
+                              setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
+                            }
+                            placeholder="0"
+                          />
+                        </div>
 
-                      <div className="col-span-2 space-y-2">
-                        <Label>Unidade</Label>
-                        <Select
-                          value={novoInsumo.unidade}
-                          onValueChange={(value: UnidadeMedida) => 
-                            setNovoInsumo({ ...novoInsumo, unidade: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="kg">kg</SelectItem>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="l">l</SelectItem>
-                            <SelectItem value="ml">ml</SelectItem>
-                            <SelectItem value="unidade">un</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                        <div className="col-span-2 space-y-2">
+                          <Label>Unidade</Label>
+                          <Select
+                            value={novoInsumo.unidade}
+                            onValueChange={(value: UnidadeMedida) => 
+                              setNovoInsumo({ ...novoInsumo, unidade: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="kg">kg</SelectItem>
+                              <SelectItem value="g">g</SelectItem>
+                              <SelectItem value="l">l</SelectItem>
+                              <SelectItem value="ml">ml</SelectItem>
+                              <SelectItem value="unidade">un</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                      <div className="col-span-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={adicionarInsumoVinculado}
-                          className="w-full"
-                        >
-                          + Adicionar
-                        </Button>
+                        <div className="col-span-2 space-y-2">
+                          <Label>Escala</Label>
+                          <Select
+                            value={novoInsumo.escala}
+                            onValueChange={(value: EscalaConfiguracao) => 
+                              setNovoInsumo({ ...novoInsumo, escala: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="por_unidade">Por Unidade</SelectItem>
+                              <SelectItem value="por_traco">Por Traço</SelectItem>
+                              <SelectItem value="por_lote">Por Lote</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={adicionarInsumoVinculado}
+                            className="w-full"
+                          >
+                            + Adicionar
+                          </Button>
+                        </div>
                       </div>
+                      
+                      <p className="text-[10px] text-muted-foreground">
+                        ⚠️ A escala define como o consumo é calculado: "Por Unidade" multiplica pela demanda total, 
+                        "Por Traço/Lote" multiplica pelo número de traços/lotes.
+                      </p>
                     </div>
                   </div>
                 </div>
