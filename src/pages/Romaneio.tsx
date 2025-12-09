@@ -480,7 +480,7 @@ const Romaneio = () => {
       // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas não vazios
       const { data: producoesRaw, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco')
+        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco, lote_producao_id')
         .eq('status', 'finalizado')
         .eq('data_referencia', serverDate)
         .not('detalhes_lojas', 'is', null)
@@ -490,18 +490,59 @@ const Romaneio = () => {
       console.log('[Romaneio] Produções brutas encontradas:', producoesRaw?.length);
 
       // 3. Filtrar produções com detalhes_lojas vazios (traços secundários têm [])
-      const producoes = producoesRaw?.filter(prod => {
+      let producoesComDetalhes = producoesRaw?.filter(prod => {
         const detalhes = prod.detalhes_lojas as Array<any> | null;
-        // Excluir se detalhes_lojas é null, não é array, ou está vazio
         return detalhes && Array.isArray(detalhes) && detalhes.length > 0;
       }) || [];
       
-      console.log('[Romaneio] Produções após filtro (detalhes_lojas não vazio):', producoes.length);
+      console.log('[Romaneio] Produções após filtro (detalhes_lojas não vazio):', producoesComDetalhes.length);
+
+      // 3.1 NOVA REGRA: Verificar lotes completos - itens com lote só aparecem após TODOS os traços finalizados
+      const lotesIds = [...new Set(
+        producoesComDetalhes
+          .filter(p => p.lote_producao_id)
+          .map(p => p.lote_producao_id)
+      )];
+
+      let lotesIncompletos = new Set<string>();
+      
+      if (lotesIds.length > 0) {
+        // Buscar TODOS os traços desses lotes (incluindo não finalizados)
+        const { data: todosTracosLote, error: tracosError } = await supabase
+          .from('producao_registros')
+          .select('lote_producao_id, status')
+          .in('lote_producao_id', lotesIds);
+
+        if (!tracosError && todosTracosLote) {
+          // Identificar lotes que têm pelo menos um traço não finalizado
+          todosTracosLote.forEach(traco => {
+            if (traco.status !== 'finalizado' && traco.lote_producao_id) {
+              lotesIncompletos.add(traco.lote_producao_id);
+            }
+          });
+          
+          console.log('[Romaneio] Lotes incompletos (têm traços não finalizados):', Array.from(lotesIncompletos));
+        }
+      }
+
+      // 3.2 Filtrar produções - excluir itens de lotes incompletos
+      const producoes = producoesComDetalhes.filter(prod => {
+        // Itens SEM lote (produção simples) passam direto
+        if (!prod.lote_producao_id) return true;
+        // Itens COM lote só passam se lote está 100% completo
+        const loteCompleto = !lotesIncompletos.has(prod.lote_producao_id);
+        if (!loteCompleto) {
+          console.log(`[Romaneio] Item ${prod.item_nome} bloqueado - lote ${prod.lote_producao_id} incompleto`);
+        }
+        return loteCompleto;
+      });
+      
+      console.log('[Romaneio] Produções liberadas para romaneio (lotes completos):', producoes.length);
       producoes.forEach(p => {
         console.log(`[Romaneio] - ${p.item_nome}: detalhes_lojas =`, p.detalhes_lojas);
       });
 
-      // 3. Buscar romaneios pendentes/enviados COM data_criacao para filtrar por produção
+      // 4. Buscar romaneios pendentes/enviados COM data_criacao para filtrar por produção
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
         .select(`item_porcionado_id, quantidade, romaneios!inner(loja_id, status, data_criacao)`)
@@ -510,7 +551,7 @@ const Romaneio = () => {
       if (romaneiosError) throw romaneiosError;
       console.log('[Romaneio] Romaneios pendentes/enviados:', romaneiosPendentes?.length);
 
-      // 4. Construir mapa de estoque CPD
+      // 5. Construir mapa de estoque CPD
       const estoqueMap: Record<string, { quantidade: number; nome: string }> = {};
       estoqueCpd?.forEach(est => {
         estoqueMap[est.item_porcionado_id] = {
@@ -520,7 +561,7 @@ const Romaneio = () => {
       });
       console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
-      // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
+      // 6. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
       // E criar mapa de data_fim por item para filtrar romaneios
       const demandaPorLojaItem: Record<string, Record<string, number>> = {};
       const dataFimPorItem: Record<string, string> = {}; // Mapa: item_id -> data_fim da última produção
