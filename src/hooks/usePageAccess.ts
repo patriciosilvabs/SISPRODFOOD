@@ -61,9 +61,10 @@ export const usePageAccess = (): UsePageAccessReturn => {
     }
 
     if (!user?.id || !organizationId) {
-      setProfile(null);
+      setProfile('loja'); // Fallback seguro ao invés de null para evitar loading infinito
       setOverrides([]);
       setLoading(false);
+      hasFetched.current = true;
       return;
     }
     
@@ -191,8 +192,8 @@ export const usePageAccess = (): UsePageAccessReturn => {
 
   return {
     profile,
-    // Só considerar loading=false quando auth carregou e profile foi determinado
-    loading: authLoading || loading || (!userIsSuperAdmin && profile === null),
+    // Removida condição de profile === null que causava deadlock
+    loading: authLoading || loading,
     hasPageAccess,
     accessiblePages,
     refreshAccess: fetchAccess,
