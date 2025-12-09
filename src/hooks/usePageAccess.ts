@@ -45,6 +45,19 @@ export const usePageAccess = (): UsePageAccessReturn => {
   // Calcular se é SuperAdmin usando roles array (estável)
   const userIsSuperAdmin = roles.includes('SuperAdmin');
 
+  // Resetar cache quando user ou organizationId mudam
+  useEffect(() => {
+    if (user?.id && organizationId) {
+      // Se temos novos dados válidos, resetar para refetch
+      const newCacheKey = `${user.id}_${organizationId}`;
+      const existingCache = accessCache.get(newCacheKey);
+      if (!existingCache || (Date.now() - existingCache.timestamp >= CACHE_TTL)) {
+        hasFetched.current = false;
+        setLoading(true);
+      }
+    }
+  }, [user?.id, organizationId]);
+
   const fetchAccess = useCallback(async (forceRefresh = false) => {
     // Aguardar AuthContext terminar de carregar
     if (authLoading) {
@@ -60,11 +73,9 @@ export const usePageAccess = (): UsePageAccessReturn => {
       return;
     }
 
+    // Aguardar dados completos - NÃO definir fallback
     if (!user?.id || !organizationId) {
-      setProfile('loja'); // Fallback seguro ao invés de null para evitar loading infinito
-      setOverrides([]);
-      setLoading(false);
-      hasFetched.current = true;
+      // Não marcar hasFetched.current = true, aguardar dados
       return;
     }
     
