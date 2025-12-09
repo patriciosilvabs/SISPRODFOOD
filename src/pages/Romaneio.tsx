@@ -689,7 +689,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, romaneio_itens (item_nome, quantidade, peso_total_kg)`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg)`)
         .order('data_criacao', { ascending: false });
 
       if (!isAdmin() && userLojasIds.length > 0) {
@@ -893,6 +893,26 @@ const Romaneio = () => {
     }));
   };
 
+  // ==================== HELPERS: DIVERGÊNCIA ====================
+
+  const calcularDivergencia = (romaneioId: string, romaneio: Romaneio) => {
+    const pesoEnviado = romaneio.peso_total_envio_g || 0;
+    const volumesEnviados = romaneio.quantidade_volumes_envio || 0;
+    const pesoInformado = parseInt(pesoRecebido[romaneioId]) || 0;
+    const volumesInformados = parseInt(volumesRecebido[romaneioId]) || 0;
+    
+    const temDivergenciaPeso = pesoInformado > 0 && pesoInformado !== pesoEnviado;
+    const temDivergenciaVolumes = volumesInformados > 0 && volumesInformados !== volumesEnviados;
+    
+    return {
+      temDivergencia: temDivergenciaPeso || temDivergenciaVolumes,
+      temDivergenciaPeso,
+      temDivergenciaVolumes,
+      diferencaPeso: pesoInformado - pesoEnviado,
+      diferencaVolumes: volumesInformados - volumesEnviados
+    };
+  };
+
   // ==================== HANDLERS: RECEBIMENTO ====================
 
   const handleConfirmarRecebimento = async (romaneioId: string) => {
@@ -904,6 +924,15 @@ const Romaneio = () => {
     if (!volumesRecebido[romaneioId] || volumesRecebido[romaneioId] === '0') {
       toast.error('Informe a Quantidade de Volumes Recebida');
       return;
+    }
+    
+    // Verificar divergência para alertar
+    const romaneio = romaneiosEnviados.find(r => r.id === romaneioId);
+    if (romaneio) {
+      const div = calcularDivergencia(romaneioId, romaneio);
+      if (div.temDivergencia) {
+        toast.warning('Recebimento registrado COM DIVERGÊNCIA!');
+      }
     }
     
     try {
@@ -1352,6 +1381,32 @@ const Romaneio = () => {
                                 />
                               </div>
                               
+                              {/* Indicador de Divergência em Tempo Real */}
+                              {(() => {
+                                const div = calcularDivergencia(romaneio.id, romaneio);
+                                if (!pesoRecebido[romaneio.id] && !volumesRecebido[romaneio.id]) return null;
+                                
+                                return div.temDivergencia ? (
+                                  <div className="flex items-center gap-2 p-2 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                                    <div>
+                                      <span className="font-medium">⚠️ Divergência detectada:</span>
+                                      {div.temDivergenciaPeso && (
+                                        <span className="ml-2">Peso: {div.diferencaPeso > 0 ? '+' : ''}{div.diferencaPeso}g</span>
+                                      )}
+                                      {div.temDivergenciaVolumes && (
+                                        <span className="ml-2">Volumes: {div.diferencaVolumes > 0 ? '+' : ''}{div.diferencaVolumes}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg text-green-700 dark:text-green-400 text-sm">
+                                    <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                                    <span className="font-medium">✓ Conferência OK - valores conferem</span>
+                                  </div>
+                                );
+                              })()}
+                              
                               <Textarea
                                 placeholder="Observação (opcional)"
                                 value={observacaoRecebimento[romaneio.id] || ''}
@@ -1459,24 +1514,52 @@ const Romaneio = () => {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {romaneiosHistorico.map(romaneio => (
-                      <div key={romaneio.id} className="border rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="font-medium">{romaneio.loja_nome}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm")} • {romaneio.usuario_nome}
-                            </p>
+                    {romaneiosHistorico.map(romaneio => {
+                      const temDivergencia = romaneio.status === 'recebido' && (
+                        romaneio.peso_total_envio_g !== romaneio.peso_total_recebido_g ||
+                        romaneio.quantidade_volumes_envio !== romaneio.quantidade_volumes_recebido
+                      );
+                      
+                      return (
+                        <div key={romaneio.id} className={`border rounded-lg p-3 ${temDivergencia ? 'border-destructive/50 bg-destructive/5' : ''}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="font-medium">{romaneio.loja_nome}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm")} • {romaneio.usuario_nome}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {temDivergencia && (
+                                <Badge variant="destructive" className="text-xs">
+                                  ⚠️ Divergência
+                                </Badge>
+                              )}
+                              {getStatusBadge(romaneio.status)}
+                            </div>
                           </div>
-                          {getStatusBadge(romaneio.status)}
+                          <div className="text-xs text-muted-foreground">
+                            {romaneio.romaneio_itens.map((item, i) => (
+                              <span key={i}>{item.item_nome}: {item.quantidade}un{i < romaneio.romaneio_itens.length - 1 ? ' • ' : ''}</span>
+                            ))}
+                          </div>
+                          
+                          {/* Detalhes de Peso/Volumes para romaneios recebidos */}
+                          {romaneio.status === 'recebido' && (romaneio.peso_total_envio_g || romaneio.quantidade_volumes_envio) && (
+                            <div className="mt-2 pt-2 border-t text-xs space-y-1">
+                              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                <span className="text-muted-foreground">
+                                  📦 Enviado: {romaneio.peso_total_envio_g ? `${romaneio.peso_total_envio_g}g` : '-'} / {romaneio.quantidade_volumes_envio || '-'} vol
+                                </span>
+                                <span className="text-muted-foreground">
+                                  📥 Recebido: {romaneio.peso_total_recebido_g ? `${romaneio.peso_total_recebido_g}g` : '-'} / {romaneio.quantidade_volumes_recebido || '-'} vol
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {romaneio.romaneio_itens.map((item, i) => (
-                            <span key={i}>{item.item_nome}: {item.quantidade}un{i < romaneio.romaneio_itens.length - 1 ? ' • ' : ''}</span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
