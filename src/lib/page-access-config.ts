@@ -18,12 +18,16 @@ export const SYSTEM_PAGES: PageConfig[] = [
   
   // CPD - Produção
   { route: '/resumo-da-producao', label: 'Resumo da Produção', description: 'Kanban de produção', section: 'cpd' },
+  { route: '/painel-kanban', label: 'Painel Kanban', description: 'Kanban visual', section: 'cpd' },
+  { route: '/producao', label: 'Produção', description: 'Gestão de produção', section: 'cpd' },
+  { route: '/atender-pedidos-diarios', label: 'Pedidos Diários', description: 'Atender pedidos', section: 'cpd' },
   { route: '/insumos', label: 'Estoque de Insumos', description: 'Gerenciar insumos', section: 'cpd' },
   { route: '/estoque-produtos-cpd', label: 'Estoque de Produtos CPD', description: 'Produtos no CPD', section: 'cpd' },
   { route: '/reposicao-loja', label: 'Reposição de Lojas', description: 'Enviar produtos para lojas', section: 'cpd' },
   
   // LOJA
   { route: '/contagem-porcionados', label: 'Contagem Porcionados', description: 'Contagem de itens', section: 'loja' },
+  { route: '/receber-porcionados', label: 'Receber Porcionados', description: 'Receber itens', section: 'loja' },
   { route: '/estoque-loja', label: 'Meu Estoque', description: 'Estoque da loja', section: 'loja' },
   { route: '/erros-devolucoes', label: 'Erros e Devoluções', description: 'Registrar ocorrências', section: 'loja' },
   
@@ -39,6 +43,8 @@ export const SYSTEM_PAGES: PageConfig[] = [
   { route: '/relatorios/monitoramento-consumo', label: 'Monitoramento de Consumo', description: 'Análise de consumo', section: 'relatorios' },
   { route: '/relatorios/diagnostico-estoque', label: 'Diagnóstico de Estoque', description: 'Análise de estoque', section: 'relatorios' },
   { route: '/relatorios/consumo-historico', label: 'Consumo Histórico', description: 'Histórico de consumo', section: 'relatorios' },
+  { route: '/relatorios/dashboard-consumo', label: 'Dashboard Consumo', description: 'Análise de consumo', section: 'relatorios' },
+  { route: '/relatorios/movimentacoes', label: 'Histórico Movimentações', description: 'Log de movimentações', section: 'relatorios' },
   
   // ADMINISTRAÇÃO
   { route: '/lista-de-compras-ia', label: 'Lista de Compras IA', description: 'Sugestões de compras', section: 'admin' },
