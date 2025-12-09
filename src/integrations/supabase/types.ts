@@ -2771,7 +2771,7 @@ export type Database = {
         | "equipamentos"
       tipo_movimento: "entrada" | "saida"
       tipo_produto: "lacrado" | "porcionado" | "lote" | "simples"
-      unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco"
+      unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco" | "lote"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2913,7 +2913,7 @@ export const Constants = {
       ],
       tipo_movimento: ["entrada", "saida"],
       tipo_produto: ["lacrado", "porcionado", "lote", "simples"],
-      unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco"],
+      unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco", "lote"],
     },
   },
 } as const
