@@ -144,20 +144,28 @@ const ContagemPorcionados = () => {
       
       if (itensError) throw itensError;
 
-      // Carregar contagens APENAS do dia operacional atual (REGRA OBRIGATÓRIA)
-      // Usar data do SERVIDOR para funcionar em qualquer timezone
-      const { data: dataServidor } = await supabase.rpc('get_current_date');
-      const hoje = dataServidor || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      // Carregar contagens do dia operacional atual de cada loja
+      // Buscar todas contagens recentes e filtrar por dia operacional específico de cada loja
+      const contagensPromises = lojasData.map(async (loja) => {
+        // Calcular dia operacional específico da loja
+        const { data: diaOp } = await supabase
+          .rpc('calcular_dia_operacional', { p_loja_id: loja.id });
+        
+        const diaOperacionalLoja = diaOp || new Date().toISOString().split('T')[0];
+        
+        const { data: contagens, error } = await supabase
+          .from('contagem_porcionados')
+          .select('*')
+          .eq('loja_id', loja.id)
+          .eq('dia_operacional', diaOperacionalLoja)
+          .order('updated_at', { ascending: false });
+        
+        if (error) throw error;
+        return { lojaId: loja.id, contagens: contagens || [] };
+      });
       
-      // Buscar contagens do dia operacional atual de cada loja
-      // Cada loja pode ter um dia operacional diferente baseado em seu fuso/cutoff
-      const { data: contagensData, error: contagensError } = await supabase
-        .from('contagem_porcionados')
-        .select('*')
-        .eq('dia_operacional', hoje)
-        .order('updated_at', { ascending: false });
-      
-      if (contagensError) throw contagensError;
+      const contagensResults = await Promise.all(contagensPromises);
+      const contagensData = contagensResults.flatMap(r => r.contagens);
 
       // Carregar estoques ideais semanais
       const { data: estoquesData, error: estoquesError } = await supabase
@@ -346,6 +354,7 @@ const ContagemPorcionados = () => {
           p_organization_id: organizationId,
           p_usuario_id: user.id,
           p_usuario_nome: profile?.nome || user.email || 'Usuário',
+          p_dia_operacional: diaOperacional, // PASSAR DIA OPERACIONAL CORRETO
         });
 
       if (rpcError) {
