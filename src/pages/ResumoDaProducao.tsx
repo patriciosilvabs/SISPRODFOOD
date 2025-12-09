@@ -31,6 +31,8 @@ interface InsumoExtraComEstoque {
   unidade: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
+  protecao_ativa?: boolean;
+  mensagem_erro?: string;
 }
 
 interface ProducaoRegistro {
@@ -408,7 +410,12 @@ const ResumoDaProducao = () => {
               quantidade_necessaria: resultado.consumoCalculado,
               unidade: insumoVinculado.unidade,
               estoque_disponivel: estoqueDisponivelKg,
-              estoque_suficiente: resultado.consumoEmKg <= estoqueDisponivelKg
+              // PROTEÇÃO: Se limite excedido, bloquear alerta de estoque falso
+              estoque_suficiente: resultado.protecao.consumoExcedeLimite 
+                ? true  // Forçar true para bloquear falso alerta
+                : resultado.consumoEmKg <= estoqueDisponivelKg,
+              protecao_ativa: resultado.protecao.consumoExcedeLimite,
+              mensagem_erro: resultado.protecao.mensagemErro || undefined
             };
           });
         }

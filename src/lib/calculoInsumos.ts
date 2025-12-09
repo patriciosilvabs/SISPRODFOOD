@@ -25,12 +25,21 @@ export interface ParametrosCalculoInsumo {
   };
 }
 
+export interface ProtecaoAntiExplosao {
+  consumoExcedeLimite: boolean;
+  limiteMaximo: number;
+  consumoCalculado: number;
+  razaoExcedente: number;
+  mensagemErro: string | null;
+}
+
 export interface ResultadoCalculo {
   consumoCalculado: number;
   consumoEmKg: number;
   pesoTotalFinalKg: number;
   pesoTotalComPerdaKg: number;
   alertaConsumoExcessivo: boolean;
+  protecao: ProtecaoAntiExplosao;
 }
 
 /**
@@ -91,12 +100,49 @@ export function calcularConsumoInsumo(params: ParametrosCalculoInsumo): Resultad
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // PROTEÇÃO AUTOMÁTICA CONTRA EXPLOSÃO DE CONSUMO
+  // ═══════════════════════════════════════════════════════════════
+  let limiteMaximo: number;
+  let consumoExcedeLimite: boolean;
+
+  if (insumo.tipo === 'peso') {
+    // Limite máximo para insumo tipo peso = peso total com perda × 3
+    limiteMaximo = pesoTotalComPerdaKg * 3;
+    consumoExcedeLimite = consumoEmKg > limiteMaximo;
+  } else {
+    // Limite máximo para insumo tipo unidade = demanda × 3
+    limiteMaximo = demandaTotalUnidades * 3;
+    consumoExcedeLimite = consumoCalculado > limiteMaximo;
+  }
+
+  const protecao: ProtecaoAntiExplosao = {
+    consumoExcedeLimite,
+    limiteMaximo,
+    consumoCalculado: insumo.tipo === 'peso' ? consumoEmKg : consumoCalculado,
+    razaoExcedente: consumoExcedeLimite ? (consumoEmKg / limiteMaximo) : 0,
+    mensagemErro: consumoExcedeLimite 
+      ? "Erro lógico detectado: consumo acima do limite físico possível. Verifique cadastro por lote/traço."
+      : null
+  };
+
+  // Log de auditoria quando proteção ativa
+  if (consumoExcedeLimite) {
+    console.error(
+      `⛔ PROTEÇÃO ANTI-EXPLOSÃO ATIVADA!\n` +
+      `Consumo calculado: ${protecao.consumoCalculado.toFixed(2)} ${insumo.unidade}\n` +
+      `Limite máximo: ${limiteMaximo.toFixed(2)}\n` +
+      `Razão excedente: ${protecao.razaoExcedente.toFixed(1)}x`
+    );
+  }
+
   return {
     consumoCalculado,
     consumoEmKg,
     pesoTotalFinalKg,
     pesoTotalComPerdaKg,
-    alertaConsumoExcessivo
+    alertaConsumoExcessivo,
+    protecao
   };
 }
 

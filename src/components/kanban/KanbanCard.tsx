@@ -14,6 +14,8 @@ interface InsumoExtraComEstoque {
   unidade: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
+  protecao_ativa?: boolean;
+  mensagem_erro?: string;
 }
 
 interface DetalheLojaProducao {
@@ -128,8 +130,13 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     registro.peso_programado_kg !== null &&
     registro.peso_programado_kg > registro.insumo_principal_estoque_kg;
 
+  // PROTEÇÃO: Ignorar alertas de estoque se proteção ativa
+  const temProtecaoAtiva = columnId === 'a_produzir' &&
+    registro.insumosExtras?.some(extra => extra.protecao_ativa);
+
   const temInsumosExtrasInsuficientes = columnId === 'a_produzir' &&
-    registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
+    !temProtecaoAtiva &&
+    registro.insumosExtras?.some(extra => !extra.estoque_suficiente && !extra.protecao_ativa);
 
   // Verificar se está bloqueado (fila de traços)
   const estaBloqueadoPorTraco = registro.bloqueado_por_traco_anterior === true;
@@ -222,6 +229,19 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   </div>
                 )}
 
+                {/* BANNER DE ERRO CRÍTICO - Proteção Anti-Explosão */}
+                {temProtecaoAtiva && (
+                  <div className="flex items-center gap-2 text-white bg-red-700 dark:bg-red-800 rounded p-2 mt-2 border-2 border-red-900">
+                    <XCircle className="h-5 w-5 flex-shrink-0" />
+                    <div className="text-xs">
+                      <p className="font-bold">⛔ ERRO LÓGICO CRÍTICO</p>
+                      <p className="text-[10px] mt-0.5 opacity-90">
+                        Consumo acima do limite físico possível. Verifique cadastro por lote/traço.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Insumos Necessários */}
                 {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
                   <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-900 rounded p-2">
@@ -238,15 +258,25 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       </div>
                     )}
                     
-                    {/* Insumos Extras */}
+                    {/* Insumos Extras - Bloquear exibição se proteção ativa */}
                     {registro.insumosExtras?.map((extra, idx) => (
-                      <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
-                        <span>{extra.nome}:</span>
-                        <span className="font-medium flex items-center gap-1">
-                          {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
-                          {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
-                        </span>
-                      </div>
+                      extra.protecao_ativa ? (
+                        <div key={idx} className="flex justify-between text-xs text-red-600 dark:text-red-400">
+                          <span>{extra.nome}:</span>
+                          <span className="font-medium flex items-center gap-1">
+                            <XCircle className="h-3 w-3" />
+                            BLOQUEADO
+                          </span>
+                        </div>
+                      ) : (
+                        <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
+                          <span>{extra.nome}:</span>
+                          <span className="font-medium flex items-center gap-1">
+                            {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
+                            {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
+                          </span>
+                        </div>
+                      )
                     ))}
                   </div>
                 )}
