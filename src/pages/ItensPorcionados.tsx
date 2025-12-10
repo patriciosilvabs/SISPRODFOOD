@@ -54,6 +54,11 @@ interface ItemPorcionado {
   peso_pronto_g?: number;
   // Campo para Lote sem Perda
   quantidade_por_lote?: number;
+  // Campos para Embalagem Opcional
+  usa_embalagem_por_porcao?: boolean;
+  insumo_embalagem_id?: string | null;
+  unidade_embalagem?: string;
+  fator_consumo_embalagem_por_porcao?: number;
 }
 
 interface Insumo {
@@ -96,6 +101,11 @@ const ItensPorcionados = () => {
     peso_pronto_g: '',
     // Campo para Lote sem Perda
     quantidade_por_lote: '',
+    // Campos para Embalagem Opcional
+    usa_embalagem_por_porcao: false,
+    insumo_embalagem_id: '',
+    unidade_embalagem: 'unidade' as UnidadeMedida,
+    fator_consumo_embalagem_por_porcao: '1',
   });
 
   // Cálculos automáticos para Lote com Perda
@@ -181,6 +191,12 @@ const ItensPorcionados = () => {
       }
     }
 
+    // Validação para Embalagem Opcional
+    if (formData.usa_embalagem_por_porcao && !formData.insumo_embalagem_id) {
+      toast.error('Selecione o insumo de embalagem');
+      return;
+    }
+
     try {
       const insertData: any = {
         nome: formData.nome,
@@ -197,6 +213,11 @@ const ItensPorcionados = () => {
         perda_cozimento_percentual: null as number | null,
         peso_pronto_g: null as number | null,
         quantidade_por_lote: null as number | null,
+        // Embalagem opcional
+        usa_embalagem_por_porcao: formData.usa_embalagem_por_porcao || false,
+        insumo_embalagem_id: formData.usa_embalagem_por_porcao && formData.insumo_embalagem_id ? formData.insumo_embalagem_id : null,
+        unidade_embalagem: formData.usa_embalagem_por_porcao ? formData.unidade_embalagem : null,
+        fator_consumo_embalagem_por_porcao: formData.usa_embalagem_por_porcao ? parseFloat(formData.fator_consumo_embalagem_por_porcao) || 1 : null,
       };
 
       // Adicionar campos específicos de Lote com Perda
@@ -466,6 +487,11 @@ const ItensPorcionados = () => {
       peso_pronto_g: item.peso_pronto_g?.toString() || '',
       // Campo para Lote sem Perda
       quantidade_por_lote: item.quantidade_por_lote?.toString() || '',
+      // Campos para Embalagem Opcional
+      usa_embalagem_por_porcao: item.usa_embalagem_por_porcao || false,
+      insumo_embalagem_id: item.insumo_embalagem_id || '',
+      unidade_embalagem: (item.unidade_embalagem as UnidadeMedida) || 'unidade',
+      fator_consumo_embalagem_por_porcao: item.fator_consumo_embalagem_por_porcao?.toString() || '1',
     });
     await loadInsumosVinculados(item.id);
     setDialogOpen(true);
@@ -483,6 +509,11 @@ const ItensPorcionados = () => {
       perda_cozimento_percentual: '0',
       peso_pronto_g: '',
       quantidade_por_lote: '',
+      // Embalagem
+      usa_embalagem_por_porcao: false,
+      insumo_embalagem_id: '',
+      unidade_embalagem: 'unidade',
+      fator_consumo_embalagem_por_porcao: '1',
     });
   };
 
@@ -901,6 +932,112 @@ const ItensPorcionados = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Seção de Embalagem Opcional por Porção */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="flex items-start space-x-3">
+                      <Checkbox
+                        id="usa_embalagem_por_porcao"
+                        checked={formData.usa_embalagem_por_porcao}
+                        onCheckedChange={(checked) => 
+                          setFormData({ ...formData, usa_embalagem_por_porcao: checked as boolean })
+                        }
+                      />
+                      <div className="space-y-1 flex-1">
+                        <Label htmlFor="usa_embalagem_por_porcao" className="font-medium cursor-pointer flex items-center gap-2">
+                          🎁 Usa embalagem por porção?
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Marque se cada porção produzida consome uma embalagem (saco, bandeja, etc). O sistema calculará automaticamente o consumo.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Campos de Embalagem - aparecem quando checkbox ativo */}
+                    {formData.usa_embalagem_por_porcao && (
+                      <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 dark:border-purple-800 ml-6">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">🎁</span>
+                          <h4 className="font-semibold text-purple-800 dark:text-purple-200">Configuração de Embalagem</h4>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Insumo Embalagem */}
+                          <div className="space-y-2">
+                            <Label htmlFor="insumo_embalagem">Insumo Embalagem *</Label>
+                            <Select
+                              value={formData.insumo_embalagem_id}
+                              onValueChange={(value) => 
+                                setFormData({ ...formData, insumo_embalagem_id: value })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione a embalagem..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {insumos.map((insumo) => (
+                                  <SelectItem key={insumo.id} value={insumo.id}>
+                                    {insumo.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Ex: Saco plástico 1kg, Bandeja isopor</p>
+                          </div>
+
+                          {/* Unidade da Embalagem */}
+                          <div className="space-y-2">
+                            <Label htmlFor="unidade_embalagem">Unidade *</Label>
+                            <Select
+                              value={formData.unidade_embalagem}
+                              onValueChange={(value: UnidadeMedida) => 
+                                setFormData({ ...formData, unidade_embalagem: value })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unidade">unidade</SelectItem>
+                                <SelectItem value="saco">saco</SelectItem>
+                                <SelectItem value="caixa">caixa</SelectItem>
+                                <SelectItem value="fardo">fardo</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Fator de Consumo */}
+                        <div className="space-y-2">
+                          <Label htmlFor="fator_consumo">Fator de Consumo (por porção)</Label>
+                          <Input
+                            id="fator_consumo"
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={formData.fator_consumo_embalagem_por_porcao}
+                            onChange={(e) =>
+                              setFormData({ ...formData, fator_consumo_embalagem_por_porcao: e.target.value })
+                            }
+                            placeholder="1"
+                            className="max-w-[200px]"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Quantas embalagens por porção. Ex: 1 = cada porção usa 1 saco.
+                          </p>
+                        </div>
+
+                        {/* Info do cálculo automático */}
+                        <div className="p-3 bg-purple-100/50 dark:bg-purple-900/30 rounded-lg border border-purple-300 dark:border-purple-700 mt-2">
+                          <p className="text-xs text-purple-800 dark:text-purple-200">
+                            <strong>🔒 Cálculo Automático:</strong> Para cada porção produzida, o sistema debitará automaticamente{' '}
+                            <span className="font-semibold">{formData.fator_consumo_embalagem_por_porcao || 1}</span>{' '}
+                            {formData.unidade_embalagem}(s) do estoque de embalagens.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -954,6 +1091,11 @@ const ItensPorcionados = () => {
                           <span className="ml-2 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded">
                             <Timer className="inline h-3 w-3 mr-1" />
                             {item.tempo_timer_minutos}min
+                          </span>
+                        )}
+                        {item.usa_embalagem_por_porcao && (
+                          <span className="ml-2 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded">
+                            🎁 Embalagem
                           </span>
                         )}
                       </TableCell>

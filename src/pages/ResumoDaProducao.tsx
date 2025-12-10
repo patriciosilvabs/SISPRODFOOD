@@ -71,6 +71,11 @@ interface ProducaoRegistro {
   timer_status?: string;
   data_referencia?: string;
   total_tracos_lote?: number;
+  // Campos de embalagem
+  usa_embalagem_por_porcao?: boolean;
+  insumo_embalagem_nome?: string;
+  quantidade_embalagem?: number;
+  unidade_embalagem?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -315,10 +320,19 @@ const ResumoDaProducao = () => {
       const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
       const { data: itensData } = await supabase
         .from('itens_porcionados')
-        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos')
+        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos, usa_embalagem_por_porcao, insumo_embalagem_id, unidade_embalagem, fator_consumo_embalagem_por_porcao')
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
+      
+      // Buscar nomes dos insumos de embalagem
+      const embalagemIds = itensData?.filter(i => i.insumo_embalagem_id).map(i => i.insumo_embalagem_id) || [];
+      const { data: embalagemInsumosData } = await supabase
+        .from('insumos')
+        .select('id, nome')
+        .in('id', embalagemIds);
+      
+      const embalagemInsumosMap = new Map(embalagemInsumosData?.map(i => [i.id, i.nome]) || []);
 
       // Buscar todos os insumos vinculados (incluindo principal) para todos os itens
       const { data: insumosVinculadosData } = await supabase
@@ -426,6 +440,15 @@ const ResumoDaProducao = () => {
         }
         
         // Cast detalhes_lojas from Json to array e adicionar dados do item
+        // Calcular quantidade de embalagem se aplicável
+        let quantidadeEmbalagem: number | undefined;
+        let insumoEmbalagemNome: string | undefined;
+        if (itemInfo?.usa_embalagem_por_porcao && itemInfo.insumo_embalagem_id && registro.unidades_programadas) {
+          const fator = itemInfo.fator_consumo_embalagem_por_porcao || 1;
+          quantidadeEmbalagem = registro.unidades_programadas * fator;
+          insumoEmbalagemNome = embalagemInsumosMap.get(itemInfo.insumo_embalagem_id);
+        }
+
         const registroTyped: ProducaoRegistro = {
           ...registro,
           detalhes_lojas: Array.isArray(registro.detalhes_lojas) 
@@ -439,6 +462,11 @@ const ResumoDaProducao = () => {
           timer_ativo: itemInfo?.timer_ativo,
           tempo_timer_minutos: itemInfo?.tempo_timer_minutos,
           total_tracos_lote: totalTracosLote,
+          // Dados de embalagem
+          usa_embalagem_por_porcao: itemInfo?.usa_embalagem_por_porcao,
+          insumo_embalagem_nome: insumoEmbalagemNome,
+          quantidade_embalagem: quantidadeEmbalagem,
+          unidade_embalagem: itemInfo?.unidade_embalagem,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
