@@ -720,40 +720,31 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Incrementar estoque CPD (tabela unificada estoque_loja_itens)
-      if (cpdLojaId) {
-        // Buscar estoque atual
-        const { data: estoqueAtual } = await supabase
-          .from('estoque_loja_itens')
-          .select('quantidade')
-          .eq('loja_id', cpdLojaId)
-          .eq('item_porcionado_id', selectedRegistro.item_id)
-          .maybeSingle();
+      // Incrementar estoque CPD (tabela estoque_cpd - fonte de verdade para Romaneio)
+      const { data: estoqueAtual } = await supabase
+        .from('estoque_cpd')
+        .select('quantidade')
+        .eq('item_porcionado_id', selectedRegistro.item_id)
+        .maybeSingle();
 
-        const novaQuantidade = (estoqueAtual?.quantidade || 0) + data.unidades_reais;
+      const novaQuantidade = (estoqueAtual?.quantidade || 0) + data.unidades_reais;
 
-        // Upsert no estoque CPD
-        const { error: estoqueError } = await supabase
-          .from('estoque_loja_itens')
-          .upsert({
-            loja_id: cpdLojaId,
-            item_porcionado_id: selectedRegistro.item_id,
-            quantidade: novaQuantidade,
-            data_ultima_movimentacao: new Date().toISOString(),
-            organization_id: organizationId
-          }, { 
-            onConflict: 'loja_id,item_porcionado_id'
-          });
+      const { error: estoqueError } = await supabase
+        .from('estoque_cpd')
+        .upsert({
+          item_porcionado_id: selectedRegistro.item_id,
+          quantidade: novaQuantidade,
+          data_ultima_movimentacao: new Date().toISOString(),
+          organization_id: organizationId
+        }, { 
+          onConflict: 'item_porcionado_id'
+        });
 
-        if (estoqueError) {
-          console.error('Erro ao atualizar estoque CPD:', estoqueError);
-          toast.error('Produção finalizada, mas erro ao atualizar estoque');
-        } else {
-          toast.success('Produção finalizada com sucesso!');
-        }
+      if (estoqueError) {
+        console.error('Erro ao atualizar estoque CPD:', estoqueError);
+        toast.error('Produção finalizada, mas erro ao atualizar estoque');
       } else {
-        console.error('CPD Loja não encontrada');
-        toast.error('Produção finalizada, mas CPD não configurado');
+        toast.success('Produção finalizada com sucesso!');
       }
 
       // Atualização otimista: mover card localmente
