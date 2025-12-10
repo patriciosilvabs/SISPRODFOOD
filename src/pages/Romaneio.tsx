@@ -771,12 +771,11 @@ const Romaneio = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Validar estoque antes de enviar
+      // Validar estoque CPD antes de enviar
       for (const item of itens) {
         const { data: estoque } = await supabase
-          .from('estoque_loja_itens')
+          .from('estoque_cpd')
           .select('quantidade')
-          .eq('loja_id', cpdLojaId)
           .eq('item_porcionado_id', item.item_id)
           .maybeSingle();
         
@@ -822,9 +821,24 @@ const Romaneio = () => {
 
       await supabase.from('romaneio_itens').insert(itensRomaneio);
 
-      // Debitar estoque CPD
+      // Debitar estoque CPD (tabela estoque_cpd)
       for (const item of itens) {
-        await supabase.rpc('decrementar_estoque_cpd', { p_item_id: item.item_id, p_quantidade: item.quantidade });
+        const { data: estoqueAtual } = await supabase
+          .from('estoque_cpd')
+          .select('quantidade')
+          .eq('item_porcionado_id', item.item_id)
+          .maybeSingle();
+        
+        const novaQuantidade = Math.max(0, (estoqueAtual?.quantidade || 0) - item.quantidade);
+        
+        await supabase
+          .from('estoque_cpd')
+          .upsert({
+            item_porcionado_id: item.item_id,
+            quantidade: novaQuantidade,
+            data_ultima_movimentacao: new Date().toISOString(),
+            organization_id: organizationId
+          }, { onConflict: 'item_porcionado_id' });
       }
 
       toast.success(`Romaneio enviado para ${loja?.nome}!`);
