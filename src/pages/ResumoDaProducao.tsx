@@ -1016,34 +1016,37 @@ const ResumoDaProducao = () => {
       ...registrosAuxiliares
     ].filter(r => r.lote_producao_id === registro.lote_producao_id);
 
-    // Montar array de lotes com status
+    // Montar array de lotes com status segundo Regra-Mãe do Preparo por Lotes
+    // Estados: pendente -> timer_rodando -> alarme_tocando -> confirmado -> enviado_porcionamento
     const lotes = Array.from({ length: registro.total_tracos_lote }, (_, index) => {
       const numeroLote = index + 1;
       const registroDoLote = todosRegistrosLote.find(r => r.sequencia_traco === numeroLote);
       
-      let status: 'pendente' | 'em_andamento' | 'concluido' = 'pendente';
+      let status: 'pendente' | 'timer_rodando' | 'alarme_tocando' | 'confirmado' | 'enviado_porcionamento' = 'pendente';
       
       if (registroDoLote) {
-        // CORREÇÃO: Para itens SEM timer, usar status ou data_fim_preparo para determinar conclusão
-        // Para itens COM timer, usar timer_status
         const itemTemTimer = registro.timer_ativo;
         
-        if (itemTemTimer) {
-          // Lógica para itens COM timer
-          if (registroDoLote.timer_status === 'concluido') {
-            status = 'concluido';
+        // Verificar se lote foi enviado para porcionamento
+        if (registroDoLote.status === 'em_porcionamento' || registroDoLote.status === 'finalizado') {
+          status = 'enviado_porcionamento';
+        } else if (itemTemTimer) {
+          // Lógica para itens COM timer segundo Regra-Mãe
+          if (registroDoLote.timer_status === 'confirmado') {
+            status = 'confirmado';
+          } else if (registroDoLote.timer_status === 'concluido' || registroDoLote.timer_status === 'alarme') {
+            status = 'alarme_tocando';
+          } else if (registroDoLote.timer_status === 'em_andamento' && registroDoLote.data_inicio_preparo) {
+            status = 'timer_rodando';
           } else if (registroDoLote.data_inicio_preparo) {
-            status = 'em_andamento';
+            status = 'timer_rodando';
           }
         } else {
-          // Lógica para itens SEM timer: só é concluído se já passou para porcionamento/finalizado
-          if (registroDoLote.status === 'em_porcionamento' || registroDoLote.status === 'finalizado') {
-            status = 'concluido';
-          } else if (registroDoLote.data_fim_preparo) {
-            // Se tem data_fim_preparo, está concluído
-            status = 'concluido';
+          // Lógica para itens SEM timer
+          if (registroDoLote.data_fim_preparo) {
+            status = 'confirmado'; // Pronto para enviar
           } else if (registroDoLote.data_inicio_preparo) {
-            status = 'em_andamento';
+            status = 'timer_rodando'; // Em andamento
           }
         }
       }
@@ -1052,7 +1055,8 @@ const ResumoDaProducao = () => {
         numero: numeroLote,
         unidades: registro.equivalencia_traco || 0,
         status,
-        registroId: registroDoLote?.id
+        registroId: registroDoLote?.id,
+        timerStatus: registroDoLote?.timer_status
       };
     });
 
@@ -1071,11 +1075,11 @@ const ResumoDaProducao = () => {
         return;
       }
 
-      // Verificar se lote anterior está concluído
+      // REGRA-MÃE: Verificar se lote anterior foi ENVIADO para porcionamento
       if (loteNumero > 1) {
         const loteAnterior = lotes?.find(l => l.numero === loteNumero - 1);
-        if (loteAnterior && loteAnterior.status !== 'concluido') {
-          toast.error(`⏳ Aguarde o Lote ${loteNumero - 1} finalizar primeiro`);
+        if (loteAnterior && loteAnterior.status !== 'enviado_porcionamento') {
+          toast.error(`⏳ Aguarde o Lote ${loteNumero - 1} ser enviado para porcionamento primeiro`);
           return;
         }
       }
@@ -1096,6 +1100,78 @@ const ResumoDaProducao = () => {
     } catch (error) {
       console.error('Erro ao iniciar lote:', error);
       toast.error('Erro ao iniciar lote');
+    }
+  };
+
+  // REGRA-MÃE: Handler para confirmar alarme (parar alarme manualmente)
+  const handleConfirmarAlarme = async (registro: ProducaoRegistro, loteNumero: number) => {
+    try {
+      const lotes = getLotesDoItem(registro);
+      const loteInfo = lotes?.find(l => l.numero === loteNumero);
+      
+      if (!loteInfo?.registroId) {
+        toast.error('Registro do lote não encontrado');
+        return;
+      }
+
+      // Parar o alarme
+      stopAlarm();
+      setAlarmPlaying(false);
+
+      // Atualizar timer_status para 'confirmado'
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({ timer_status: 'confirmado' })
+        .eq('id', loteInfo.registroId);
+
+      if (error) throw error;
+
+      toast.success(`🔔 Alarme do Lote ${loteNumero} confirmado!`);
+    } catch (error) {
+      console.error('Erro ao confirmar alarme:', error);
+      toast.error('Erro ao confirmar alarme');
+    }
+  };
+
+  // REGRA-MÃE: Handler para enviar lote individual para porcionamento
+  const handleEnviarLoteParaPorcionamento = async (registro: ProducaoRegistro, loteNumero: number) => {
+    try {
+      const lotes = getLotesDoItem(registro);
+      const loteInfo = lotes?.find(l => l.numero === loteNumero);
+      
+      if (!loteInfo?.registroId) {
+        toast.error('Registro do lote não encontrado');
+        return;
+      }
+
+      // Verificar se alarme foi confirmado
+      if (loteInfo.status !== 'confirmado') {
+        toast.error('⚠️ Confirme o alarme antes de enviar para porcionamento');
+        return;
+      }
+
+      // Atualizar registro para em_porcionamento
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({ 
+          status: 'em_porcionamento',
+          data_fim_preparo: new Date().toISOString(),
+          data_inicio_porcionamento: new Date().toISOString()
+        })
+        .eq('id', loteInfo.registroId);
+
+      if (error) throw error;
+
+      toast.success(`✅ Lote ${loteNumero} enviado para porcionamento!`);
+      
+      // Verificar se é o último lote e notificar
+      const proximoLote = lotes?.find(l => l.numero === loteNumero + 1);
+      if (proximoLote && proximoLote.status === 'pendente') {
+        toast.info(`📦 Lote ${loteNumero + 1} liberado para início!`);
+      }
+    } catch (error) {
+      console.error('Erro ao enviar lote para porcionamento:', error);
+      toast.error('Erro ao enviar lote para porcionamento');
     }
   };
 
@@ -1163,6 +1239,8 @@ const ResumoDaProducao = () => {
                       onRegistrarPerda={() => handleOpenPerdaModal(registro)}
                       lotesDoItem={columnId === 'em_preparo' ? getLotesDoItem(registro) : undefined}
                       onIniciarLote={(loteNumero) => handleIniciarLote(registro, loteNumero)}
+                      onConfirmarAlarme={(loteNumero) => handleConfirmarAlarme(registro, loteNumero)}
+                      onEnviarLoteParaPorcionamento={(loteNumero) => handleEnviarLoteParaPorcionamento(registro, loteNumero)}
                     />
                   ))}
                   
