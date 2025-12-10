@@ -104,6 +104,14 @@ const ItensPorcionados = () => {
   const pesoProntoG = parseFloat(formData.peso_pronto_g) || 0;
   const pesoCruPorPorcaoG = rendimentoCozimento > 0 ? pesoProntoG / (rendimentoCozimento / 100) : 0;
 
+  // Quantidade automática do insumo para lote_com_perda (em kg)
+  const quantidadeInsumoAutomatica = (() => {
+    if (formData.unidade_medida !== 'lote_com_perda') return null;
+    if (pesoProntoG <= 0 || perdaCozimento < 0 || rendimentoCozimento <= 0) return null;
+    const pesoCruKg = pesoCruPorPorcaoG / 1000;
+    return pesoCruKg.toFixed(3);
+  })();
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -351,12 +359,26 @@ const ItensPorcionados = () => {
       return;
     }
 
-    // Usar quantidade inserida manualmente pelo gestor
-    const quantidade = parseFloat(novoInsumo.quantidade) || 0;
-    
-    if (quantidade <= 0) {
-      toast.error('Informe a quantidade do insumo');
-      return;
+    // Para lote_com_perda, usar quantidade calculada automaticamente
+    let quantidade: number;
+    let unidade: UnidadeMedida;
+
+    if (formData.unidade_medida === 'lote_com_perda') {
+      if (!quantidadeInsumoAutomatica) {
+        toast.error('Preencha Peso Pronto e Perda de Cozimento antes de adicionar insumo');
+        return;
+      }
+      quantidade = parseFloat(quantidadeInsumoAutomatica);
+      unidade = 'kg'; // Força kg para cálculo automático
+    } else {
+      // Para outros tipos, usar quantidade manual
+      quantidade = parseFloat(novoInsumo.quantidade) || 0;
+      unidade = novoInsumo.unidade;
+      
+      if (quantidade <= 0) {
+        toast.error('Informe a quantidade do insumo');
+        return;
+      }
     }
 
     if (!organizationId) {
@@ -371,7 +393,7 @@ const ItensPorcionados = () => {
       insumo_id: novoInsumo.insumo_id,
       nome: insumoSelecionado.nome,
       quantidade: quantidade,
-      unidade: novoInsumo.unidade,
+      unidade: unidade,
     };
 
     // Se estamos editando, salvar no banco
@@ -384,7 +406,7 @@ const ItensPorcionados = () => {
             insumo_id: novoInsumo.insumo_id,
             nome: insumoSelecionado.nome,
             quantidade: quantidade,
-            unidade: novoInsumo.unidade as any,
+            unidade: unidade as any,
             is_principal: false,
             consumo_por_traco_g: null as number | null,
             organization_id: organizationId,
@@ -763,6 +785,11 @@ const ItensPorcionados = () => {
                               <p className="font-medium text-sm">{insumo.nome}</p>
                               <p className="text-xs text-muted-foreground">
                                 {insumo.quantidade} {insumo.unidade} por lote
+                                {formData.unidade_medida === 'lote_com_perda' && (
+                                  <span className="ml-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded text-[10px] font-medium">
+                                    🔒 Automático
+                                  </span>
+                                )}
                               </p>
                             </div>
                             <Button
@@ -803,39 +830,56 @@ const ItensPorcionados = () => {
 
                       <div className="col-span-3 space-y-2">
                         <Label>Quantidade</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={novoInsumo.quantidade}
-                          onChange={(e) => 
-                            setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
-                          }
-                          placeholder="Ex: 6"
-                        />
+                        {formData.unidade_medida === 'lote_com_perda' ? (
+                          // Campo READ-ONLY para Lote com Perda
+                          <Input
+                            type="text"
+                            value={quantidadeInsumoAutomatica ? `${quantidadeInsumoAutomatica} kg` : 'Preencha peso/perda acima'}
+                            disabled
+                            className="bg-muted cursor-not-allowed"
+                          />
+                        ) : (
+                          // Campo editável para outros tipos
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={novoInsumo.quantidade}
+                            onChange={(e) => 
+                              setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
+                            }
+                            placeholder="Ex: 6"
+                          />
+                        )}
                       </div>
 
                       <div className="col-span-2 space-y-2">
                         <Label>Unidade</Label>
-                        <Select
-                          value={novoInsumo.unidade}
-                          onValueChange={(value: UnidadeMedida) => 
-                            setNovoInsumo({ ...novoInsumo, unidade: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="kg">kg</SelectItem>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="l">litro</SelectItem>
-                            <SelectItem value="ml">ml</SelectItem>
-                            <SelectItem value="unidade">unidade</SelectItem>
-                            <SelectItem value="saco">saco</SelectItem>
-                            <SelectItem value="caixa">caixa</SelectItem>
-                            <SelectItem value="fardo">fardo</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {formData.unidade_medida === 'lote_com_perda' ? (
+                          // Unidade fixa kg para Lote com Perda
+                          <Input value="kg" disabled className="bg-muted cursor-not-allowed" />
+                        ) : (
+                          // Dropdown normal para outros tipos
+                          <Select
+                            value={novoInsumo.unidade}
+                            onValueChange={(value: UnidadeMedida) => 
+                              setNovoInsumo({ ...novoInsumo, unidade: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="kg">kg</SelectItem>
+                              <SelectItem value="g">g</SelectItem>
+                              <SelectItem value="l">litro</SelectItem>
+                              <SelectItem value="ml">ml</SelectItem>
+                              <SelectItem value="unidade">unidade</SelectItem>
+                              <SelectItem value="saco">saco</SelectItem>
+                              <SelectItem value="caixa">caixa</SelectItem>
+                              <SelectItem value="fardo">fardo</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
 
                       <div className="col-span-2">
@@ -845,7 +889,12 @@ const ItensPorcionados = () => {
                           size="sm"
                           onClick={adicionarInsumoVinculado}
                           className="w-full"
-                          disabled={!novoInsumo.insumo_id || !novoInsumo.quantidade || parseFloat(novoInsumo.quantidade) <= 0}
+                          disabled={
+                            !novoInsumo.insumo_id || 
+                            (formData.unidade_medida === 'lote_com_perda' 
+                              ? !quantidadeInsumoAutomatica 
+                              : !novoInsumo.quantidade || parseFloat(novoInsumo.quantidade) <= 0)
+                          }
                         >
                           + Adicionar
                         </Button>
