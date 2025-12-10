@@ -119,17 +119,32 @@ const ErrosDevolucoes = () => {
 
   const abrirCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment', // Câmera traseira no mobile
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
-      });
+      let stream: MediaStream;
+      
+      try {
+        // Tenta câmera traseira primeiro (ideal para mobile)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        });
+      } catch {
+        // Se falhar, tenta câmera frontal/padrão (desktop)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'user',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        });
+      }
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+        await videoRef.current.play();
       }
       
       setCameraAtiva(true);
@@ -356,6 +371,7 @@ const ErrosDevolucoes = () => {
                           ref={videoRef}
                           autoPlay
                           playsInline
+                          muted
                           className="w-full h-full object-cover"
                         />
                       </div>
