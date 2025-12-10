@@ -356,6 +356,125 @@ const ReposicaoLoja = () => {
     setQuantidadesEnvio(prev => ({ ...prev, [key]: quantidade }));
   };
 
+  // Enviar item individual
+  const handleEnviarItem = async (item: DemandaLoja, quantidade: number) => {
+    if (!user || !organizationId || !cpdLojaId) return;
+    
+    if (quantidade <= 0) {
+      toast.error('Quantidade deve ser maior que zero');
+      return;
+    }
+    
+    if (quantidade > item.estoque_cpd) {
+      toast.error(`Estoque CPD insuficiente: disponível ${item.estoque_cpd}, solicitado ${quantidade}`);
+      return;
+    }
+
+    // Validar duplicidade
+    const key = `${item.loja.id}_${item.produto.id}`;
+    const jaEnviado = quantidadesJaEnviadas.get(key) || 0;
+    if (jaEnviado > 0) {
+      toast.error(`${item.produto.nome} já foi enviado para ${item.loja.nome} e aguarda confirmação (${jaEnviado} un)`);
+      return;
+    }
+
+    try {
+      setSending(true);
+
+      // Buscar nome do usuário
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user.id)
+        .single();
+
+      const usuarioNome = profile?.nome || user.email || 'Usuário';
+
+      // Criar romaneio individual
+      const { data: romaneio, error: romaneioError } = await supabase
+        .from('romaneios_produtos')
+        .insert({
+          loja_id: item.loja.id,
+          loja_nome: item.loja.nome,
+          usuario_id: user.id,
+          usuario_nome: usuarioNome,
+          status: 'enviado',
+          data_criacao: new Date().toISOString(),
+          data_envio: new Date().toISOString(),
+          observacao: null,
+          organization_id: organizationId
+        })
+        .select()
+        .single();
+
+      if (romaneioError) throw romaneioError;
+
+      // Inserir item no romaneio
+      await supabase
+        .from('romaneios_produtos_itens')
+        .insert({
+          romaneio_id: romaneio.id,
+          produto_id: item.produto.id,
+          produto_nome: item.produto.nome,
+          quantidade: quantidade,
+          unidade: item.produto.unidade_consumo || 'un',
+          organization_id: organizationId
+        });
+
+      // Debitar estoque CPD
+      const novoEstoqueCPD = item.estoque_cpd - quantidade;
+      await supabase
+        .from('estoque_loja_produtos')
+        .update({ 
+          quantidade: novoEstoqueCPD,
+          data_ultima_atualizacao: new Date().toISOString()
+        })
+        .eq('loja_id', cpdLojaId)
+        .eq('produto_id', item.produto.id);
+
+      // Registrar movimentação CPD
+      await supabase
+        .from('movimentacoes_cpd_produtos')
+        .insert({
+          produto_id: item.produto.id,
+          produto_nome: item.produto.nome,
+          quantidade: quantidade,
+          quantidade_anterior: item.estoque_cpd,
+          quantidade_posterior: novoEstoqueCPD,
+          tipo: 'saida_romaneio',
+          observacao: `Reposição para ${item.loja.nome}`,
+          usuario_id: user.id,
+          usuario_nome: usuarioNome,
+          organization_id: organizationId
+        });
+
+      // Atualizar estoque loja
+      await supabase
+        .from('estoque_loja_produtos')
+        .upsert({
+          loja_id: item.loja.id,
+          produto_id: item.produto.id,
+          quantidade: item.estoque_atual_loja + quantidade,
+          quantidade_ultimo_envio: quantidade,
+          data_ultimo_envio: new Date().toISOString(),
+          organization_id: organizationId
+        }, { onConflict: 'loja_id,produto_id' });
+
+      toast.success(`${item.produto.nome} enviado para ${item.loja.nome}`);
+      
+      // Limpar quantidade do item enviado
+      setQuantidadesEnvio(prev => ({ ...prev, [key]: 0 }));
+      
+      // Recarregar dados
+      fetchDados();
+    } catch (error) {
+      console.error('Erro ao enviar item:', error);
+      toast.error('Erro ao enviar item');
+    } finally {
+      setSending(false);
+    }
+  };
+
   // Confirmar envio de reposição
   const handleConfirmarEnvio = async () => {
     if (!user || !organizationId) return;
@@ -666,6 +785,7 @@ const ReposicaoLoja = () => {
                                     <th className="text-center p-2 font-medium">A Repor</th>
                                     <th className="text-center p-2 font-medium">Qtd Envio</th>
                                     <th className="text-center p-2 font-medium">Status</th>
+                                    <th className="text-center p-2 font-medium">Ação</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -735,6 +855,22 @@ const ReposicaoLoja = () => {
                                           ) : (
                                             <span className="text-xs text-muted-foreground">-</span>
                                           )}
+                                        </td>
+                                        <td className="p-2 text-center">
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            disabled={sending || qtdEnvio === 0 || semEstoque}
+                                            onClick={() => handleEnviarItem(item, qtdEnvio)}
+                                            className="gap-1"
+                                          >
+                                            {sending ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <Truck className="h-3 w-3" />
+                                            )}
+                                            Enviar
+                                          </Button>
                                         </td>
                                       </tr>
                                     );
