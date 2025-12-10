@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -86,13 +85,12 @@ interface InsumoVinculado {
 
 const ItensPorcionados = () => {
   const { organizationId } = useOrganization();
-  const [itens, setItens] = useState<(ItemPorcionado & { ativo?: boolean })[]>([]);
+  const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [insumosVinculados, setInsumosVinculados] = useState<InsumoVinculado[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
-  const [mostrarInativos, setMostrarInativos] = useState(false);
   
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
@@ -148,21 +146,15 @@ const ItensPorcionados = () => {
 
   useEffect(() => {
     fetchData();
-  }, [mostrarInativos]);
+  }, []);
 
   const fetchData = async () => {
     try {
-      let query = supabase
+      const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
         .select('*')
+        .eq('ativo', true)
         .order('nome');
-      
-      // Se não mostrar inativos, filtra apenas ativos
-      if (!mostrarInativos) {
-        query = query.eq('ativo', true);
-      }
-
-      const { data: itensData, error: itensError } = await query;
       if (itensError) throw itensError;
 
       const { data: insumosData, error: insumosError } = await supabase
@@ -403,67 +395,59 @@ const ItensPorcionados = () => {
     }
   };
 
-  const verificarRegistrosRelacionados = async (itemId: string) => {
-    const counts = { producao: 0, romaneios: 0, contagens: 0 };
-    
-    try {
-      const { count: producaoCount } = await supabase
-        .from('producao_registros')
-        .select('*', { count: 'exact', head: true })
-        .eq('item_id', itemId);
-      
-      const { count: romaneiosCount } = await supabase
-        .from('romaneio_itens')
-        .select('*', { count: 'exact', head: true })
-        .eq('item_porcionado_id', itemId);
-      
-      const { count: contagensCount } = await supabase
-        .from('contagem_porcionados')
-        .select('*', { count: 'exact', head: true })
-        .eq('item_porcionado_id', itemId);
-      
-      counts.producao = producaoCount || 0;
-      counts.romaneios = romaneiosCount || 0;
-      counts.contagens = contagensCount || 0;
-    } catch (error) {
-      console.error('Erro ao verificar registros relacionados:', error);
-    }
-    
-    return counts;
-  };
-
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja desativar este item?')) return;
+    if (!confirm('⚠️ ATENÇÃO: Tem certeza que deseja EXCLUIR PERMANENTEMENTE este item?\n\nEsta ação é IRREVERSÍVEL e todos os dados relacionados serão perdidos.')) return;
 
     try {
-      // Verificar se há registros relacionados
-      const counts = await verificarRegistrosRelacionados(id);
-      const totalRegistros = counts.producao + counts.romaneios + counts.contagens;
-      
-      if (totalRegistros > 0) {
-        toast.error(
-          `Este item possui registros relacionados e será desativado (não excluído):\n\n` +
-          `• ${counts.producao} registro(s) de produção\n` +
-          `• ${counts.romaneios} item(ns) em romaneios\n` +
-          `• ${counts.contagens} contagem(ns)\n\n` +
-          `O item não aparecerá mais nas operações diárias.`,
-          { duration: 8000 }
-        );
-      }
+      // 1. Deletar insumos_extras vinculados
+      await supabase
+        .from('insumos_extras')
+        .delete()
+        .eq('item_porcionado_id', id);
 
-      // Soft delete: marcar como inativo
+      // 2. Deletar estoque_cpd
+      await supabase
+        .from('estoque_cpd')
+        .delete()
+        .eq('item_porcionado_id', id);
+
+      // 3. Deletar itens_reserva_diaria
+      await supabase
+        .from('itens_reserva_diaria')
+        .delete()
+        .eq('item_porcionado_id', id);
+
+      // 4. Deletar estoques_ideais_semanais
+      await supabase
+        .from('estoques_ideais_semanais')
+        .delete()
+        .eq('item_porcionado_id', id);
+
+      // 5. Deletar estoque_loja_itens
+      await supabase
+        .from('estoque_loja_itens')
+        .delete()
+        .eq('item_porcionado_id', id);
+
+      // 6. Deletar contagem_porcionados
+      await supabase
+        .from('contagem_porcionados')
+        .delete()
+        .eq('item_porcionado_id', id);
+
+      // 7. Finalmente deletar o item porcionado
       const { error } = await supabase
         .from('itens_porcionados')
-        .update({ ativo: false })
+        .delete()
         .eq('id', id);
 
       if (error) throw error;
       
-      toast.success('Item desativado com sucesso!');
+      toast.success('Item excluído permanentemente!');
       fetchData();
     } catch (error: any) {
-      console.error('Erro ao desativar item:', error);
-      toast.error('Erro ao desativar item: ' + error.message);
+      console.error('Erro ao excluir item:', error);
+      toast.error('Erro ao excluir item: ' + error.message);
     }
   };
 
@@ -614,23 +598,6 @@ const ItensPorcionados = () => {
 
     const novosInsumos = insumosVinculados.filter((_, i) => i !== index);
     setInsumosVinculados(novosInsumos);
-  };
-
-  const handleReativar = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('itens_porcionados')
-        .update({ ativo: true })
-        .eq('id', id);
-
-      if (error) throw error;
-      
-      toast.success('Item reativado com sucesso!');
-      fetchData();
-    } catch (error) {
-      console.error('Erro ao reativar item:', error);
-      toast.error('Erro ao reativar item');
-    }
   };
 
   const openEditDialog = async (item: ItemPorcionado) => {
@@ -1415,27 +1382,10 @@ const ItensPorcionados = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingBag className="h-5 w-5" />
-                Lista de Itens Porcionados
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                {mostrarInativos ? (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                )}
-                <Label htmlFor="toggle-inativos" className="text-sm cursor-pointer">
-                  Mostrar desativados
-                </Label>
-                <Switch
-                  id="toggle-inativos"
-                  checked={mostrarInativos}
-                  onCheckedChange={setMostrarInativos}
-                />
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5" />
+              Lista de Itens Porcionados
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -1456,14 +1406,9 @@ const ItensPorcionados = () => {
                   </TableRow>
                 ) : (
                   itens.map((item) => (
-                    <TableRow key={item.id} className={item.ativo === false ? 'opacity-60 bg-muted/30' : ''}>
+                    <TableRow key={item.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          {item.ativo === false && (
-                            <Badge variant="destructive" className="text-xs">
-                              DESATIVADO
-                            </Badge>
-                          )}
                           {item.nome}
                           {item.timer_ativo && (
                             <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded">
@@ -1503,34 +1448,20 @@ const ItensPorcionados = () => {
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        {item.ativo === false ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleReativar(item.id)}
-                            className="text-green-600 border-green-300 hover:bg-green-50 dark:hover:bg-green-950/30"
-                          >
-                            <RefreshCw className="h-4 w-4 mr-1" />
-                            Reativar
-                          </Button>
-                        ) : (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditDialog(item)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(item)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(item.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
