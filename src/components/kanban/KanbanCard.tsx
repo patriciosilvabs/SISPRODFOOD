@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2 } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2, Play } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
@@ -60,6 +60,13 @@ interface ProducaoRegistro {
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
+interface LoteInfo {
+  numero: number;
+  unidades: number;
+  status: 'pendente' | 'em_andamento' | 'concluido';
+  registroId?: string;
+}
+
 interface KanbanCardProps {
   registro: ProducaoRegistro;
   columnId: StatusColumn;
@@ -67,9 +74,11 @@ interface KanbanCardProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: () => void;
   onRegistrarPerda?: () => void;
+  lotesDoItem?: LoteInfo[];
+  onIniciarLote?: (loteNumero: number) => void;
 }
 
-export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda }: KanbanCardProps) {
+export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda, lotesDoItem, onIniciarLote }: KanbanCardProps) {
   // Hook para gerenciar timer (apenas para EM PREPARO)
   const timerState = useProductionTimer(
     registro.id,
@@ -279,7 +288,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             {/* EM PREPARO */}
             {columnId === 'em_preparo' && (
               <>
-                {/* Timer Display */}
+                {/* Timer Display - só mostra se este lote específico está ativo */}
                 {registro.timer_ativo && registro.tempo_timer_minutos && timerState.isActive && (
                   <div className="mb-3">
                     <TimerDisplay
@@ -300,6 +309,69 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     <span className="font-medium">
                       Em preparo desde {format(new Date(registro.data_inicio_preparo), 'HH:mm', { locale: ptBR })}
                     </span>
+                  </div>
+                )}
+
+                {/* Interface de Múltiplos Lotes */}
+                {lotesDoItem && lotesDoItem.length > 1 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">📦 Lotes do item:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {lotesDoItem.map((lote) => {
+                        const isLoteAtual = registro.sequencia_traco === lote.numero;
+                        const loteAnterior = lotesDoItem.find(l => l.numero === lote.numero - 1);
+                        const loteAnteriorNaoConcluido = loteAnterior && loteAnterior.status !== 'concluido';
+                        const podeIniciar = lote.status === 'pendente' && !loteAnteriorNaoConcluido;
+                        const estaEmAndamento = lote.status === 'em_andamento';
+                        const estaConcluido = lote.status === 'concluido';
+                        
+                        return (
+                          <div 
+                            key={lote.numero} 
+                            className={`rounded-lg p-2 border shadow-sm ${
+                              estaConcluido 
+                                ? 'bg-green-50 dark:bg-green-950 border-green-200' 
+                                : estaEmAndamento 
+                                  ? 'bg-blue-50 dark:bg-blue-950 border-blue-200'
+                                  : 'bg-white dark:bg-slate-800 border-slate-200'
+                            }`}
+                          >
+                            <p className="text-xs font-semibold text-center mb-1">
+                              LOTE {lote.numero}: {lote.unidades}UN
+                            </p>
+                            {estaConcluido ? (
+                              <div className="flex items-center justify-center gap-1 text-xs text-green-600">
+                                <CheckCircle2 className="h-3 w-3" />
+                                <span>CONCLUÍDO</span>
+                              </div>
+                            ) : estaEmAndamento ? (
+                              <div className="flex items-center justify-center gap-1 text-xs text-blue-600">
+                                <Clock className="h-3 w-3 animate-spin" />
+                                <span>EM PREPARO</span>
+                              </div>
+                            ) : podeIniciar ? (
+                              <Button
+                                size="sm"
+                                className="w-full h-7 text-xs bg-green-500 hover:bg-green-600"
+                                onClick={() => onIniciarLote?.(lote.numero)}
+                              >
+                                INICIAR <Play className="h-3 w-3 ml-1" />
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="w-full h-7 text-xs cursor-not-allowed"
+                                disabled
+                              >
+                                <Lock className="h-3 w-3 mr-1" />
+                                BLOQUEADO
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </>

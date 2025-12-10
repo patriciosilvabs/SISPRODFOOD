@@ -986,6 +986,83 @@ const ResumoDaProducao = () => {
     setModalPerda(true);
   };
 
+  // Função para obter lotes de um item na coluna em_preparo
+  const getLotesDoItem = (registro: ProducaoRegistro) => {
+    if (!registro.lote_producao_id || !registro.total_tracos_lote || registro.total_tracos_lote <= 1) {
+      return undefined;
+    }
+
+    // Buscar todos os registros do mesmo lote_producao_id
+    const todosRegistrosLote = columns.em_preparo.filter(
+      r => r.lote_producao_id === registro.lote_producao_id
+    );
+
+    // Montar array de lotes com status
+    const lotes = Array.from({ length: registro.total_tracos_lote }, (_, index) => {
+      const numeroLote = index + 1;
+      const registroDoLote = todosRegistrosLote.find(r => r.sequencia_traco === numeroLote);
+      
+      let status: 'pendente' | 'em_andamento' | 'concluido' = 'pendente';
+      
+      if (registroDoLote) {
+        if (registroDoLote.timer_status === 'concluido') {
+          status = 'concluido';
+        } else if (registroDoLote.data_inicio_preparo) {
+          status = 'em_andamento';
+        }
+      }
+
+      return {
+        numero: numeroLote,
+        unidades: registro.equivalencia_traco || 0,
+        status,
+        registroId: registroDoLote?.id
+      };
+    });
+
+    return lotes;
+  };
+
+  // Handler para iniciar lote específico
+  const handleIniciarLote = async (registro: ProducaoRegistro, loteNumero: number) => {
+    try {
+      // Buscar o registro do lote específico
+      const lotes = getLotesDoItem(registro);
+      const loteInfo = lotes?.find(l => l.numero === loteNumero);
+      
+      if (!loteInfo?.registroId) {
+        toast.error('Registro do lote não encontrado');
+        return;
+      }
+
+      // Verificar se lote anterior está concluído
+      if (loteNumero > 1) {
+        const loteAnterior = lotes?.find(l => l.numero === loteNumero - 1);
+        if (loteAnterior && loteAnterior.status !== 'concluido') {
+          toast.error(`⏳ Aguarde o Lote ${loteNumero - 1} finalizar primeiro`);
+          return;
+        }
+      }
+
+      // Iniciar o timer do lote (atualizar data_inicio_preparo)
+      const { error } = await supabase
+        .from('producao_registros')
+        .update({ 
+          data_inicio_preparo: new Date().toISOString(),
+          timer_status: 'em_andamento'
+        })
+        .eq('id', loteInfo.registroId);
+
+      if (error) throw error;
+
+      toast.success(`✅ Lote ${loteNumero} iniciado!`);
+      // Realtime listener vai atualizar automaticamente
+    } catch (error) {
+      console.error('Erro ao iniciar lote:', error);
+      toast.error('Erro ao iniciar lote');
+    }
+  };
+
   // Mostrar loading apenas no carregamento inicial E quando não há dados
   const totalCards = columns.a_produzir.length + columns.em_preparo.length + columns.em_porcionamento.length + columns.finalizado.length;
   
@@ -1048,6 +1125,8 @@ const ResumoDaProducao = () => {
                       onTimerFinished={handleTimerFinished}
                       onCancelarPreparo={() => handleOpenCancelarModal(registro)}
                       onRegistrarPerda={() => handleOpenPerdaModal(registro)}
+                      lotesDoItem={columnId === 'em_preparo' ? getLotesDoItem(registro) : undefined}
+                      onIniciarLote={(loteNumero) => handleIniciarLote(registro, loteNumero)}
                     />
                   ))}
                   
