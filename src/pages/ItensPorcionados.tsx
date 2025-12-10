@@ -333,6 +333,9 @@ const ItensPorcionados = () => {
         
         // Se é um novo item e há insumos vinculados, salvar os insumos
         if (newItem && insumosVinculados.length > 0) {
+          // Para LOTE_MASSEIRA, todos os insumos são 'por_lote'
+          const escalaConfig = formData.unidade_medida === 'lote_masseira' ? 'por_lote' : 'por_unidade';
+          
           const insumosToInsert = insumosVinculados.map(insumo => ({
             item_porcionado_id: newItem.id,
             insumo_id: insumo.insumo_id,
@@ -341,6 +344,7 @@ const ItensPorcionados = () => {
             unidade: insumo.unidade as any,
             is_principal: false,
             consumo_por_traco_g: null as number | null,
+            escala_configuracao: escalaConfig,
             organization_id: organizationId,
           }));
           
