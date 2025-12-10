@@ -110,8 +110,6 @@ const ResumoDaProducao = () => {
   const [modalPerda, setModalPerda] = useState(false);
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
-  // Registros auxiliares: lotes secundários em a_produzir (não exibidos como cards, mas disponíveis para lookup)
-  const [registrosAuxiliares, setRegistrosAuxiliares] = useState<ProducaoRegistro[]>([]);
 
   const handleStopAlarm = () => {
     stopAlarm();
@@ -354,9 +352,6 @@ const ResumoDaProducao = () => {
         em_porcionamento: [],
         finalizado: [],
       };
-      
-      // Array para guardar lotes secundários em a_produzir (para lookup, não para exibição)
-      const auxiliares: ProducaoRegistro[] = [];
 
       data?.forEach((registro) => {
         const itemInfo = itensMap.get(registro.item_id);
@@ -446,18 +441,10 @@ const ResumoDaProducao = () => {
           total_tracos_lote: totalTracosLote,
         };
         
-        // CORREÇÃO: Lotes secundários (sequencia > 1) em "a_produzir" não aparecem como cards
-        // mas são mantidos em auxiliares para lookup em getLotesDoItem
-        if (targetColumn === 'a_produzir' && registro.sequencia_traco && registro.sequencia_traco > 1) {
-          auxiliares.push(registroTyped);
-          return;
-        }
-        
         organizedColumns[targetColumn].push(registroTyped);
       });
 
       setColumns(organizedColumns);
-      setRegistrosAuxiliares(auxiliares);
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
@@ -531,8 +518,7 @@ const ResumoDaProducao = () => {
       }
 
       // Determinar timer_status baseado se o item tem timer ativo
-      // Para itens SEM timer, usar 'aguardando' (não 'concluido') para que usuário precise clicar em Concluir
-      const timerStatus = registro.timer_ativo ? 'rodando' : 'aguardando';
+      const timerStatus = registro.timer_ativo ? 'rodando' : 'concluido';
 
       const { error } = await supabase
         .from('producao_registros')
@@ -1000,181 +986,6 @@ const ResumoDaProducao = () => {
     setModalPerda(true);
   };
 
-  // Função para obter lotes de um item na coluna em_preparo
-  const getLotesDoItem = (registro: ProducaoRegistro) => {
-    if (!registro.lote_producao_id || !registro.total_tracos_lote || registro.total_tracos_lote <= 1) {
-      return undefined;
-    }
-
-    // Buscar todos os registros do mesmo lote_producao_id em TODAS as colunas relevantes
-    // INCLUI registrosAuxiliares para encontrar lotes secundários que estão em a_produzir mas não exibidos
-    const todosRegistrosLote = [
-      ...columns.a_produzir,
-      ...columns.em_preparo,
-      ...columns.em_porcionamento,
-      ...columns.finalizado,
-      ...registrosAuxiliares
-    ].filter(r => r.lote_producao_id === registro.lote_producao_id);
-
-    // Montar array de lotes com status segundo Regra-Mãe do Preparo por Lotes
-    // Estados: pendente -> timer_rodando -> alarme_tocando -> confirmado -> enviado_porcionamento
-    const lotes = Array.from({ length: registro.total_tracos_lote }, (_, index) => {
-      const numeroLote = index + 1;
-      const registroDoLote = todosRegistrosLote.find(r => r.sequencia_traco === numeroLote);
-      
-      let status: 'pendente' | 'timer_rodando' | 'alarme_tocando' | 'confirmado' | 'enviado_porcionamento' = 'pendente';
-      
-      if (registroDoLote) {
-        const itemTemTimer = registro.timer_ativo;
-        
-        // Verificar se lote foi enviado para porcionamento
-        if (registroDoLote.status === 'em_porcionamento' || registroDoLote.status === 'finalizado') {
-          status = 'enviado_porcionamento';
-        } else if (itemTemTimer) {
-          // Lógica para itens COM timer segundo Regra-Mãe
-          if (registroDoLote.timer_status === 'confirmado') {
-            status = 'confirmado';
-          } else if (registroDoLote.timer_status === 'concluido' || registroDoLote.timer_status === 'alarme') {
-            status = 'alarme_tocando';
-          } else if (registroDoLote.timer_status === 'em_andamento' && registroDoLote.data_inicio_preparo) {
-            status = 'timer_rodando';
-          } else if (registroDoLote.data_inicio_preparo) {
-            status = 'timer_rodando';
-          }
-        } else {
-          // Lógica para itens SEM timer
-          if (registroDoLote.data_fim_preparo) {
-            status = 'confirmado'; // Pronto para enviar
-          } else if (registroDoLote.data_inicio_preparo) {
-            status = 'timer_rodando'; // Em andamento
-          }
-        }
-      }
-
-      return {
-        numero: numeroLote,
-        unidades: registro.equivalencia_traco || 0,
-        status,
-        registroId: registroDoLote?.id,
-        timerStatus: registroDoLote?.timer_status
-      };
-    });
-
-    return lotes;
-  };
-
-  // Handler para iniciar lote específico
-  const handleIniciarLote = async (registro: ProducaoRegistro, loteNumero: number) => {
-    try {
-      // Buscar o registro do lote específico
-      const lotes = getLotesDoItem(registro);
-      const loteInfo = lotes?.find(l => l.numero === loteNumero);
-      
-      if (!loteInfo?.registroId) {
-        toast.error('Registro do lote não encontrado');
-        return;
-      }
-
-      // REGRA-MÃE: Verificar se lote anterior foi ENVIADO para porcionamento
-      if (loteNumero > 1) {
-        const loteAnterior = lotes?.find(l => l.numero === loteNumero - 1);
-        if (loteAnterior && loteAnterior.status !== 'enviado_porcionamento') {
-          toast.error(`⏳ Aguarde o Lote ${loteNumero - 1} ser enviado para porcionamento primeiro`);
-          return;
-        }
-      }
-
-      // Iniciar o timer do lote (atualizar data_inicio_preparo)
-      const { error } = await supabase
-        .from('producao_registros')
-        .update({ 
-          data_inicio_preparo: new Date().toISOString(),
-          timer_status: 'em_andamento'
-        })
-        .eq('id', loteInfo.registroId);
-
-      if (error) throw error;
-
-      toast.success(`✅ Lote ${loteNumero} iniciado!`);
-      // Realtime listener vai atualizar automaticamente
-    } catch (error) {
-      console.error('Erro ao iniciar lote:', error);
-      toast.error('Erro ao iniciar lote');
-    }
-  };
-
-  // REGRA-MÃE: Handler para confirmar alarme (parar alarme manualmente)
-  const handleConfirmarAlarme = async (registro: ProducaoRegistro, loteNumero: number) => {
-    try {
-      const lotes = getLotesDoItem(registro);
-      const loteInfo = lotes?.find(l => l.numero === loteNumero);
-      
-      if (!loteInfo?.registroId) {
-        toast.error('Registro do lote não encontrado');
-        return;
-      }
-
-      // Parar o alarme
-      stopAlarm();
-      setAlarmPlaying(false);
-
-      // Atualizar timer_status para 'confirmado'
-      const { error } = await supabase
-        .from('producao_registros')
-        .update({ timer_status: 'confirmado' })
-        .eq('id', loteInfo.registroId);
-
-      if (error) throw error;
-
-      toast.success(`🔔 Alarme do Lote ${loteNumero} confirmado!`);
-    } catch (error) {
-      console.error('Erro ao confirmar alarme:', error);
-      toast.error('Erro ao confirmar alarme');
-    }
-  };
-
-  // REGRA-MÃE: Handler para enviar lote individual para porcionamento
-  const handleEnviarLoteParaPorcionamento = async (registro: ProducaoRegistro, loteNumero: number) => {
-    try {
-      const lotes = getLotesDoItem(registro);
-      const loteInfo = lotes?.find(l => l.numero === loteNumero);
-      
-      if (!loteInfo?.registroId) {
-        toast.error('Registro do lote não encontrado');
-        return;
-      }
-
-      // Verificar se alarme foi confirmado
-      if (loteInfo.status !== 'confirmado') {
-        toast.error('⚠️ Confirme o alarme antes de enviar para porcionamento');
-        return;
-      }
-
-      // Atualizar registro para em_porcionamento
-      const { error } = await supabase
-        .from('producao_registros')
-        .update({ 
-          status: 'em_porcionamento',
-          data_fim_preparo: new Date().toISOString(),
-          data_inicio_porcionamento: new Date().toISOString()
-        })
-        .eq('id', loteInfo.registroId);
-
-      if (error) throw error;
-
-      toast.success(`✅ Lote ${loteNumero} enviado para porcionamento!`);
-      
-      // Verificar se é o último lote e notificar
-      const proximoLote = lotes?.find(l => l.numero === loteNumero + 1);
-      if (proximoLote && proximoLote.status === 'pendente') {
-        toast.info(`📦 Lote ${loteNumero + 1} liberado para início!`);
-      }
-    } catch (error) {
-      console.error('Erro ao enviar lote para porcionamento:', error);
-      toast.error('Erro ao enviar lote para porcionamento');
-    }
-  };
-
   // Mostrar loading apenas no carregamento inicial E quando não há dados
   const totalCards = columns.a_produzir.length + columns.em_preparo.length + columns.em_porcionamento.length + columns.finalizado.length;
   
@@ -1237,10 +1048,6 @@ const ResumoDaProducao = () => {
                       onTimerFinished={handleTimerFinished}
                       onCancelarPreparo={() => handleOpenCancelarModal(registro)}
                       onRegistrarPerda={() => handleOpenPerdaModal(registro)}
-                      lotesDoItem={columnId === 'em_preparo' ? getLotesDoItem(registro) : undefined}
-                      onIniciarLote={(loteNumero) => handleIniciarLote(registro, loteNumero)}
-                      onConfirmarAlarme={(loteNumero) => handleConfirmarAlarme(registro, loteNumero)}
-                      onEnviarLoteParaPorcionamento={(loteNumero) => handleEnviarLoteParaPorcionamento(registro, loteNumero)}
                     />
                   ))}
                   
