@@ -61,6 +61,17 @@ interface ProducaoRegistro {
   insumo_embalagem_nome?: string;
   quantidade_embalagem?: number;
   unidade_embalagem?: string;
+  // Campos LOTE_MASSEIRA
+  lotes_masseira?: number;
+  farinha_consumida_kg?: number;
+  massa_total_gerada_kg?: number;
+  peso_medio_operacional_bolinha_g?: number;
+  peso_minimo_bolinha_g?: number;
+  peso_maximo_bolinha_g?: number;
+  peso_alvo_bolinha_g?: number;
+  unidades_estimadas_masseira?: number;
+  peso_medio_real_bolinha_g?: number;
+  status_calibracao?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -188,7 +199,38 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             {/* A PRODUZIR */}
             {columnId === 'a_produzir' && (
               <>
-                {registro.unidades_programadas && (
+                {/* Seção especial LOTE_MASSEIRA */}
+                {registro.unidade_medida === 'lote_masseira' && registro.lotes_masseira ? (
+                  <div className="space-y-2 bg-purple-50 dark:bg-purple-950 rounded-lg p-2 border border-purple-200 dark:border-purple-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-purple-600 dark:text-purple-400">🏭 Produção Industrial:</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">Lotes:</span>
+                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.lotes_masseira}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Massa Estimada:</span>
+                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.massa_total_gerada_kg?.toFixed(1)} kg</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Unid. Estimadas:</span>
+                        <p className="font-bold text-purple-700 dark:text-purple-300">~{registro.unidades_estimadas_masseira || registro.unidades_programadas} un</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Farinha:</span>
+                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.farinha_consumida_kg?.toFixed(1)} kg</p>
+                      </div>
+                    </div>
+                    {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
+                      <div className="text-xs text-purple-600 dark:text-purple-400 border-t border-purple-200 dark:border-purple-700 pt-1 mt-1">
+                        ⚖️ Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
+                        {registro.peso_alvo_bolinha_g && ` (Alvo: ${registro.peso_alvo_bolinha_g}g)`}
+                      </div>
+                    )}
+                  </div>
+                ) : registro.unidades_programadas && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">📦 Total:</span>
                     <Badge variant="secondary" className="font-semibold">
@@ -369,7 +411,28 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   ⚖️ Peso final: <span className="font-medium text-foreground">{registro.peso_final_kg} kg</span>
                 </p>
               )}
-              
+
+              {/* Resultado de Calibragem LOTE_MASSEIRA */}
+              {registro.unidade_medida === 'lote_masseira' && registro.peso_medio_real_bolinha_g && (
+                <div className={`mt-2 p-2 rounded-lg ${
+                  registro.status_calibracao === 'dentro_limite' 
+                    ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' 
+                    : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'
+                }`}>
+                  <p className="text-xs font-medium mb-1">📊 Calibragem:</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs">Peso Médio: <strong>{registro.peso_medio_real_bolinha_g.toFixed(1)}g</strong></span>
+                    <Badge variant={registro.status_calibracao === 'dentro_limite' ? 'default' : 'destructive'} className="text-[10px]">
+                      {registro.status_calibracao === 'dentro_limite' ? '✅ OK' : '⚠️ Fora'}
+                    </Badge>
+                  </div>
+                  {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
+                    </p>
+                  )}
+                </div>
+              )}
               
               {registro.data_fim && (
                 <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
