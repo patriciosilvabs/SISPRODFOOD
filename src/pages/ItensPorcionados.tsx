@@ -1097,7 +1097,15 @@ const ItensPorcionados = () => {
                                 )}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {insumo.quantidade} {insumo.unidade} por lote
+                                {insumo.quantidade} {insumo.unidade} {
+                                  ['lote_masseira', 'lote_com_perda', 'lote_sem_perda', 'lote'].includes(formData.unidade_medida) 
+                                    ? 'por lote' 
+                                    : formData.unidade_medida === 'kg' 
+                                      ? 'por kg' 
+                                      : formData.unidade_medida === 'g' 
+                                        ? 'por g' 
+                                        : 'por unidade'
+                                }
                                 {(formData.unidade_medida === 'lote_com_perda' || 
                                   (formData.unidade_medida === 'lote_masseira' && index === 0)) && (
                                   <span className="ml-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded text-[10px] font-medium">
