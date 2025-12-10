@@ -106,3 +106,31 @@ export function kgToRaw(valueKg: number | null | undefined): string {
   const gramas = Math.round(valueKg * 1000);
   return String(gramas);
 }
+
+/**
+ * Formata peso para EXIBIÇÃO com conversão automática g/kg
+ * Regra: até 999g = gramas, 1000g+ = quilogramas
+ * @param valorGramas - Valor em gramas
+ * @returns String formatada (ex: "500 g" ou "6 kg")
+ */
+export function formatarPesoExibicao(valorGramas: number): string {
+  if (valorGramas === 0 || !valorGramas) return '0 g';
+  
+  if (valorGramas < 1000) {
+    // Até 999g - mostrar em gramas
+    const gramas = valorGramas % 1 === 0 
+      ? valorGramas.toFixed(0) 
+      : valorGramas.toFixed(2).replace(/\.?0+$/, '');
+    return `${gramas} g`;
+  } else {
+    // 1000g+ - mostrar em quilogramas
+    const kg = valorGramas / 1000;
+    let kgFormatado: string;
+    if (kg % 1 === 0) {
+      kgFormatado = kg.toFixed(0);
+    } else {
+      kgFormatado = kg.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+    }
+    return `${kgFormatado} kg`;
+  }
+}
