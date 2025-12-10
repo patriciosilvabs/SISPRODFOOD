@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
-type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote';
+type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote' | 'lote_com_perda';
 
 interface ItemPorcionado {
   id: string;
@@ -49,6 +49,9 @@ interface ItemPorcionado {
   timer_ativo: boolean;
   tempo_timer_minutos: number;
   usa_traco_massa: boolean;
+  // Campos para Lote com Perda
+  perda_cozimento_percentual?: number;
+  peso_pronto_g?: number;
 }
 
 interface Insumo {
@@ -89,7 +92,16 @@ const ItensPorcionados = () => {
     timer_ativo: false,
     tempo_timer_minutos: '10',
     usa_traco_massa: false,
+    // Campos para Lote com Perda
+    perda_cozimento_percentual: '0',
+    peso_pronto_g: '',
   });
+
+  // Cálculos automáticos para Lote com Perda
+  const perdaCozimento = parseFloat(formData.perda_cozimento_percentual) || 0;
+  const rendimentoCozimento = 100 - perdaCozimento;
+  const pesoProntoG = parseFloat(formData.peso_pronto_g) || 0;
+  const pesoCruPorPorcaoG = rendimentoCozimento > 0 ? pesoProntoG / (rendimentoCozimento / 100) : 0;
 
   useEffect(() => {
     fetchData();
@@ -130,11 +142,27 @@ const ItensPorcionados = () => {
       return;
     }
 
+    // Validação para Lote com Perda
+    if (formData.unidade_medida === 'lote_com_perda') {
+      if (!formData.peso_pronto_g || parseFloat(formData.peso_pronto_g) <= 0) {
+        toast.error('Peso Pronto é obrigatório para Lote com Perda');
+        return;
+      }
+      if (!formData.perda_cozimento_percentual || parseFloat(formData.perda_cozimento_percentual) <= 0) {
+        toast.error('Perda de Cozimento é obrigatória para Lote com Perda');
+        return;
+      }
+      if (insumosVinculados.length === 0) {
+        toast.error('É obrigatório vincular pelo menos um insumo (matéria-prima) para Lote com Perda');
+        return;
+      }
+    }
+
     try {
-      const data = {
+      const insertData = {
         nome: formData.nome,
         peso_unitario_g: parseFloat(formData.peso_unitario_g),
-        insumo_vinculado_id: null,
+        insumo_vinculado_id: null as string | null,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         equivalencia_traco: formData.equivalencia_traco ? parseInt(formData.equivalencia_traco) : null,
         consumo_por_traco_g: 0,
@@ -143,12 +171,22 @@ const ItensPorcionados = () => {
         tempo_timer_minutos: parseInt(formData.tempo_timer_minutos) || 10,
         usa_traco_massa: formData.usa_traco_massa,
         organization_id: organizationId,
+        perda_cozimento_percentual: null as number | null,
+        peso_pronto_g: null as number | null,
       };
+
+      // Adicionar campos específicos de Lote com Perda
+      if (formData.unidade_medida === 'lote_com_perda') {
+        insertData.perda_cozimento_percentual = parseFloat(formData.perda_cozimento_percentual);
+        insertData.peso_pronto_g = parseFloat(formData.peso_pronto_g);
+        // O peso unitário para lote com perda é o peso cru por porção (calculado)
+        insertData.peso_unitario_g = pesoCruPorPorcaoG;
+      }
 
       if (editingItem) {
         const { error } = await supabase
           .from('itens_porcionados')
-          .update(data)
+          .update(insertData)
           .eq('id', editingItem.id);
 
         if (error) throw error;
@@ -156,7 +194,7 @@ const ItensPorcionados = () => {
       } else {
         const { data: newItem, error } = await supabase
           .from('itens_porcionados')
-          .insert([data])
+          .insert([insertData])
           .select()
           .single();
 
@@ -373,6 +411,9 @@ const ItensPorcionados = () => {
       timer_ativo: item.timer_ativo || false,
       tempo_timer_minutos: item.tempo_timer_minutos?.toString() || '10',
       usa_traco_massa: item.usa_traco_massa || false,
+      // Campos para Lote com Perda
+      perda_cozimento_percentual: item.perda_cozimento_percentual?.toString() || '0',
+      peso_pronto_g: item.peso_pronto_g?.toString() || '',
     });
     await loadInsumosVinculados(item.id);
     setDialogOpen(true);
@@ -390,6 +431,8 @@ const ItensPorcionados = () => {
       timer_ativo: false,
       tempo_timer_minutos: '10',
       usa_traco_massa: false,
+      perda_cozimento_percentual: '0',
+      peso_pronto_g: '',
     });
   };
 
@@ -488,6 +531,7 @@ const ItensPorcionados = () => {
                           <SelectItem value="kg">kg</SelectItem>
                           <SelectItem value="g">g</SelectItem>
                           <SelectItem value="lote">lote</SelectItem>
+                          <SelectItem value="lote_com_perda">🔥 Lote com Perda (cozimento)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -511,22 +555,101 @@ const ItensPorcionados = () => {
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="perda">Perda Adicional (%)</Label>
-                    <Input
-                      id="perda"
-                      type="number"
-                      step="0.01"
-                      value={formData.perda_percentual_adicional}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          perda_percentual_adicional: e.target.value,
-                        })
-                      }
-                      required
-                    />
-                  </div>
+                  {/* Campos específicos para Lote com Perda */}
+                  {formData.unidade_medida === 'lote_com_perda' && (
+                    <div className="space-y-4 p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">🔥</span>
+                        <h4 className="font-semibold text-orange-800 dark:text-orange-200">Configuração de Lote com Perda</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Configure os parâmetros de cozimento. O sistema calculará automaticamente o peso cru necessário.
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="peso_pronto">Peso Unitário Pronto (g) *</Label>
+                          <Input
+                            id="peso_pronto"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={formData.peso_pronto_g}
+                            onChange={(e) =>
+                              setFormData({ ...formData, peso_pronto_g: e.target.value })
+                            }
+                            placeholder="Ex: 150"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Peso da porção após o cozimento</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="perda_cozimento">Perda no Cozimento (%) *</Label>
+                          <Input
+                            id="perda_cozimento"
+                            type="number"
+                            step="1"
+                            min="0"
+                            max="99"
+                            value={formData.perda_cozimento_percentual}
+                            onChange={(e) =>
+                              setFormData({ ...formData, perda_cozimento_percentual: e.target.value })
+                            }
+                            placeholder="Ex: 30"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Percentual perdido no cozimento</p>
+                        </div>
+                      </div>
+
+                      {/* Campos calculados automaticamente */}
+                      <div className="grid grid-cols-2 gap-4 pt-3 border-t border-orange-200 dark:border-orange-700">
+                        <div className="space-y-2">
+                          <Label className="text-muted-foreground">Rendimento (%)</Label>
+                          <div className="p-2 bg-background rounded border text-sm font-medium">
+                            {rendimentoCozimento.toFixed(1)}%
+                          </div>
+                          <p className="text-xs text-muted-foreground">Calculado: 100 - perda</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-muted-foreground">Peso Cru por Porção (g)</Label>
+                          <div className="p-2 bg-background rounded border text-sm font-medium">
+                            {pesoCruPorPorcaoG.toFixed(2)} g
+                          </div>
+                          <p className="text-xs text-muted-foreground">Calculado: peso pronto ÷ rendimento</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800 mt-2">
+                        <p className="text-xs text-blue-800 dark:text-blue-200">
+                          <strong>ℹ️ Como funciona:</strong> A loja informa porções prontas. O sistema converte automaticamente para KG de insumo cru. 
+                          O CPD recebe apenas o peso cru a preparar.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Perda adicional - ocultar para lote_com_perda pois já tem perda específica */}
+                  {formData.unidade_medida !== 'lote_com_perda' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="perda">Perda Adicional (%)</Label>
+                      <Input
+                        id="perda"
+                        type="number"
+                        step="0.01"
+                        value={formData.perda_percentual_adicional}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            perda_percentual_adicional: e.target.value,
+                          })
+                        }
+                        required
+                      />
+                    </div>
+                  )}
 
                   {/* Timer de Produção */}
                   <div className="space-y-4 pt-4 border-t">
@@ -745,10 +868,33 @@ const ItensPorcionados = () => {
                 ) : (
                   itens.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.nome}</TableCell>
-                      <TableCell>{item.peso_unitario_g.toFixed(2)}</TableCell>
-                      <TableCell>{item.unidade_medida}</TableCell>
-                      <TableCell>{item.perda_percentual_adicional}%</TableCell>
+                      <TableCell className="font-medium">
+                        {item.nome}
+                        {item.unidade_medida === 'lote_com_perda' && (
+                          <span className="ml-2 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-1.5 py-0.5 rounded">🔥 Cozimento</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {item.unidade_medida === 'lote_com_perda' ? (
+                          <div className="text-xs">
+                            <span className="font-medium">{item.peso_unitario_g?.toFixed(2)}g cru</span>
+                            <br />
+                            <span className="text-muted-foreground">{item.peso_pronto_g?.toFixed(0)}g pronto</span>
+                          </div>
+                        ) : (
+                          item.peso_unitario_g?.toFixed(2)
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {item.unidade_medida === 'lote_com_perda' ? 'Lote c/ Perda' : item.unidade_medida}
+                      </TableCell>
+                      <TableCell>
+                        {item.unidade_medida === 'lote_com_perda' ? (
+                          <span className="text-orange-600">{item.perda_cozimento_percentual}%</span>
+                        ) : (
+                          `${item.perda_percentual_adicional}%`
+                        )}
+                      </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
                           variant="ghost"
