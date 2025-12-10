@@ -987,7 +987,9 @@ export type Database = {
           insumo_vinculado_id: string | null
           nome: string
           organization_id: string | null
+          perda_cozimento_percentual: number | null
           perda_percentual_adicional: number | null
+          peso_pronto_g: number | null
           peso_unitario_g: number
           tempo_timer_minutos: number | null
           timer_ativo: boolean | null
@@ -1005,7 +1007,9 @@ export type Database = {
           insumo_vinculado_id?: string | null
           nome: string
           organization_id?: string | null
+          perda_cozimento_percentual?: number | null
           perda_percentual_adicional?: number | null
+          peso_pronto_g?: number | null
           peso_unitario_g: number
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null
@@ -1023,7 +1027,9 @@ export type Database = {
           insumo_vinculado_id?: string | null
           nome?: string
           organization_id?: string | null
+          perda_cozimento_percentual?: number | null
           perda_percentual_adicional?: number | null
+          peso_pronto_g?: number | null
           peso_unitario_g?: number
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null
@@ -2774,7 +2780,15 @@ export type Database = {
         | "equipamentos"
       tipo_movimento: "entrada" | "saida"
       tipo_produto: "lacrado" | "porcionado" | "lote" | "simples"
-      unidade_medida: "kg" | "unidade" | "g" | "ml" | "l" | "traco" | "lote"
+      unidade_medida:
+        | "kg"
+        | "unidade"
+        | "g"
+        | "ml"
+        | "l"
+        | "traco"
+        | "lote"
+        | "lote_com_perda"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2916,7 +2930,16 @@ export const Constants = {
       ],
       tipo_movimento: ["entrada", "saida"],
       tipo_produto: ["lacrado", "porcionado", "lote", "simples"],
-      unidade_medida: ["kg", "unidade", "g", "ml", "l", "traco", "lote"],
+      unidade_medida: [
+        "kg",
+        "unidade",
+        "g",
+        "ml",
+        "l",
+        "traco",
+        "lote",
+        "lote_com_perda",
+      ],
     },
   },
 } as const
