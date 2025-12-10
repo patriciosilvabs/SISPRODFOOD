@@ -983,14 +983,20 @@ export type Database = {
           consumo_por_traco_g: number | null
           created_at: string | null
           equivalencia_traco: number | null
+          farinha_por_lote_kg: number | null
           fator_consumo_embalagem_por_porcao: number | null
           id: string
           insumo_embalagem_id: string | null
           insumo_vinculado_id: string | null
+          massa_gerada_por_lote_kg: number | null
           nome: string
           organization_id: string | null
           perda_cozimento_percentual: number | null
           perda_percentual_adicional: number | null
+          peso_alvo_bolinha_g: number | null
+          peso_maximo_bolinha_g: number | null
+          peso_medio_operacional_bolinha_g: number | null
+          peso_minimo_bolinha_g: number | null
           peso_pronto_g: number | null
           peso_unitario_g: number
           quantidade_por_lote: number | null
@@ -1008,14 +1014,20 @@ export type Database = {
           consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
+          farinha_por_lote_kg?: number | null
           fator_consumo_embalagem_por_porcao?: number | null
           id?: string
           insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
+          massa_gerada_por_lote_kg?: number | null
           nome: string
           organization_id?: string | null
           perda_cozimento_percentual?: number | null
           perda_percentual_adicional?: number | null
+          peso_alvo_bolinha_g?: number | null
+          peso_maximo_bolinha_g?: number | null
+          peso_medio_operacional_bolinha_g?: number | null
+          peso_minimo_bolinha_g?: number | null
           peso_pronto_g?: number | null
           peso_unitario_g: number
           quantidade_por_lote?: number | null
@@ -1033,14 +1045,20 @@ export type Database = {
           consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
+          farinha_por_lote_kg?: number | null
           fator_consumo_embalagem_por_porcao?: number | null
           id?: string
           insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
+          massa_gerada_por_lote_kg?: number | null
           nome?: string
           organization_id?: string | null
           perda_cozimento_percentual?: number | null
           perda_percentual_adicional?: number | null
+          peso_alvo_bolinha_g?: number | null
+          peso_maximo_bolinha_g?: number | null
+          peso_medio_operacional_bolinha_g?: number | null
+          peso_minimo_bolinha_g?: number | null
           peso_pronto_g?: number | null
           peso_unitario_g?: number
           quantidade_por_lote?: number | null
@@ -1812,6 +1830,88 @@ export type Database = {
           },
         ]
       }
+      producao_massa_historico: {
+        Row: {
+          created_at: string | null
+          id: string
+          item_id: string
+          lotes_produzidos: number
+          massa_total_utilizada_g: number
+          novo_peso_medio_operacional_g: number | null
+          organization_id: string
+          peso_final_g: number
+          peso_medio_operacional_anterior_g: number | null
+          peso_medio_real_bolinha_g: number
+          producao_registro_id: string | null
+          quantidade_esperada: number
+          quantidade_real_produzida: number
+          sobra_perda_g: number | null
+          status_calibracao: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          item_id: string
+          lotes_produzidos: number
+          massa_total_utilizada_g: number
+          novo_peso_medio_operacional_g?: number | null
+          organization_id: string
+          peso_final_g: number
+          peso_medio_operacional_anterior_g?: number | null
+          peso_medio_real_bolinha_g: number
+          producao_registro_id?: string | null
+          quantidade_esperada: number
+          quantidade_real_produzida: number
+          sobra_perda_g?: number | null
+          status_calibracao: string
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          item_id?: string
+          lotes_produzidos?: number
+          massa_total_utilizada_g?: number
+          novo_peso_medio_operacional_g?: number | null
+          organization_id?: string
+          peso_final_g?: number
+          peso_medio_operacional_anterior_g?: number | null
+          peso_medio_real_bolinha_g?: number
+          producao_registro_id?: string | null
+          quantidade_esperada?: number
+          quantidade_real_produzida?: number
+          sobra_perda_g?: number | null
+          status_calibracao?: string
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "producao_massa_historico_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "producao_massa_historico_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "producao_massa_historico_producao_registro_id_fkey"
+            columns: ["producao_registro_id"]
+            isOneToOne: false
+            referencedRelation: "producao_registros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       producao_registros: {
         Row: {
           bloqueado_por_traco_anterior: boolean | null
@@ -1824,14 +1924,18 @@ export type Database = {
           data_referencia: string | null
           demanda_lojas: number | null
           detalhes_lojas: Json | null
+          farinha_consumida_kg: number | null
           id: string
           item_id: string
           item_nome: string
           lote_producao_id: string | null
+          lotes_masseira: number | null
+          massa_total_gerada_kg: number | null
           observacao_porcionamento: string | null
           observacao_preparo: string | null
           organization_id: string | null
           peso_final_kg: number | null
+          peso_medio_real_bolinha_g: number | null
           peso_preparo_kg: number | null
           peso_programado_kg: number | null
           producao_lote_id: string | null
@@ -1841,6 +1945,7 @@ export type Database = {
           sobra_preparo_kg: number | null
           sobra_reserva: number | null
           status: string | null
+          status_calibracao: string | null
           timer_status: string | null
           unidades_programadas: number | null
           unidades_reais: number | null
@@ -1858,14 +1963,18 @@ export type Database = {
           data_referencia?: string | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
+          farinha_consumida_kg?: number | null
           id?: string
           item_id: string
           item_nome: string
           lote_producao_id?: string | null
+          lotes_masseira?: number | null
+          massa_total_gerada_kg?: number | null
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
           organization_id?: string | null
           peso_final_kg?: number | null
+          peso_medio_real_bolinha_g?: number | null
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
@@ -1875,6 +1984,7 @@ export type Database = {
           sobra_preparo_kg?: number | null
           sobra_reserva?: number | null
           status?: string | null
+          status_calibracao?: string | null
           timer_status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
@@ -1892,14 +2002,18 @@ export type Database = {
           data_referencia?: string | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
+          farinha_consumida_kg?: number | null
           id?: string
           item_id?: string
           item_nome?: string
           lote_producao_id?: string | null
+          lotes_masseira?: number | null
+          massa_total_gerada_kg?: number | null
           observacao_porcionamento?: string | null
           observacao_preparo?: string | null
           organization_id?: string | null
           peso_final_kg?: number | null
+          peso_medio_real_bolinha_g?: number | null
           peso_preparo_kg?: number | null
           peso_programado_kg?: number | null
           producao_lote_id?: string | null
@@ -1909,6 +2023,7 @@ export type Database = {
           sobra_preparo_kg?: number | null
           sobra_reserva?: number | null
           status?: string | null
+          status_calibracao?: string | null
           timer_status?: string | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
