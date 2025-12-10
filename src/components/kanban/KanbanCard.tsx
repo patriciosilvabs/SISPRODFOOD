@@ -246,7 +246,11 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         <span className="font-medium flex items-center gap-1">
                           {extra.unidade === 'g' 
                             ? formatarPesoExibicao(extra.quantidade_necessaria)
-                            : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                            : extra.unidade === 'unidade'
+                              ? `${extra.quantidade_necessaria % 1 === 0 
+                                  ? extra.quantidade_necessaria.toFixed(0) 
+                                  : extra.quantidade_necessaria.toFixed(2)} unidades`
+                              : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
                           }
                           {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
                         </span>
