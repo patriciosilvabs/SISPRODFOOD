@@ -714,11 +714,27 @@ const ResumoDaProducao = () => {
         for (const insumoVinculado of insumosVinculados) {
           let quantidadeTotal = 0;
           
+          // Detecção de LOTE_MASSEIRA com múltiplas verificações
+          const isLoteMasseira = itemData?.unidade_medida === 'lote_masseira';
+          const hasLotesMasseira = selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0;
+          
+          console.log('[DEBUG INSUMO DÉBITO]', {
+            itemId: selectedRegistro.item_id,
+            itemNome: selectedRegistro.item_nome,
+            unidadeMedida: itemData?.unidade_medida,
+            isLoteMasseira,
+            lotesMasseira: selectedRegistro.lotes_masseira,
+            hasLotesMasseira,
+            insumoNome: insumoVinculado.nome,
+            insumoQuantidade: insumoVinculado.quantidade,
+            unidadesReais: data.unidades_reais
+          });
+          
           // Calcular quantidade baseado no tipo de item
-          if (itemData?.unidade_medida === 'lote_masseira' && selectedRegistro.lotes_masseira) {
+          if (isLoteMasseira && hasLotesMasseira) {
             // LOTE_MASSEIRA: usar número de lotes, NÃO unidades
             quantidadeTotal = selectedRegistro.lotes_masseira * insumoVinculado.quantidade;
-            console.log(`[LOTE_MASSEIRA] Débito: ${selectedRegistro.lotes_masseira} lotes × ${insumoVinculado.quantidade} = ${quantidadeTotal}`);
+            console.log(`[LOTE_MASSEIRA] ✅ Débito correto: ${selectedRegistro.lotes_masseira} lotes × ${insumoVinculado.quantidade} = ${quantidadeTotal}`);
           } else if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
             const tracos = data.unidades_reais / itemData.equivalencia_traco;
             // Para insumo principal, usar consumo_por_traco_g se disponível
@@ -727,8 +743,16 @@ const ResumoDaProducao = () => {
             } else {
               quantidadeTotal = tracos * insumoVinculado.quantidade;
             }
+            console.log(`[TRACO] Débito: ${tracos} traços × ${insumoVinculado.quantidade} = ${quantidadeTotal}`);
           } else {
-            quantidadeTotal = data.unidades_reais * insumoVinculado.quantidade;
+            // FALLBACK DE SEGURANÇA: Se tem lotes_masseira > 0, usar SEMPRE lotes
+            if (hasLotesMasseira) {
+              quantidadeTotal = selectedRegistro.lotes_masseira! * insumoVinculado.quantidade;
+              console.warn(`[LOTE_MASSEIRA FALLBACK] ⚠️ unidade_medida="${itemData?.unidade_medida}" mas lotes_masseira=${selectedRegistro.lotes_masseira}. Usando lotes: ${quantidadeTotal}`);
+            } else {
+              quantidadeTotal = data.unidades_reais * insumoVinculado.quantidade;
+              console.log(`[UNIDADE SIMPLES] ${data.unidades_reais} × ${insumoVinculado.quantidade} = ${quantidadeTotal}`);
+            }
           }
           
           // Converter para kg se necessário
