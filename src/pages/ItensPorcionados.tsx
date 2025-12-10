@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote' | 'lote_com_perda' | 'lote_sem_perda' | 'saco' | 'caixa' | 'fardo';
+type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote' | 'lote_com_perda' | 'lote_sem_perda' | 'lote_masseira' | 'saco' | 'caixa' | 'fardo';
 
 interface ItemPorcionado {
   id: string;
@@ -59,6 +59,13 @@ interface ItemPorcionado {
   insumo_embalagem_id?: string | null;
   unidade_embalagem?: string;
   fator_consumo_embalagem_por_porcao?: number;
+  // Campos para LOTE_MASSEIRA (Produção Industrial de Massa)
+  farinha_por_lote_kg?: number;
+  massa_gerada_por_lote_kg?: number;
+  peso_minimo_bolinha_g?: number;
+  peso_maximo_bolinha_g?: number;
+  peso_alvo_bolinha_g?: number;
+  peso_medio_operacional_bolinha_g?: number;
 }
 
 interface Insumo {
@@ -106,6 +113,12 @@ const ItensPorcionados = () => {
     insumo_embalagem_id: '',
     unidade_embalagem: 'unidade' as UnidadeMedida,
     fator_consumo_embalagem_por_porcao: '1',
+    // Campos para LOTE_MASSEIRA
+    farinha_por_lote_kg: '',
+    massa_gerada_por_lote_kg: '',
+    peso_minimo_bolinha_g: '',
+    peso_maximo_bolinha_g: '',
+    peso_alvo_bolinha_g: '',
   });
 
   // Cálculos automáticos para Lote com Perda
@@ -191,6 +204,44 @@ const ItensPorcionados = () => {
       }
     }
 
+    // Validação para LOTE_MASSEIRA
+    if (formData.unidade_medida === 'lote_masseira') {
+      const farinhaLote = parseFloat(formData.farinha_por_lote_kg);
+      const massaGerada = parseFloat(formData.massa_gerada_por_lote_kg);
+      const pesoMin = parseFloat(formData.peso_minimo_bolinha_g);
+      const pesoMax = parseFloat(formData.peso_maximo_bolinha_g);
+      const pesoAlvo = parseFloat(formData.peso_alvo_bolinha_g);
+
+      if (!farinhaLote || farinhaLote <= 0) {
+        toast.error('Farinha por Lote é obrigatório para Lote Masseira');
+        return;
+      }
+      if (!massaGerada || massaGerada <= 0) {
+        toast.error('Massa Gerada por Lote é obrigatório para Lote Masseira');
+        return;
+      }
+      if (!pesoMin || pesoMin <= 0) {
+        toast.error('Peso Mínimo da Bolinha é obrigatório');
+        return;
+      }
+      if (!pesoMax || pesoMax <= 0) {
+        toast.error('Peso Máximo da Bolinha é obrigatório');
+        return;
+      }
+      if (!pesoAlvo || pesoAlvo <= 0) {
+        toast.error('Peso Alvo da Bolinha é obrigatório');
+        return;
+      }
+      if (pesoMin >= pesoMax) {
+        toast.error('Peso Mínimo deve ser menor que Peso Máximo');
+        return;
+      }
+      if (pesoAlvo < pesoMin || pesoAlvo > pesoMax) {
+        toast.error('Peso Alvo deve estar entre Peso Mínimo e Peso Máximo');
+        return;
+      }
+    }
+
     // Validação para Embalagem Opcional
     if (formData.usa_embalagem_por_porcao && !formData.insumo_embalagem_id) {
       toast.error('Selecione o insumo de embalagem');
@@ -233,6 +284,26 @@ const ItensPorcionados = () => {
         insertData.quantidade_por_lote = parseInt(formData.quantidade_por_lote);
         // Para lote sem perda, ativar fila de lotes automaticamente
         insertData.usa_traco_massa = true;
+      }
+
+      // Adicionar campos específicos de LOTE_MASSEIRA
+      if (formData.unidade_medida === 'lote_masseira') {
+        const pesoMin = parseFloat(formData.peso_minimo_bolinha_g);
+        const pesoMax = parseFloat(formData.peso_maximo_bolinha_g);
+        const pesoMedioOperacional = (pesoMin + pesoMax) / 2;
+        
+        insertData.farinha_por_lote_kg = parseFloat(formData.farinha_por_lote_kg);
+        insertData.massa_gerada_por_lote_kg = parseFloat(formData.massa_gerada_por_lote_kg);
+        insertData.peso_minimo_bolinha_g = pesoMin;
+        insertData.peso_maximo_bolinha_g = pesoMax;
+        insertData.peso_alvo_bolinha_g = parseFloat(formData.peso_alvo_bolinha_g);
+        insertData.peso_medio_operacional_bolinha_g = pesoMedioOperacional;
+        // Para masseira, ativar fila de lotes automaticamente
+        insertData.usa_traco_massa = true;
+        // Calcular unidades por lote para equivalencia_traco
+        const massaGeradaKg = parseFloat(formData.massa_gerada_por_lote_kg);
+        const unidadesPorLote = Math.floor(massaGeradaKg / (pesoMedioOperacional / 1000));
+        insertData.equivalencia_traco = unidadesPorLote;
       }
 
       if (editingItem) {
@@ -492,6 +563,12 @@ const ItensPorcionados = () => {
       insumo_embalagem_id: item.insumo_embalagem_id || '',
       unidade_embalagem: (item.unidade_embalagem as UnidadeMedida) || 'unidade',
       fator_consumo_embalagem_por_porcao: item.fator_consumo_embalagem_por_porcao?.toString() || '1',
+      // Campos para LOTE_MASSEIRA
+      farinha_por_lote_kg: item.farinha_por_lote_kg?.toString() || '',
+      massa_gerada_por_lote_kg: item.massa_gerada_por_lote_kg?.toString() || '',
+      peso_minimo_bolinha_g: item.peso_minimo_bolinha_g?.toString() || '',
+      peso_maximo_bolinha_g: item.peso_maximo_bolinha_g?.toString() || '',
+      peso_alvo_bolinha_g: item.peso_alvo_bolinha_g?.toString() || '',
     });
     await loadInsumosVinculados(item.id);
     setDialogOpen(true);
@@ -514,6 +591,12 @@ const ItensPorcionados = () => {
       insumo_embalagem_id: '',
       unidade_embalagem: 'unidade',
       fator_consumo_embalagem_por_porcao: '1',
+      // Campos para LOTE_MASSEIRA
+      farinha_por_lote_kg: '',
+      massa_gerada_por_lote_kg: '',
+      peso_minimo_bolinha_g: '',
+      peso_maximo_bolinha_g: '',
+      peso_alvo_bolinha_g: '',
     });
   };
 
@@ -522,6 +605,7 @@ const ItensPorcionados = () => {
     switch (unidade) {
       case 'lote_com_perda': return '🔥 Lote c/ Perda';
       case 'lote_sem_perda': return '📦 Lote s/ Perda';
+      case 'lote_masseira': return '🍕 Lote Masseira';
       case 'lote': return '📦 Lote';
       default: return unidade;
     }
@@ -607,6 +691,7 @@ const ItensPorcionados = () => {
                         <SelectItem value="g">g (grama)</SelectItem>
                         <SelectItem value="lote_sem_perda">📦 Lote sem Perda</SelectItem>
                         <SelectItem value="lote_com_perda">🔥 Lote com Perda (cozimento)</SelectItem>
+                        <SelectItem value="lote_masseira">🍕 Lote Masseira (Produção Industrial)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -641,6 +726,142 @@ const ItensPorcionados = () => {
                       <div className="p-3 bg-blue-100/50 dark:bg-blue-900/30 rounded-lg border border-blue-300 dark:border-blue-700 mt-2">
                         <p className="text-xs text-blue-800 dark:text-blue-200">
                           <strong>ℹ️ Como funciona:</strong> O consumo de insumos será: insumo_configurado × quantidade_de_lotes_produzidos.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campos específicos para LOTE MASSEIRA */}
+                  {formData.unidade_medida === 'lote_masseira' && (
+                    <div className="space-y-4 p-4 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">🍕</span>
+                        <h4 className="font-semibold text-amber-800 dark:text-amber-200">Configuração Industrial da Masseira</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Configure a capacidade da masseira e a faixa de peso da porcionadora. O sistema calculará automaticamente os lotes e a farinha necessária.
+                      </p>
+
+                      {/* Capacidade da Masseira */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="farinha_por_lote">Farinha por Lote (kg) *</Label>
+                          <Input
+                            id="farinha_por_lote"
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={formData.farinha_por_lote_kg}
+                            onChange={(e) =>
+                              setFormData({ ...formData, farinha_por_lote_kg: e.target.value })
+                            }
+                            placeholder="Ex: 15"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Kg de farinha consumida por lote</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="massa_gerada">Massa Gerada por Lote (kg) *</Label>
+                          <Input
+                            id="massa_gerada"
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={formData.massa_gerada_por_lote_kg}
+                            onChange={(e) =>
+                              setFormData({ ...formData, massa_gerada_por_lote_kg: e.target.value })
+                            }
+                            placeholder="Ex: 25"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">Kg de massa total por lote</p>
+                        </div>
+                      </div>
+
+                      {/* Faixa de Peso da Porcionadora */}
+                      <div className="pt-3 border-t border-amber-200 dark:border-amber-700">
+                        <Label className="font-semibold mb-2 block">⚖️ Faixa de Peso da Porcionadora</Label>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="peso_minimo">Peso Mínimo (g) *</Label>
+                            <Input
+                              id="peso_minimo"
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={formData.peso_minimo_bolinha_g}
+                              onChange={(e) =>
+                                setFormData({ ...formData, peso_minimo_bolinha_g: e.target.value })
+                              }
+                              placeholder="Ex: 390"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="peso_alvo">Peso Alvo (g) *</Label>
+                            <Input
+                              id="peso_alvo"
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={formData.peso_alvo_bolinha_g}
+                              onChange={(e) =>
+                                setFormData({ ...formData, peso_alvo_bolinha_g: e.target.value })
+                              }
+                              placeholder="Ex: 422"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="peso_maximo">Peso Máximo (g) *</Label>
+                            <Input
+                              id="peso_maximo"
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={formData.peso_maximo_bolinha_g}
+                              onChange={(e) =>
+                                setFormData({ ...formData, peso_maximo_bolinha_g: e.target.value })
+                              }
+                              placeholder="Ex: 480"
+                              required
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cálculos Automáticos */}
+                      {formData.farinha_por_lote_kg && formData.massa_gerada_por_lote_kg && formData.peso_minimo_bolinha_g && formData.peso_maximo_bolinha_g && (
+                        <div className="pt-3 border-t border-amber-200 dark:border-amber-700">
+                          <Label className="font-semibold mb-2 block">📊 Cálculos Automáticos</Label>
+                          {(() => {
+                            const pesoMin = parseFloat(formData.peso_minimo_bolinha_g) || 0;
+                            const pesoMax = parseFloat(formData.peso_maximo_bolinha_g) || 0;
+                            const pesoMedioOp = (pesoMin + pesoMax) / 2;
+                            const massaGerada = parseFloat(formData.massa_gerada_por_lote_kg) || 0;
+                            const unidadesPorLote = pesoMedioOp > 0 ? Math.floor(massaGerada / (pesoMedioOp / 1000)) : 0;
+                            return (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="p-2 bg-background rounded border text-sm">
+                                  <span className="text-muted-foreground">Peso Médio Operacional:</span>
+                                  <span className="font-bold ml-2">{pesoMedioOp.toFixed(0)} g</span>
+                                </div>
+                                <div className="p-2 bg-background rounded border text-sm">
+                                  <span className="text-muted-foreground">Unidades por Lote:</span>
+                                  <span className="font-bold ml-2">{unidadesPorLote} un</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      <div className="p-3 bg-amber-100/50 dark:bg-amber-900/30 rounded-lg border border-amber-300 dark:border-amber-700 mt-2">
+                        <p className="text-xs text-amber-800 dark:text-amber-200">
+                          <strong>ℹ️ Como funciona:</strong> O sistema calculará automaticamente quantos lotes são necessários e ajustará o peso médio operacional com base na média móvel dos últimos 10 lotes finalizados.
                         </p>
                       </div>
                     </div>
