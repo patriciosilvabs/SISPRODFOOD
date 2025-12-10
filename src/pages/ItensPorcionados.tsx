@@ -80,6 +80,7 @@ const ItensPorcionados = () => {
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
     insumo_id: '',
+    quantidade: '',
     unidade: 'kg' as UnidadeMedida,
   });
   const [formData, setFormData] = useState({
@@ -362,11 +363,11 @@ const ItensPorcionados = () => {
       return;
     }
 
-    // Usar quantidade calculada automaticamente
-    const quantidade = quantidadeInsumoCalculada;
+    // Usar quantidade inserida manualmente pelo gestor
+    const quantidade = parseFloat(novoInsumo.quantidade) || 0;
     
     if (quantidade <= 0) {
-      toast.error('Configure o peso unitário primeiro');
+      toast.error('Informe a quantidade do insumo');
       return;
     }
 
@@ -415,7 +416,7 @@ const ItensPorcionados = () => {
     }
 
     setInsumosVinculados([...insumosVinculados, novoInsumoVinculado]);
-    setNovoInsumo({ insumo_id: '', unidade: 'kg' });
+    setNovoInsumo({ insumo_id: '', quantidade: '', unidade: 'kg' });
   };
 
   const removerInsumoVinculado = async (index: number) => {
@@ -860,20 +861,16 @@ const ItensPorcionados = () => {
                       </div>
 
                       <div className="col-span-3 space-y-2">
-                        <Label>Quantidade (auto)</Label>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={quantidadeInsumoCalculada.toFixed(2)}
-                            readOnly
-                            className="bg-muted cursor-not-allowed"
-                            title="Valor calculado automaticamente com base no peso final e na perda"
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground italic">
-                          ℹ️ Calculado automaticamente
-                        </p>
+                        <Label>Quantidade</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={novoInsumo.quantidade}
+                          onChange={(e) => 
+                            setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
+                          }
+                          placeholder="Ex: 120"
+                        />
                       </div>
 
                       <div className="col-span-2 space-y-2">
@@ -904,7 +901,7 @@ const ItensPorcionados = () => {
                           size="sm"
                           onClick={adicionarInsumoVinculado}
                           className="w-full"
-                          disabled={!novoInsumo.insumo_id || quantidadeInsumoCalculada <= 0}
+                          disabled={!novoInsumo.insumo_id || !novoInsumo.quantidade || parseFloat(novoInsumo.quantidade) <= 0}
                         >
                           + Adicionar
                         </Button>
