@@ -230,9 +230,9 @@ const ItensPorcionados = () => {
             insumo_id: insumo.insumo_id,
             nome: insumo.nome,
             quantidade: insumo.quantidade,
-            unidade: insumo.unidade,
+            unidade: insumo.unidade as any,
             is_principal: false,
-            consumo_por_traco_g: null,
+            consumo_por_traco_g: null as number | null,
             organization_id: organizationId,
           }));
           
@@ -384,11 +384,11 @@ const ItensPorcionados = () => {
             insumo_id: novoInsumo.insumo_id,
             nome: insumoSelecionado.nome,
             quantidade: quantidade,
-            unidade: novoInsumo.unidade,
+            unidade: novoInsumo.unidade as any,
             is_principal: false,
-            consumo_por_traco_g: null,
+            consumo_por_traco_g: null as number | null,
             organization_id: organizationId,
-          })
+          } as any)
           .select()
           .single();
 

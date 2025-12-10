@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote' | 'lote_com_perda';
+type UnidadeMedida = 'kg' | 'unidade' | 'g' | 'ml' | 'l' | 'traco' | 'lote' | 'lote_com_perda' | 'lote_sem_perda' | 'saco' | 'caixa' | 'fardo';
 
 interface Insumo {
   id: string;
