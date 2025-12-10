@@ -425,6 +425,13 @@ const ResumoDaProducao = () => {
           totalTracosLote = tracosDoLote.length;
         }
         
+        // CORREÇÃO: Lotes secundários (sequencia > 1) em "a_produzir" não devem aparecer como cards separados
+        // Eles serão gerenciados pelos botões de lote dentro do card principal em "EM PREPARO"
+        if (targetColumn === 'a_produzir' && registro.sequencia_traco && registro.sequencia_traco > 1) {
+          // Não adicionar à coluna - será gerenciado via botões dentro do card principal
+          return;
+        }
+        
         // Cast detalhes_lojas from Json to array e adicionar dados do item
         const registroTyped: ProducaoRegistro = {
           ...registro,
@@ -518,7 +525,8 @@ const ResumoDaProducao = () => {
       }
 
       // Determinar timer_status baseado se o item tem timer ativo
-      const timerStatus = registro.timer_ativo ? 'rodando' : 'concluido';
+      // Para itens SEM timer, usar 'aguardando' (não 'concluido') para que usuário precise clicar em Concluir
+      const timerStatus = registro.timer_ativo ? 'rodando' : 'aguardando';
 
       const { error } = await supabase
         .from('producao_registros')
@@ -992,10 +1000,13 @@ const ResumoDaProducao = () => {
       return undefined;
     }
 
-    // Buscar todos os registros do mesmo lote_producao_id
-    const todosRegistrosLote = columns.em_preparo.filter(
-      r => r.lote_producao_id === registro.lote_producao_id
-    );
+    // Buscar todos os registros do mesmo lote_producao_id em TODAS as colunas relevantes
+    const todosRegistrosLote = [
+      ...columns.a_produzir,
+      ...columns.em_preparo,
+      ...columns.em_porcionamento,
+      ...columns.finalizado
+    ].filter(r => r.lote_producao_id === registro.lote_producao_id);
 
     // Montar array de lotes com status
     const lotes = Array.from({ length: registro.total_tracos_lote }, (_, index) => {
@@ -1005,10 +1016,27 @@ const ResumoDaProducao = () => {
       let status: 'pendente' | 'em_andamento' | 'concluido' = 'pendente';
       
       if (registroDoLote) {
-        if (registroDoLote.timer_status === 'concluido') {
-          status = 'concluido';
-        } else if (registroDoLote.data_inicio_preparo) {
-          status = 'em_andamento';
+        // CORREÇÃO: Para itens SEM timer, usar status ou data_fim_preparo para determinar conclusão
+        // Para itens COM timer, usar timer_status
+        const itemTemTimer = registro.timer_ativo;
+        
+        if (itemTemTimer) {
+          // Lógica para itens COM timer
+          if (registroDoLote.timer_status === 'concluido') {
+            status = 'concluido';
+          } else if (registroDoLote.data_inicio_preparo) {
+            status = 'em_andamento';
+          }
+        } else {
+          // Lógica para itens SEM timer: só é concluído se já passou para porcionamento/finalizado
+          if (registroDoLote.status === 'em_porcionamento' || registroDoLote.status === 'finalizado') {
+            status = 'concluido';
+          } else if (registroDoLote.data_fim_preparo) {
+            // Se tem data_fim_preparo, está concluído
+            status = 'concluido';
+          } else if (registroDoLote.data_inicio_preparo) {
+            status = 'em_andamento';
+          }
         }
       }
 
