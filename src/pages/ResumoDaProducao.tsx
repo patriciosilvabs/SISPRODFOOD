@@ -110,6 +110,8 @@ const ResumoDaProducao = () => {
   const [modalPerda, setModalPerda] = useState(false);
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
+  // Registros auxiliares: lotes secundários em a_produzir (não exibidos como cards, mas disponíveis para lookup)
+  const [registrosAuxiliares, setRegistrosAuxiliares] = useState<ProducaoRegistro[]>([]);
 
   const handleStopAlarm = () => {
     stopAlarm();
@@ -352,6 +354,9 @@ const ResumoDaProducao = () => {
         em_porcionamento: [],
         finalizado: [],
       };
+      
+      // Array para guardar lotes secundários em a_produzir (para lookup, não para exibição)
+      const auxiliares: ProducaoRegistro[] = [];
 
       data?.forEach((registro) => {
         const itemInfo = itensMap.get(registro.item_id);
@@ -425,13 +430,6 @@ const ResumoDaProducao = () => {
           totalTracosLote = tracosDoLote.length;
         }
         
-        // CORREÇÃO: Lotes secundários (sequencia > 1) em "a_produzir" não devem aparecer como cards separados
-        // Eles serão gerenciados pelos botões de lote dentro do card principal em "EM PREPARO"
-        if (targetColumn === 'a_produzir' && registro.sequencia_traco && registro.sequencia_traco > 1) {
-          // Não adicionar à coluna - será gerenciado via botões dentro do card principal
-          return;
-        }
-        
         // Cast detalhes_lojas from Json to array e adicionar dados do item
         const registroTyped: ProducaoRegistro = {
           ...registro,
@@ -448,10 +446,18 @@ const ResumoDaProducao = () => {
           total_tracos_lote: totalTracosLote,
         };
         
+        // CORREÇÃO: Lotes secundários (sequencia > 1) em "a_produzir" não aparecem como cards
+        // mas são mantidos em auxiliares para lookup em getLotesDoItem
+        if (targetColumn === 'a_produzir' && registro.sequencia_traco && registro.sequencia_traco > 1) {
+          auxiliares.push(registroTyped);
+          return;
+        }
+        
         organizedColumns[targetColumn].push(registroTyped);
       });
 
       setColumns(organizedColumns);
+      setRegistrosAuxiliares(auxiliares);
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
@@ -1001,11 +1007,13 @@ const ResumoDaProducao = () => {
     }
 
     // Buscar todos os registros do mesmo lote_producao_id em TODAS as colunas relevantes
+    // INCLUI registrosAuxiliares para encontrar lotes secundários que estão em a_produzir mas não exibidos
     const todosRegistrosLote = [
       ...columns.a_produzir,
       ...columns.em_preparo,
       ...columns.em_porcionamento,
-      ...columns.finalizado
+      ...columns.finalizado,
+      ...registrosAuxiliares
     ].filter(r => r.lote_producao_id === registro.lote_producao_id);
 
     // Montar array de lotes com status
