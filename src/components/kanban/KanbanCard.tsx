@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
 import { useProductionTimer } from '@/hooks/useProductionTimer';
 import { useEffect } from 'react';
+import { formatarPesoExibicao } from '@/lib/weightUtils';
 
 interface InsumoExtraComEstoque {
   nome: string;
@@ -243,7 +244,10 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
                         <span>{extra.nome}:</span>
                         <span className="font-medium flex items-center gap-1">
-                          {extra.quantidade_necessaria.toFixed(2)} {extra.unidade}
+                          {extra.unidade === 'g' 
+                            ? formatarPesoExibicao(extra.quantidade_necessaria)
+                            : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                          }
                           {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
                         </span>
                       </div>
