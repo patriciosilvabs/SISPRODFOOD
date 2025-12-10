@@ -426,18 +426,34 @@ const Insumos = () => {
                     <TableRow key={insumo.id}>
                       <TableCell className="font-medium">{insumo.nome}</TableCell>
                       <TableCell>
-                        <span
-                          className={
-                            insumo.quantidade_em_estoque < insumo.estoque_minimo
-                              ? 'text-warning font-semibold'
-                              : ''
-                          }
-                        >
-                          {insumo.quantidade_em_estoque.toFixed(2)}
-                        </span>
+                        <div className="flex flex-col">
+                          <span
+                            className={
+                              insumo.quantidade_em_estoque < insumo.estoque_minimo
+                                ? 'text-warning font-semibold'
+                                : ''
+                            }
+                          >
+                            {insumo.quantidade_em_estoque.toFixed(2)}
+                          </span>
+                          {insumo.quantidade_em_estoque > 0 && (
+                            <span className="text-xs text-muted-foreground italic">
+                              {numberToWords(insumo.quantidade_em_estoque, insumo.unidade_medida)}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>{insumo.unidade_medida}</TableCell>
-                      <TableCell>{insumo.estoque_minimo.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span>{insumo.estoque_minimo.toFixed(2)}</span>
+                          {insumo.estoque_minimo > 0 && (
+                            <span className="text-xs text-muted-foreground italic">
+                              {numberToWords(insumo.estoque_minimo, insumo.unidade_medida)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{insumo.perda_percentual}%</TableCell>
                       <TableCell>{insumo.dias_cobertura_desejado || 7} dias</TableCell>
                       <TableCell>{insumo.lead_time_real_dias ? `${insumo.lead_time_real_dias} dias` : '-'}</TableCell>
