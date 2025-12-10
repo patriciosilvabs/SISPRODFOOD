@@ -65,6 +65,7 @@ export function FinalizarProducaoModal({
   const isLoteMasseira = unidadeMedida === 'lote_masseira';
 
   // Cálculo de calibragem em tempo real para LOTE_MASSEIRA
+  // Prévia só aparece quando TODOS os 3 campos estão preenchidos (Quantidade, Peso Final, Sobra)
   const calibragemPrevia = useMemo(() => {
     if (!isLoteMasseira || !pesoMinimoBolinhaG || !pesoMaximoBolinhaG) return null;
     
@@ -72,11 +73,18 @@ export function FinalizarProducaoModal({
     const sobraKg = rawToKg(sobra);
     const unidadesNum = parseInt(unidadesReais);
     
-    if (!pesoFinalKg || !unidadesNum || unidadesNum <= 0) return null;
+    // Exigir todos os 3 campos preenchidos (sobra pode ser 0, mas precisa ter valor)
+    if (!pesoFinalKg || pesoFinalKg <= 0 || 
+        !unidadesNum || unidadesNum <= 0 || 
+        sobra === '' || sobra === undefined) {
+      return null;
+    }
     
+    // CRÍTICO: Converter kg para gramas antes de passar para calcularCalibragem
+    // rawToKg retorna valor em kg, mas calcularCalibragem espera gramas
     return calcularCalibragem(
-      pesoFinalKg,
-      sobraKg,
+      pesoFinalKg * 1000,  // kg → g
+      sobraKg * 1000,      // kg → g
       unidadesNum,
       pesoMinimoBolinhaG,
       pesoMaximoBolinhaG
