@@ -10,6 +10,7 @@ import { numberToWords } from '@/lib/numberToWords';
 import { WeightInput } from '@/components/ui/weight-input';
 import { rawToKg } from '@/lib/weightUtils';
 import { useMediaMovelMassa } from '@/hooks/useMediaMovelMassa';
+import { toast } from 'sonner';
 
 interface FinalizarProducaoModalProps {
   open: boolean;
@@ -100,6 +101,35 @@ export function FinalizarProducaoModal({
     
     if (isNaN(unidadesNum) || unidadesNum <= 0) {
       return;
+    }
+
+    // Validação contra valores absurdos para LOTE_MASSEIRA
+    if (isLoteMasseira && massaGeradaPorLoteKg && lotesProducidos) {
+      const massaEsperadaKg = massaGeradaPorLoteKg * lotesProducidos;
+      
+      // Peso final não pode ser menor que 500g por lote (muito baixo)
+      if (pesoFinalKg < (lotesProducidos * 0.5)) {
+        toast.error(`Peso final muito baixo! Mínimo esperado: ${(lotesProducidos * 0.5).toFixed(1)} kg`);
+        return;
+      }
+      
+      // Peso final não pode ser maior que 3x a massa esperada (absurdo)
+      if (pesoFinalKg > massaEsperadaKg * 3) {
+        toast.error(`Peso final absurdo! Máximo permitido: ${(massaEsperadaKg * 3).toFixed(1)} kg`);
+        return;
+      }
+      
+      // Unidades não podem ser absurdamente altas (mais que 10x o esperado)
+      if (unidadesProgramadas && unidadesNum > unidadesProgramadas * 10) {
+        toast.error(`Quantidade absurda! Máximo razoável: ${unidadesProgramadas * 10} unidades`);
+        return;
+      }
+      
+      // Unidades não podem ser muito baixas (menos de 10% do esperado)
+      if (unidadesProgramadas && unidadesNum < unidadesProgramadas * 0.1) {
+        toast.error(`Quantidade muito baixa! Mínimo razoável: ${Math.ceil(unidadesProgramadas * 0.1)} unidades`);
+        return;
+      }
     }
 
     setIsSubmitting(true);

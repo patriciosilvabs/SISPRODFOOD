@@ -92,14 +92,25 @@ export const useMediaMovelMassa = () => {
         .select('peso_medio_real_bolinha_g')
         .eq('item_id', itemId)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20); // Buscar mais para ter margem após filtro
 
       if (error) throw error;
       if (!data || data.length === 0) return null;
 
-      // Calcular média dos últimos 10 registros
-      const soma = data.reduce((acc, item) => acc + (item.peso_medio_real_bolinha_g || 0), 0);
-      const media = soma / data.length;
+      // CRÍTICO: Filtrar outliers antes de calcular média
+      // Apenas considerar registros com peso médio entre 200g e 800g (faixa plausível para bolinhas)
+      const registrosValidos = data.filter(item => 
+        item.peso_medio_real_bolinha_g && 
+        item.peso_medio_real_bolinha_g >= 200 && 
+        item.peso_medio_real_bolinha_g <= 800
+      );
+
+      if (registrosValidos.length === 0) return null;
+
+      // Usar no máximo 10 registros válidos para a média
+      const registrosParaMedia = registrosValidos.slice(0, 10);
+      const soma = registrosParaMedia.reduce((acc, item) => acc + (item.peso_medio_real_bolinha_g || 0), 0);
+      const media = soma / registrosParaMedia.length;
 
       return Math.round(media * 100) / 100; // 2 casas decimais
     } catch (error) {
