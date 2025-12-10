@@ -136,16 +136,47 @@ const Lojas = () => {
       return;
     }
 
-    if (!confirm('Tem certeza que deseja excluir esta loja?')) return;
+    if (!confirm('⚠️ ATENÇÃO: Tem certeza que deseja EXCLUIR PERMANENTEMENTE esta loja?\n\nEsta ação é IRREVERSÍVEL e todos os dados relacionados (estoques, contagens, acessos) serão perdidos.')) return;
 
     try {
+      // 1. Deletar lojas_acesso
+      await supabase
+        .from('lojas_acesso')
+        .delete()
+        .eq('loja_id', loja.id);
+
+      // 2. Deletar estoques_ideais_semanais
+      await supabase
+        .from('estoques_ideais_semanais')
+        .delete()
+        .eq('loja_id', loja.id);
+
+      // 3. Deletar estoque_loja_itens
+      await supabase
+        .from('estoque_loja_itens')
+        .delete()
+        .eq('loja_id', loja.id);
+
+      // 4. Deletar estoque_loja_produtos
+      await supabase
+        .from('estoque_loja_produtos')
+        .delete()
+        .eq('loja_id', loja.id);
+
+      // 5. Deletar contagem_porcionados
+      await supabase
+        .from('contagem_porcionados')
+        .delete()
+        .eq('loja_id', loja.id);
+
+      // 6. Finalmente deletar a loja
       const { error } = await supabase
         .from('lojas')
         .delete()
         .eq('id', loja.id);
 
       if (error) throw error;
-      toast.success('Loja excluída com sucesso!');
+      toast.success('Loja excluída permanentemente!');
       fetchLojas();
     } catch (error: any) {
       toast.error(error.message);
