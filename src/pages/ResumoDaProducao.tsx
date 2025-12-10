@@ -182,7 +182,7 @@ const ResumoDaProducao = () => {
   const getItemInsumoData = async (itemId: string) => {
     const { data, error } = await supabase
       .from('itens_porcionados')
-      .select('insumo_vinculado_id, baixar_producao_inicio, peso_unitario_g, nome, unidade_medida, equivalencia_traco, consumo_por_traco_g')
+      .select('insumo_vinculado_id, baixar_producao_inicio, peso_unitario_g, nome, unidade_medida, equivalencia_traco, consumo_por_traco_g, usa_embalagem_por_porcao, insumo_embalagem_id, unidade_embalagem, fator_consumo_embalagem_por_porcao')
       .eq('id', itemId)
       .maybeSingle();
 
@@ -801,6 +801,65 @@ const ResumoDaProducao = () => {
           if (consumoError) {
             console.warn(`Aviso: falha ao registrar consumo ${tipoInsumo} no histórico:`, consumoError);
           }
+        }
+      }
+
+      // === DÉBITO DE EMBALAGEM ===
+      console.log('[DEBUG EMBALAGEM]', {
+        usaEmbalagem: itemData?.usa_embalagem_por_porcao,
+        insumoEmbalagemId: itemData?.insumo_embalagem_id,
+        fator: itemData?.fator_consumo_embalagem_por_porcao,
+        unidadesReais: data.unidades_reais,
+        demandaLojas: selectedRegistro.demanda_lojas,
+        hasLotesMasseira: selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0
+      });
+
+      if (itemData?.usa_embalagem_por_porcao && itemData.insumo_embalagem_id) {
+        const fator = itemData.fator_consumo_embalagem_por_porcao || 1;
+        const hasLotesMasseiraEmb = selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0;
+        
+        // Para LOTE_MASSEIRA: usar demanda_lojas (quantidade real a enviar), não unidades_reais
+        let quantidadeEmbalagem: number;
+        
+        if (hasLotesMasseiraEmb && selectedRegistro.demanda_lojas) {
+          quantidadeEmbalagem = selectedRegistro.demanda_lojas * fator;
+          console.log(`[EMBALAGEM LOTE_MASSEIRA] ✅ ${selectedRegistro.demanda_lojas} demanda × ${fator} fator = ${quantidadeEmbalagem}`);
+        } else {
+          quantidadeEmbalagem = data.unidades_reais * fator;
+          console.log(`[EMBALAGEM PADRÃO] ${data.unidades_reais} unidades × ${fator} fator = ${quantidadeEmbalagem}`);
+        }
+        
+        try {
+          await movimentarEstoqueInsumo(
+            itemData.insumo_embalagem_id,
+            quantidadeEmbalagem,
+            `Embalagem para ${selectedRegistro.item_nome}`,
+            'saida'
+          );
+          console.log(`[EMBALAGEM] ✅ Debitado: ${quantidadeEmbalagem} ${itemData.unidade_embalagem || 'unidades'}`);
+        } catch (error) {
+          console.error('Erro ao debitar embalagem:', error);
+          toast.error('Erro ao debitar embalagem do estoque');
+        }
+        
+        // Registrar embalagem no histórico de consumo
+        const { error: consumoEmbalagemError } = await supabase.from('consumo_historico').insert({
+          producao_registro_id: selectedRegistro.id,
+          item_id: selectedRegistro.item_id,
+          item_nome: selectedRegistro.item_nome,
+          insumo_id: itemData.insumo_embalagem_id,
+          insumo_nome: 'Embalagem',
+          tipo_insumo: 'embalagem',
+          consumo_programado: quantidadeEmbalagem,
+          consumo_real: quantidadeEmbalagem,
+          unidade: itemData.unidade_embalagem || 'unidade',
+          usuario_id: user?.id || '',
+          usuario_nome: profile?.nome || 'Sistema',
+          organization_id: organizationId,
+        });
+        
+        if (consumoEmbalagemError) {
+          console.warn('Aviso: falha ao registrar consumo de embalagem no histórico:', consumoEmbalagemError);
         }
       }
 
