@@ -415,15 +415,15 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
               {/* Resultado de Calibragem LOTE_MASSEIRA */}
               {registro.unidade_medida === 'lote_masseira' && registro.peso_medio_real_bolinha_g && (
                 <div className={`mt-2 p-2 rounded-lg ${
-                  registro.status_calibracao === 'dentro_limite' 
+                  registro.status_calibracao === 'dentro_do_padrao' 
                     ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' 
                     : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'
                 }`}>
                   <p className="text-xs font-medium mb-1">📊 Calibragem:</p>
                   <div className="flex items-center gap-2">
                     <span className="text-xs">Peso Médio: <strong>{registro.peso_medio_real_bolinha_g.toFixed(1)}g</strong></span>
-                    <Badge variant={registro.status_calibracao === 'dentro_limite' ? 'default' : 'destructive'} className="text-[10px]">
-                      {registro.status_calibracao === 'dentro_limite' ? '✅ OK' : '⚠️ Fora'}
+                    <Badge variant={registro.status_calibracao === 'dentro_do_padrao' ? 'default' : 'destructive'} className="text-[10px]">
+                      {registro.status_calibracao === 'dentro_do_padrao' ? '✅ OK' : '⚠️ Fora'}
                     </Badge>
                   </div>
                   {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
