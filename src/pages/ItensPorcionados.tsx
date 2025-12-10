@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertTriangle, Calculator } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -102,30 +102,6 @@ const ItensPorcionados = () => {
   const rendimentoCozimento = 100 - perdaCozimento;
   const pesoProntoG = parseFloat(formData.peso_pronto_g) || 0;
   const pesoCruPorPorcaoG = rendimentoCozimento > 0 ? pesoProntoG / (rendimentoCozimento / 100) : 0;
-
-  // CÁLCULO AUTOMÁTICO DA QUANTIDADE DO INSUMO VINCULADO
-  const pesoUnitarioG = parseFloat(formData.peso_unitario_g) || 0;
-  const perdaPercentual = parseFloat(formData.perda_percentual_adicional) || 0;
-
-  const quantidadeInsumoCalculada = useMemo(() => {
-    if (pesoUnitarioG <= 0) return 0;
-    
-    // Se não há perda, quantidade = peso unitário
-    if (perdaPercentual <= 0) {
-      return pesoUnitarioG; // em gramas
-    }
-    
-    // Com perda: peso_cru = peso_unitario / (rendimento / 100)
-    const rendimento = 100 - perdaPercentual;
-    if (rendimento <= 0) return 0;
-    
-    const pesoCru = pesoUnitarioG / (rendimento / 100);
-    return pesoCru;
-  }, [pesoUnitarioG, perdaPercentual]);
-
-  // Alertas visuais
-  const alertaPerdaAlta = perdaPercentual > 50;
-  const alertaPesoCruExcessivo = quantidadeInsumoCalculada > (pesoUnitarioG * 3) && pesoUnitarioG > 0;
 
   useEffect(() => {
     fetchData();
@@ -540,63 +516,26 @@ const ItensPorcionados = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="peso">Peso Unitário (g)</Label>
-                      <Input
-                        id="peso"
-                        type="number"
-                        step="0.01"
-                        value={formData.peso_unitario_g}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            peso_unitario_g: e.target.value,
-                          })
-                        }
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="unidade">Unidade de Medida</Label>
-                      <Select
-                        value={formData.unidade_medida}
-                        onValueChange={(value) =>
-                          setFormData({ ...formData, unidade_medida: value as UnidadeMedida })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unidade">unidade</SelectItem>
-                          <SelectItem value="kg">kg</SelectItem>
-                          <SelectItem value="g">g</SelectItem>
-                          <SelectItem value="lote">lote</SelectItem>
-                          <SelectItem value="lote_com_perda">🔥 Lote com Perda (cozimento)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="unidade">Unidade de Medida</Label>
+                    <Select
+                      value={formData.unidade_medida}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, unidade_medida: value as UnidadeMedida })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unidade">unidade</SelectItem>
+                        <SelectItem value="kg">kg</SelectItem>
+                        <SelectItem value="g">g</SelectItem>
+                        <SelectItem value="lote">lote</SelectItem>
+                        <SelectItem value="lote_com_perda">🔥 Lote com Perda (cozimento)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-
-                  {(formData.unidade_medida === 'traco' || formData.unidade_medida === 'lote') && (
-                    <div className="space-y-2">
-                      <Label htmlFor="equivalencia">Equivalência por Lote (unidades)</Label>
-                      <Input
-                        id="equivalencia"
-                        type="number"
-                        value={formData.equivalencia_traco}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            equivalencia_traco: e.target.value,
-                          })
-                        }
-                        placeholder="Ex: 52 unidades por lote"
-                      />
-                    </div>
-                  )}
 
                   {/* Campos específicos para Lote com Perda */}
                   {formData.unidade_medida === 'lote_com_perda' && (
@@ -696,47 +635,6 @@ const ItensPorcionados = () => {
                     </div>
                   )}
 
-                  {/* Alertas visuais de perda */}
-                  {formData.unidade_medida !== 'lote_com_perda' && alertaPerdaAlta && (
-                    <div className="p-2 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-200 rounded text-xs flex items-center gap-2 border border-yellow-200 dark:border-yellow-800">
-                      <AlertTriangle className="h-4 w-4" />
-                      Atenção: perda acima de 50% pode gerar distorções de produção.
-                    </div>
-                  )}
-
-                  {formData.unidade_medida !== 'lote_com_perda' && alertaPesoCruExcessivo && (
-                    <div className="p-2 bg-orange-50 dark:bg-orange-950/30 text-orange-800 dark:text-orange-200 rounded text-xs flex items-center gap-2 border border-orange-200 dark:border-orange-800">
-                      <AlertTriangle className="h-4 w-4" />
-                      O peso cru ultrapassou 300% do peso final. Verifique a perda informada.
-                    </div>
-                  )}
-
-                  {/* Preview do cálculo automático do insumo */}
-                  {formData.unidade_medida !== 'lote_com_perda' && pesoUnitarioG > 0 && (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <h5 className="font-medium text-sm mb-2 flex items-center gap-2 text-blue-800 dark:text-blue-200">
-                        <Calculator className="h-4 w-4" />
-                        Cálculo Automático do Insumo
-                      </h5>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="text-muted-foreground">Peso Final:</span>
-                          <p className="font-medium">{pesoUnitarioG.toFixed(2)} g</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Rendimento:</span>
-                          <p className="font-medium">{(100 - perdaPercentual).toFixed(1)}%</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Peso Cru (Insumo):</span>
-                          <p className="font-medium text-blue-600 dark:text-blue-400">{quantidadeInsumoCalculada.toFixed(2)} g</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2 italic">
-                        ℹ️ Este valor será usado automaticamente ao vincular insumos.
-                      </p>
-                    </div>
-                  )}
 
                   {/* Timer de Produção */}
                   <div className="space-y-4 pt-4 border-t">
@@ -806,7 +704,7 @@ const ItensPorcionados = () => {
                         📦 Insumos Vinculados
                       </h4>
                       <p className="text-xs text-muted-foreground mb-4">
-                        Configure os insumos que serão debitados automaticamente quando a produção for finalizada.
+                        Configure quanto cada lote consome dos insumos. Estes valores serão debitados automaticamente quando a produção for finalizada.
                       </p>
                     </div>
 
@@ -821,7 +719,7 @@ const ItensPorcionados = () => {
                             <div className="flex-1">
                               <p className="font-medium text-sm">{insumo.nome}</p>
                               <p className="text-xs text-muted-foreground">
-                                {insumo.quantidade} {insumo.unidade} por {formData.unidade_medida === 'traco' ? 'traço' : 'unidade'}
+                                {insumo.quantidade} {insumo.unidade} por lote
                               </p>
                             </div>
                             <Button
