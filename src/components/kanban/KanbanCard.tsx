@@ -56,6 +56,11 @@ interface ProducaoRegistro {
   bloqueado_por_traco_anterior?: boolean;
   timer_status?: string;
   total_tracos_lote?: number;
+  // Campos de embalagem
+  usa_embalagem_por_porcao?: boolean;
+  insumo_embalagem_nome?: string;
+  quantidade_embalagem?: number;
+  unidade_embalagem?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -240,7 +245,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     )}
                     
                     {/* Insumos Extras */}
-                    {registro.insumosExtras?.map((extra, idx) => (
+                                    {registro.insumosExtras?.map((extra, idx) => (
                       <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
                         <span>{extra.nome}:</span>
                         <span className="font-medium flex items-center gap-1">
@@ -256,6 +261,20 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         </span>
                       </div>
                     ))}
+
+                    {/* Embalagem (se configurada) */}
+                    {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
+                      <div className="flex justify-between text-xs text-purple-600 dark:text-purple-400 pt-1 border-t border-slate-200 dark:border-slate-700">
+                        <span className="flex items-center gap-1">
+                          🎁 {registro.insumo_embalagem_nome}:
+                        </span>
+                        <span className="font-medium">
+                          {registro.quantidade_embalagem % 1 === 0 
+                            ? registro.quantidade_embalagem.toFixed(0) 
+                            : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 

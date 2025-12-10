@@ -983,7 +983,9 @@ export type Database = {
           consumo_por_traco_g: number | null
           created_at: string | null
           equivalencia_traco: number | null
+          fator_consumo_embalagem_por_porcao: number | null
           id: string
+          insumo_embalagem_id: string | null
           insumo_vinculado_id: string | null
           nome: string
           organization_id: string | null
@@ -994,8 +996,10 @@ export type Database = {
           quantidade_por_lote: number | null
           tempo_timer_minutos: number | null
           timer_ativo: boolean | null
+          unidade_embalagem: string | null
           unidade_medida: Database["public"]["Enums"]["unidade_medida"]
           updated_at: string | null
+          usa_embalagem_por_porcao: boolean | null
           usa_traco_massa: boolean | null
         }
         Insert: {
@@ -1004,7 +1008,9 @@ export type Database = {
           consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
+          fator_consumo_embalagem_por_porcao?: number | null
           id?: string
+          insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
           nome: string
           organization_id?: string | null
@@ -1015,8 +1021,10 @@ export type Database = {
           quantidade_por_lote?: number | null
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null
+          unidade_embalagem?: string | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
+          usa_embalagem_por_porcao?: boolean | null
           usa_traco_massa?: boolean | null
         }
         Update: {
@@ -1025,7 +1033,9 @@ export type Database = {
           consumo_por_traco_g?: number | null
           created_at?: string | null
           equivalencia_traco?: number | null
+          fator_consumo_embalagem_por_porcao?: number | null
           id?: string
+          insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
           nome?: string
           organization_id?: string | null
@@ -1036,11 +1046,20 @@ export type Database = {
           quantidade_por_lote?: number | null
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null
+          unidade_embalagem?: string | null
           unidade_medida?: Database["public"]["Enums"]["unidade_medida"]
           updated_at?: string | null
+          usa_embalagem_por_porcao?: boolean | null
           usa_traco_massa?: boolean | null
         }
         Relationships: [
+          {
+            foreignKeyName: "itens_porcionados_insumo_embalagem_id_fkey"
+            columns: ["insumo_embalagem_id"]
+            isOneToOne: false
+            referencedRelation: "insumos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "itens_porcionados_insumo_vinculado_id_fkey"
             columns: ["insumo_vinculado_id"]
