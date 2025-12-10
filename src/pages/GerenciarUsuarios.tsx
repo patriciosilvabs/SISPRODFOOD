@@ -455,27 +455,45 @@ const GerenciarUsuarios = () => {
     }
 
     try {
-      // Remover acesso a lojas e page overrides
-      await supabase.from('lojas_acesso').delete().eq('user_id', deletingUser.id);
-      await supabase.from('user_page_access').delete().eq('user_id', deletingUser.id).eq('organization_id', organizationId);
+      // 1. Remover acesso a lojas
+      const { error: lojasError } = await supabase
+        .from('lojas_acesso')
+        .delete()
+        .eq('user_id', deletingUser.id);
       
-      // Remover is_admin
-      await supabase
-        .from('organization_members')
-        .update({ is_admin: false })
+      if (lojasError) console.error('Erro ao remover lojas_acesso:', lojasError);
+
+      // 2. Remover page overrides
+      const { error: pageError } = await supabase
+        .from('user_page_access')
+        .delete()
         .eq('user_id', deletingUser.id)
         .eq('organization_id', organizationId);
+      
+      if (pageError) console.error('Erro ao remover user_page_access:', pageError);
+
+      // 3. REMOVER COMPLETAMENTE da organização
+      const { error: memberError } = await supabase
+        .from('organization_members')
+        .delete()
+        .eq('user_id', deletingUser.id)
+        .eq('organization_id', organizationId);
+
+      if (memberError) {
+        console.error('Erro ao remover organization_members:', memberError);
+        throw memberError;
+      }
 
       await auditLog.log('user.remove', 'user', deletingUser.id, {
         target_email: deletingUser.email,
       });
 
-      toast.success('Permissões do usuário removidas');
+      toast.success('Usuário removido da organização com sucesso');
       setDeleteDialogOpen(false);
       fetchData();
     } catch (error) {
-      console.error('Erro ao remover permissões:', error);
-      toast.error('Erro ao remover permissões');
+      console.error('Erro ao remover usuário:', error);
+      toast.error('Erro ao remover usuário');
     }
   };
 
