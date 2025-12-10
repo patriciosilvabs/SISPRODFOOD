@@ -2792,6 +2792,10 @@ export type Database = {
         | "traco"
         | "lote"
         | "lote_com_perda"
+        | "lote_sem_perda"
+        | "saco"
+        | "caixa"
+        | "fardo"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2942,6 +2946,10 @@ export const Constants = {
         "traco",
         "lote",
         "lote_com_perda",
+        "lote_sem_perda",
+        "saco",
+        "caixa",
+        "fardo",
       ],
     },
   },
