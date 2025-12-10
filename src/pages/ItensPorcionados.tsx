@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -84,12 +86,13 @@ interface InsumoVinculado {
 
 const ItensPorcionados = () => {
   const { organizationId } = useOrganization();
-  const [itens, setItens] = useState<ItemPorcionado[]>([]);
+  const [itens, setItens] = useState<(ItemPorcionado & { ativo?: boolean })[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [insumosVinculados, setInsumosVinculados] = useState<InsumoVinculado[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
+  const [mostrarInativos, setMostrarInativos] = useState(false);
   
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
@@ -145,16 +148,21 @@ const ItensPorcionados = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [mostrarInativos]);
 
   const fetchData = async () => {
     try {
-      const { data: itensData, error: itensError } = await supabase
+      let query = supabase
         .from('itens_porcionados')
         .select('*')
-        .eq('ativo', true)
         .order('nome');
+      
+      // Se não mostrar inativos, filtra apenas ativos
+      if (!mostrarInativos) {
+        query = query.eq('ativo', true);
+      }
 
+      const { data: itensData, error: itensError } = await query;
       if (itensError) throw itensError;
 
       const { data: insumosData, error: insumosError } = await supabase
@@ -606,6 +614,23 @@ const ItensPorcionados = () => {
 
     const novosInsumos = insumosVinculados.filter((_, i) => i !== index);
     setInsumosVinculados(novosInsumos);
+  };
+
+  const handleReativar = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('itens_porcionados')
+        .update({ ativo: true })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      toast.success('Item reativado com sucesso!');
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao reativar item:', error);
+      toast.error('Erro ao reativar item');
+    }
   };
 
   const openEditDialog = async (item: ItemPorcionado) => {
@@ -1390,10 +1415,27 @@ const ItensPorcionados = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5" />
-              Lista de Itens Porcionados
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingBag className="h-5 w-5" />
+                Lista de Itens Porcionados
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                {mostrarInativos ? (
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                <Label htmlFor="toggle-inativos" className="text-sm cursor-pointer">
+                  Mostrar desativados
+                </Label>
+                <Switch
+                  id="toggle-inativos"
+                  checked={mostrarInativos}
+                  onCheckedChange={setMostrarInativos}
+                />
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
@@ -1414,20 +1456,27 @@ const ItensPorcionados = () => {
                   </TableRow>
                 ) : (
                   itens.map((item) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className={item.ativo === false ? 'opacity-60 bg-muted/30' : ''}>
                       <TableCell className="font-medium">
-                        {item.nome}
-                        {item.timer_ativo && (
-                          <span className="ml-2 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded">
-                            <Timer className="inline h-3 w-3 mr-1" />
-                            {item.tempo_timer_minutos}min
-                          </span>
-                        )}
-                        {item.usa_embalagem_por_porcao && (
-                          <span className="ml-2 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded">
-                            🎁 Embalagem
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {item.ativo === false && (
+                            <Badge variant="destructive" className="text-xs">
+                              DESATIVADO
+                            </Badge>
+                          )}
+                          {item.nome}
+                          {item.timer_ativo && (
+                            <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                              <Timer className="inline h-3 w-3 mr-1" />
+                              {item.tempo_timer_minutos}min
+                            </span>
+                          )}
+                          {item.usa_embalagem_por_porcao && (
+                            <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-1.5 py-0.5 rounded">
+                              🎁 Embalagem
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -1454,20 +1503,34 @@ const ItensPorcionados = () => {
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(item)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {item.ativo === false ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReativar(item.id)}
+                            className="text-green-600 border-green-300 hover:bg-green-50 dark:hover:bg-green-950/30"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Reativar
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(item)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(item.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
