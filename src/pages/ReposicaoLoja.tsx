@@ -52,6 +52,8 @@ interface EstoqueLoja {
   loja_id: string;
   quantidade: number;
   data_ultima_contagem: string | null;
+  data_ultima_atualizacao: string | null;
+  usuario_nome: string | null;
 }
 
 interface DemandaLoja {
@@ -64,6 +66,8 @@ interface DemandaLoja {
   quantidade_ja_enviada: number;
   quantidade_envio: number;
   ultima_contagem: string | null;
+  ultima_atualizacao: string | null;
+  usuario_registro: string | null;
 }
 
 interface RomaneioAguardando {
@@ -180,7 +184,7 @@ const ReposicaoLoja = () => {
       // Buscar estoques das lojas
       const { data: estoquesLojasData, error: estoquesLojasError } = await supabase
         .from('estoque_loja_produtos')
-        .select('produto_id, loja_id, quantidade, data_ultima_contagem');
+        .select('produto_id, loja_id, quantidade, data_ultima_contagem, data_ultima_atualizacao, usuario_nome');
 
       if (estoquesLojasError) throw estoquesLojasError;
       setEstoquesLojas(estoquesLojasData || []);
@@ -315,7 +319,9 @@ const ReposicaoLoja = () => {
             a_repor: aRepor,
             quantidade_ja_enviada: quantidadeJaEnviada,
             quantidade_envio: quantidadesEnvio[key] ?? aRepor,
-            ultima_contagem: estoqueLoja?.data_ultima_contagem || null
+            ultima_contagem: estoqueLoja?.data_ultima_contagem || null,
+            ultima_atualizacao: estoqueLoja?.data_ultima_atualizacao || null,
+            usuario_registro: estoqueLoja?.usuario_nome || null
           });
         }
       }
@@ -677,7 +683,19 @@ const ReposicaoLoja = () => {
                                           )}
                                         </td>
                                         <td className="p-2 text-center font-medium">{item.estoque_minimo}</td>
-                                        <td className="p-2 text-center">{item.estoque_atual_loja}</td>
+                                        <td className="p-2 text-center">
+                                          <div className="flex flex-col items-center">
+                                            <span>{item.estoque_atual_loja}</span>
+                                            {item.ultima_atualizacao && (
+                                              <div className="text-xs text-muted-foreground mt-0.5">
+                                                <div>{format(new Date(item.ultima_atualizacao), "dd/MM HH:mm", { locale: ptBR })}</div>
+                                                {item.usuario_registro && (
+                                                  <div className="italic">{item.usuario_registro}</div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
                                         <td className="p-2 text-center">
                                           <span className={semEstoque ? 'text-destructive font-medium' : ''}>
                                             {item.estoque_cpd}
