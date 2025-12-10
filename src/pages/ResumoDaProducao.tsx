@@ -411,8 +411,14 @@ const ResumoDaProducao = () => {
             const unidadesProgramadas = registro.unidades_programadas || 0;
             const escalaInsumo = (insumoVinculado as any).escala_configuracao || 'por_unidade';
             
-            // Usar ESCALA DO INSUMO para determinar cálculo, não unidade_medida do item
-            if (escalaInsumo === 'por_lote' || escalaInsumo === 'por_traco') {
+            // ===== TRATAMENTO ESPECIAL PARA LOTE_MASSEIRA =====
+            if (itemInfo?.unidade_medida === 'lote_masseira' && registro.lotes_masseira) {
+              // Para LOTE_MASSEIRA, SEMPRE usar número de lotes, não unidades
+              // Todos os insumos são configurados POR LOTE
+              quantidadeNecessaria = registro.lotes_masseira * insumoVinculado.quantidade;
+            } 
+            // ===== DEMAIS TIPOS =====
+            else if (escalaInsumo === 'por_lote' || escalaInsumo === 'por_traco') {
               // Insumo configurado para consumir por lote/traço
               if (itemInfo?.equivalencia_traco) {
                 const lotes = Math.ceil(unidadesProgramadas / itemInfo.equivalencia_traco);
