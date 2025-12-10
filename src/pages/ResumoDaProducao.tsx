@@ -714,8 +714,12 @@ const ResumoDaProducao = () => {
         for (const insumoVinculado of insumosVinculados) {
           let quantidadeTotal = 0;
           
-          // Calcular quantidade baseado em traços ou unidades
-          if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
+          // Calcular quantidade baseado no tipo de item
+          if (itemData?.unidade_medida === 'lote_masseira' && selectedRegistro.lotes_masseira) {
+            // LOTE_MASSEIRA: usar número de lotes, NÃO unidades
+            quantidadeTotal = selectedRegistro.lotes_masseira * insumoVinculado.quantidade;
+            console.log(`[LOTE_MASSEIRA] Débito: ${selectedRegistro.lotes_masseira} lotes × ${insumoVinculado.quantidade} = ${quantidadeTotal}`);
+          } else if (itemData?.unidade_medida === 'traco' && itemData.equivalencia_traco) {
             const tracos = data.unidades_reais / itemData.equivalencia_traco;
             // Para insumo principal, usar consumo_por_traco_g se disponível
             if (insumoVinculado.is_principal && insumoVinculado.consumo_por_traco_g) {
