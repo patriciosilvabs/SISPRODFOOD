@@ -462,6 +462,7 @@ const ItensPorcionados = () => {
     // Para lote_com_perda e lote_masseira, usar quantidade calculada automaticamente
     let quantidade: number;
     let unidade: UnidadeMedida;
+    let isPrincipal = false;
 
     if (formData.unidade_medida === 'lote_com_perda') {
       if (!quantidadeInsumoAutomatica) {
@@ -470,13 +471,28 @@ const ItensPorcionados = () => {
       }
       quantidade = parseFloat(quantidadeInsumoAutomatica);
       unidade = 'kg'; // Força kg para cálculo automático
+      isPrincipal = insumosVinculados.length === 0;
     } else if (formData.unidade_medida === 'lote_masseira') {
-      if (!quantidadeInsumoMasseiraAutomatica) {
-        toast.error('Preencha Farinha por Lote antes de adicionar insumo');
-        return;
+      // LOTE_MASSEIRA: primeiro insumo é automático (farinha), demais são manuais (por lote)
+      if (insumosVinculados.length === 0) {
+        // PRIMEIRO INSUMO (FARINHA): usar quantidade automática
+        if (!quantidadeInsumoMasseiraAutomatica) {
+          toast.error('Preencha Farinha por Lote antes de adicionar o insumo principal');
+          return;
+        }
+        quantidade = parseFloat(quantidadeInsumoMasseiraAutomatica);
+        unidade = 'kg'; // Força kg para farinha
+        isPrincipal = true;
+      } else {
+        // DEMAIS INSUMOS: usar quantidade manual (POR LOTE)
+        quantidade = parseFloat(novoInsumo.quantidade) || 0;
+        unidade = novoInsumo.unidade;
+        
+        if (quantidade <= 0) {
+          toast.error('Informe a quantidade do insumo POR LOTE');
+          return;
+        }
       }
-      quantidade = parseFloat(quantidadeInsumoMasseiraAutomatica);
-      unidade = 'kg'; // Força kg para cálculo automático
     } else {
       // Para outros tipos, usar quantidade manual
       quantidade = parseFloat(novoInsumo.quantidade) || 0;
@@ -514,7 +530,8 @@ const ItensPorcionados = () => {
             nome: insumoSelecionado.nome,
             quantidade: quantidade,
             unidade: unidade as any,
-            is_principal: false,
+            is_principal: isPrincipal,
+            escala_configuracao: formData.unidade_medida === 'lote_masseira' ? 'por_lote' : 'por_unidade',
             consumo_por_traco_g: null as number | null,
             organization_id: organizationId,
           } as any)
@@ -1049,10 +1066,16 @@ const ItensPorcionados = () => {
                             className="flex items-center justify-between p-3 rounded-lg border bg-muted"
                           >
                             <div className="flex-1">
-                              <p className="font-medium text-sm">{insumo.nome}</p>
+                              <p className="font-medium text-sm">
+                                {insumo.nome}
+                                {formData.unidade_medida === 'lote_masseira' && index === 0 && (
+                                  <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">(Principal)</span>
+                                )}
+                              </p>
                               <p className="text-xs text-muted-foreground">
                                 {insumo.quantidade} {insumo.unidade} por lote
-                                {(formData.unidade_medida === 'lote_com_perda' || formData.unidade_medida === 'lote_masseira') && (
+                                {(formData.unidade_medida === 'lote_com_perda' || 
+                                  (formData.unidade_medida === 'lote_masseira' && index === 0)) && (
                                   <span className="ml-2 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded text-[10px] font-medium">
                                     🔒 Automático
                                   </span>
@@ -1096,7 +1119,7 @@ const ItensPorcionados = () => {
                       </div>
 
                       <div className="col-span-3 space-y-2">
-                        <Label>Quantidade</Label>
+                        <Label>Quantidade {formData.unidade_medida === 'lote_masseira' && insumosVinculados.length > 0 && '(por lote)'}</Label>
                         {formData.unidade_medida === 'lote_com_perda' ? (
                           // Campo READ-ONLY para Lote com Perda
                           <Input
@@ -1105,8 +1128,8 @@ const ItensPorcionados = () => {
                             disabled
                             className="bg-muted cursor-not-allowed"
                           />
-                        ) : formData.unidade_medida === 'lote_masseira' ? (
-                          // Campo READ-ONLY para Lote Masseira
+                        ) : formData.unidade_medida === 'lote_masseira' && insumosVinculados.length === 0 ? (
+                          // Campo READ-ONLY apenas para PRIMEIRO insumo do Lote Masseira (farinha)
                           <Input
                             type="text"
                             value={quantidadeInsumoMasseiraAutomatica ? `${quantidadeInsumoMasseiraAutomatica} kg` : 'Preencha farinha/lote acima'}
@@ -1114,26 +1137,27 @@ const ItensPorcionados = () => {
                             className="bg-muted cursor-not-allowed"
                           />
                         ) : (
-                          // Campo editável para outros tipos
+                          // Campo editável para outros tipos E para insumos adicionais do lote_masseira
                           <Input
                             type="number"
-                            step="0.01"
+                            step="0.001"
                             value={novoInsumo.quantidade}
                             onChange={(e) => 
                               setNovoInsumo({ ...novoInsumo, quantidade: e.target.value })
                             }
-                            placeholder="Ex: 6"
+                            placeholder={formData.unidade_medida === 'lote_masseira' ? 'Qtd por lote' : 'Ex: 6'}
                           />
                         )}
                       </div>
 
                       <div className="col-span-2 space-y-2">
                         <Label>Unidade</Label>
-                        {(formData.unidade_medida === 'lote_com_perda' || formData.unidade_medida === 'lote_masseira') ? (
-                          // Unidade fixa kg para Lote com Perda e Lote Masseira
+                        {formData.unidade_medida === 'lote_com_perda' || 
+                         (formData.unidade_medida === 'lote_masseira' && insumosVinculados.length === 0) ? (
+                          // Unidade fixa kg para Lote com Perda e PRIMEIRO insumo do Lote Masseira
                           <Input value="kg" disabled className="bg-muted cursor-not-allowed" />
                         ) : (
-                          // Dropdown normal para outros tipos
+                          // Dropdown normal para outros tipos E insumos adicionais do lote_masseira
                           <Select
                             value={novoInsumo.unidade}
                             onValueChange={(value: UnidadeMedida) => 
@@ -1169,7 +1193,9 @@ const ItensPorcionados = () => {
                             (formData.unidade_medida === 'lote_com_perda' 
                               ? !quantidadeInsumoAutomatica 
                               : formData.unidade_medida === 'lote_masseira'
-                              ? !quantidadeInsumoMasseiraAutomatica
+                              ? insumosVinculados.length === 0 
+                                ? !quantidadeInsumoMasseiraAutomatica // Primeiro: precisa ter farinha configurada
+                                : !novoInsumo.quantidade || parseFloat(novoInsumo.quantidade) <= 0 // Demais: precisa ter quantidade manual
                               : !novoInsumo.quantidade || parseFloat(novoInsumo.quantidade) <= 0)
                           }
                         >
@@ -1182,9 +1208,17 @@ const ItensPorcionados = () => {
                     {formData.unidade_medida === 'lote_masseira' && (
                       <div className="p-2 bg-amber-50 dark:bg-amber-950/30 rounded border border-amber-200 dark:border-amber-700">
                         <p className="text-xs text-amber-800 dark:text-amber-200">
-                          <strong>🔒 Quantidade calculada automaticamente:</strong> O consumo do insumo principal 
-                          é igual à Farinha por Lote ({formData.farinha_por_lote_kg || '?'} kg). 
-                          Não pode ser editado manualmente.
+                          {insumosVinculados.length === 0 ? (
+                            <>
+                              <strong>🔒 INSUMO PRINCIPAL (Farinha):</strong> Quantidade automática = {formData.farinha_por_lote_kg || '?'} kg por lote. 
+                              Não pode ser editado manualmente.
+                            </>
+                          ) : (
+                            <>
+                              <strong>📝 INSUMOS ADICIONAIS:</strong> Configure a quantidade POR LOTE de cada insumo. 
+                              O sistema multiplicará automaticamente pelos lotes produzidos.
+                            </>
+                          )}
                         </p>
                       </div>
                     )}
