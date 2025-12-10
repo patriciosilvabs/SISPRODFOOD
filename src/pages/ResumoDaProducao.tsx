@@ -76,6 +76,17 @@ interface ProducaoRegistro {
   insumo_embalagem_nome?: string;
   quantidade_embalagem?: number;
   unidade_embalagem?: string;
+  // Campos LOTE_MASSEIRA
+  lotes_masseira?: number;
+  farinha_consumida_kg?: number;
+  massa_total_gerada_kg?: number;
+  peso_medio_operacional_bolinha_g?: number;
+  peso_minimo_bolinha_g?: number;
+  peso_maximo_bolinha_g?: number;
+  peso_alvo_bolinha_g?: number;
+  unidades_estimadas_masseira?: number;
+  peso_medio_real_bolinha_g?: number;
+  status_calibracao?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -316,11 +327,14 @@ const ResumoDaProducao = () => {
 
       if (error) throw error;
 
-      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado, timer_ativo, tempo_timer_minutos)
+      // Buscar dados dos itens (unidade_medida, equivalencia_traco, insumo_vinculado, timer_ativo, tempo_timer_minutos, campos masseira)
       const itemIds = [...new Set(data?.map(r => r.item_id) || [])];
       const { data: itensData } = await supabase
         .from('itens_porcionados')
-        .select('id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos, usa_embalagem_por_porcao, insumo_embalagem_id, unidade_embalagem, fator_consumo_embalagem_por_porcao')
+        .select(`id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos, 
+          usa_embalagem_por_porcao, insumo_embalagem_id, unidade_embalagem, fator_consumo_embalagem_por_porcao,
+          farinha_por_lote_kg, massa_gerada_por_lote_kg, peso_minimo_bolinha_g, peso_maximo_bolinha_g, 
+          peso_alvo_bolinha_g, peso_medio_operacional_bolinha_g`)
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
@@ -467,6 +481,23 @@ const ResumoDaProducao = () => {
           insumo_embalagem_nome: insumoEmbalagemNome,
           quantidade_embalagem: quantidadeEmbalagem,
           unidade_embalagem: itemInfo?.unidade_embalagem,
+          // Dados LOTE_MASSEIRA
+          lotes_masseira: registro.lotes_masseira,
+          farinha_consumida_kg: registro.farinha_consumida_kg,
+          massa_total_gerada_kg: registro.massa_total_gerada_kg,
+          peso_medio_operacional_bolinha_g: itemInfo?.peso_medio_operacional_bolinha_g,
+          peso_minimo_bolinha_g: itemInfo?.peso_minimo_bolinha_g,
+          peso_maximo_bolinha_g: itemInfo?.peso_maximo_bolinha_g,
+          peso_alvo_bolinha_g: itemInfo?.peso_alvo_bolinha_g,
+          peso_medio_real_bolinha_g: registro.peso_medio_real_bolinha_g,
+          status_calibracao: registro.status_calibracao,
+          // Calcular unidades estimadas para LOTE_MASSEIRA
+          unidades_estimadas_masseira: itemInfo?.unidade_medida === 'lote_masseira' && 
+            registro.lotes_masseira && 
+            itemInfo?.massa_gerada_por_lote_kg && 
+            itemInfo?.peso_medio_operacional_bolinha_g
+              ? Math.floor(registro.lotes_masseira * itemInfo.massa_gerada_por_lote_kg / (itemInfo.peso_medio_operacional_bolinha_g / 1000))
+              : undefined,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -1107,6 +1138,16 @@ const ResumoDaProducao = () => {
             itemNome={selectedRegistro.item_nome}
             unidadesProgramadas={selectedRegistro.unidades_programadas}
             onConfirm={handleFinalizarProducao}
+            // Props LOTE_MASSEIRA
+            itemId={selectedRegistro.item_id}
+            producaoRegistroId={selectedRegistro.id}
+            unidadeMedida={selectedRegistro.unidade_medida}
+            lotesProducidos={selectedRegistro.lotes_masseira}
+            pesoMinimoBolinhaG={selectedRegistro.peso_minimo_bolinha_g}
+            pesoMaximoBolinhaG={selectedRegistro.peso_maximo_bolinha_g}
+            pesoAlvoBolinhaG={selectedRegistro.peso_alvo_bolinha_g}
+            farinhaPorLoteKg={selectedRegistro.farinha_consumida_kg}
+            massaGeradaPorLoteKg={selectedRegistro.massa_total_gerada_kg}
           />
 
           <CancelarPreparoModal
