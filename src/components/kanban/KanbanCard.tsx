@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2, Play } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2, Play, Bell, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
@@ -60,11 +60,18 @@ interface ProducaoRegistro {
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
+// Estados do lote segundo Regra-Mãe do Preparo por Lotes
+// pendente: Não iniciado
+// timer_rodando: Timer em contagem
+// alarme_tocando: Timer zerou, aguardando confirmação manual
+// confirmado: Alarme parado, pronto para enviar ao porcionamento
+// enviado_porcionamento: Lote foi para porcionamento (libera próximo lote)
 interface LoteInfo {
   numero: number;
   unidades: number;
-  status: 'pendente' | 'em_andamento' | 'concluido';
+  status: 'pendente' | 'timer_rodando' | 'alarme_tocando' | 'confirmado' | 'enviado_porcionamento';
   registroId?: string;
+  timerStatus?: string;
 }
 
 interface KanbanCardProps {
@@ -76,9 +83,11 @@ interface KanbanCardProps {
   onRegistrarPerda?: () => void;
   lotesDoItem?: LoteInfo[];
   onIniciarLote?: (loteNumero: number) => void;
+  onConfirmarAlarme?: (loteNumero: number) => void;
+  onEnviarLoteParaPorcionamento?: (loteNumero: number) => void;
 }
 
-export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda, lotesDoItem, onIniciarLote }: KanbanCardProps) {
+export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda, lotesDoItem, onIniciarLote, onConfirmarAlarme, onEnviarLoteParaPorcionamento }: KanbanCardProps) {
   // Hook para gerenciar timer (apenas para EM PREPARO)
   const timerState = useProductionTimer(
     registro.id,
@@ -150,8 +159,16 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     timerState.isActive && 
     !timerState.isFinished;
 
+  // REGRA-MÃE: Para itens com múltiplos lotes, o botão geral "Ir para Porcionamento"
+  // só deve aparecer quando TODOS os lotes foram enviados individualmente
+  const temMultiplosLotes = lotesDoItem && lotesDoItem.length > 1;
+  const todosLotesEnviados = temMultiplosLotes 
+    ? lotesDoItem.every(l => l.status === 'enviado_porcionamento')
+    : true;
+  const bloqueadoPorLotesPendentes = temMultiplosLotes && !todosLotesEnviados;
+
   // Combinação de todas as condições de bloqueio
-  const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando;
+  const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando || bloqueadoPorLotesPendentes;
   
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
@@ -312,44 +329,87 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   </div>
                 )}
 
-                {/* Interface de Múltiplos Lotes */}
+                {/* Interface de Múltiplos Lotes - Regra-Mãe do Preparo por Lotes */}
                 {lotesDoItem && lotesDoItem.length > 1 && (
                   <div className="mt-3 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">📦 Lotes do item:</p>
                     <div className="grid grid-cols-2 gap-2">
                       {lotesDoItem.map((lote) => {
-                        const isLoteAtual = registro.sequencia_traco === lote.numero;
                         const loteAnterior = lotesDoItem.find(l => l.numero === lote.numero - 1);
-                        const loteAnteriorNaoConcluido = loteAnterior && loteAnterior.status !== 'concluido';
-                        const podeIniciar = lote.status === 'pendente' && !loteAnteriorNaoConcluido;
-                        const estaEmAndamento = lote.status === 'em_andamento';
-                        const estaConcluido = lote.status === 'concluido';
+                        // REGRA-MÃE: Lote 2 só pode iniciar após Lote 1 ser ENVIADO para porcionamento
+                        const loteAnteriorNaoEnviado = loteAnterior && loteAnterior.status !== 'enviado_porcionamento';
+                        const podeIniciar = lote.status === 'pendente' && !loteAnteriorNaoEnviado;
+                        
+                        // Estados do lote
+                        const isPendente = lote.status === 'pendente';
+                        const isTimerRodando = lote.status === 'timer_rodando';
+                        const isAlarmeTocando = lote.status === 'alarme_tocando';
+                        const isConfirmado = lote.status === 'confirmado';
+                        const isEnviado = lote.status === 'enviado_porcionamento';
+                        
+                        // Determinar cor do card
+                        let cardClass = 'bg-white dark:bg-slate-800 border-slate-200';
+                        if (isEnviado) {
+                          cardClass = 'bg-green-50 dark:bg-green-950 border-green-200';
+                        } else if (isConfirmado) {
+                          cardClass = 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200';
+                        } else if (isAlarmeTocando) {
+                          cardClass = 'bg-red-50 dark:bg-red-950 border-red-300 animate-pulse';
+                        } else if (isTimerRodando) {
+                          cardClass = 'bg-blue-50 dark:bg-blue-950 border-blue-200';
+                        }
                         
                         return (
                           <div 
                             key={lote.numero} 
-                            className={`rounded-lg p-2 border shadow-sm ${
-                              estaConcluido 
-                                ? 'bg-green-50 dark:bg-green-950 border-green-200' 
-                                : estaEmAndamento 
-                                  ? 'bg-blue-50 dark:bg-blue-950 border-blue-200'
-                                  : 'bg-white dark:bg-slate-800 border-slate-200'
-                            }`}
+                            className={`rounded-lg p-2 border shadow-sm ${cardClass}`}
                           >
                             <p className="text-xs font-semibold text-center mb-1">
                               LOTE {lote.numero}: {lote.unidades}UN
                             </p>
-                            {estaConcluido ? (
+                            
+                            {/* Estado: ENVIADO PARA PORCIONAMENTO */}
+                            {isEnviado && (
                               <div className="flex items-center justify-center gap-1 text-xs text-green-600">
                                 <CheckCircle2 className="h-3 w-3" />
-                                <span>CONCLUÍDO</span>
+                                <span>ENVIADO</span>
                               </div>
-                            ) : estaEmAndamento ? (
+                            )}
+                            
+                            {/* Estado: CONFIRMADO - Pronto para enviar */}
+                            {isConfirmado && (
+                              <Button
+                                size="sm"
+                                className="w-full h-7 text-xs bg-yellow-500 hover:bg-yellow-600 text-white"
+                                onClick={() => onEnviarLoteParaPorcionamento?.(lote.numero)}
+                              >
+                                <Send className="h-3 w-3 mr-1" />
+                                ENVIAR P/ PORC.
+                              </Button>
+                            )}
+                            
+                            {/* Estado: ALARME TOCANDO - Aguardando confirmação manual */}
+                            {isAlarmeTocando && (
+                              <Button
+                                size="sm"
+                                className="w-full h-7 text-xs bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                                onClick={() => onConfirmarAlarme?.(lote.numero)}
+                              >
+                                <Bell className="h-3 w-3 mr-1 animate-bounce" />
+                                PARAR ALARME
+                              </Button>
+                            )}
+                            
+                            {/* Estado: TIMER RODANDO */}
+                            {isTimerRodando && (
                               <div className="flex items-center justify-center gap-1 text-xs text-blue-600">
                                 <Clock className="h-3 w-3 animate-spin" />
                                 <span>EM PREPARO</span>
                               </div>
-                            ) : podeIniciar ? (
+                            )}
+                            
+                            {/* Estado: PENDENTE - Pode ou não iniciar */}
+                            {isPendente && podeIniciar && (
                               <Button
                                 size="sm"
                                 className="w-full h-7 text-xs bg-green-500 hover:bg-green-600"
@@ -357,7 +417,9 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                               >
                                 INICIAR <Play className="h-3 w-3 ml-1" />
                               </Button>
-                            ) : (
+                            )}
+                            
+                            {isPendente && !podeIniciar && (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -475,6 +537,11 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     <>
                       <Clock className="h-4 w-4 mr-2" />
                       Aguardando timer
+                    </>
+                  ) : bloqueadoPorLotesPendentes ? (
+                    <>
+                      <Package className="h-4 w-4 mr-2" />
+                      Envie todos os lotes primeiro
                     </>
                   ) : estaBloqueadoPorTraco ? (
                     <>
