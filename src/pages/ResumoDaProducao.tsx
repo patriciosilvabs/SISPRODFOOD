@@ -465,7 +465,13 @@ const ResumoDaProducao = () => {
         let insumoEmbalagemNome: string | undefined;
         if (itemInfo?.usa_embalagem_por_porcao && itemInfo.insumo_embalagem_id && registro.unidades_programadas) {
           const fator = itemInfo.fator_consumo_embalagem_por_porcao || 1;
-          quantidadeEmbalagem = registro.unidades_programadas * fator;
+          
+          // Para LOTE_MASSEIRA, usar demanda real das lojas (não unidades arredondadas da masseira)
+          if (itemInfo.unidade_medida === 'lote_masseira' && registro.demanda_lojas) {
+            quantidadeEmbalagem = registro.demanda_lojas * fator;
+          } else {
+            quantidadeEmbalagem = registro.unidades_programadas * fator;
+          }
           insumoEmbalagemNome = embalagemInsumosMap.get(itemInfo.insumo_embalagem_id);
         }
 
