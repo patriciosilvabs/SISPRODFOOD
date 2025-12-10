@@ -492,7 +492,7 @@ const ResumoDaProducao = () => {
           peso_medio_real_bolinha_g: registro.peso_medio_real_bolinha_g,
           status_calibracao: registro.status_calibracao,
           // Calcular unidades estimadas para LOTE_MASSEIRA
-          unidades_estimadas_masseira: itemInfo?.unidade_medida === 'lote_masseira' && 
+          unidades_estimadas_masseira: (itemInfo?.unidade_medida as string) === 'lote_masseira' && 
             registro.lotes_masseira && 
             itemInfo?.massa_gerada_por_lote_kg && 
             itemInfo?.peso_medio_operacional_bolinha_g
