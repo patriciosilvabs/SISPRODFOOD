@@ -2636,6 +2636,88 @@ export type Database = {
           },
         ]
       }
+      solicitacoes_reposicao: {
+        Row: {
+          created_at: string | null
+          data_atendimento: string | null
+          data_solicitacao: string | null
+          id: string
+          loja_id: string
+          loja_nome: string
+          observacao: string | null
+          organization_id: string
+          produto_id: string
+          produto_nome: string
+          quantidade_atendida: number | null
+          quantidade_solicitada: number
+          status: string
+          usuario_atendente_id: string | null
+          usuario_atendente_nome: string | null
+          usuario_solicitante_id: string
+          usuario_solicitante_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_atendimento?: string | null
+          data_solicitacao?: string | null
+          id?: string
+          loja_id: string
+          loja_nome: string
+          observacao?: string | null
+          organization_id: string
+          produto_id: string
+          produto_nome: string
+          quantidade_atendida?: number | null
+          quantidade_solicitada?: number
+          status?: string
+          usuario_atendente_id?: string | null
+          usuario_atendente_nome?: string | null
+          usuario_solicitante_id: string
+          usuario_solicitante_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          data_atendimento?: string | null
+          data_solicitacao?: string | null
+          id?: string
+          loja_id?: string
+          loja_nome?: string
+          observacao?: string | null
+          organization_id?: string
+          produto_id?: string
+          produto_nome?: string
+          quantidade_atendida?: number | null
+          quantidade_solicitada?: number
+          status?: string
+          usuario_atendente_id?: string | null
+          usuario_atendente_nome?: string | null
+          usuario_solicitante_id?: string
+          usuario_solicitante_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "solicitacoes_reposicao_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_reposicao_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "solicitacoes_reposicao_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_history: {
         Row: {
           amount_cents: number | null
