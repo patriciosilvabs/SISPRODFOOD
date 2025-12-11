@@ -60,6 +60,16 @@ const ErrosDevolucoes = () => {
     };
   }, [user]);
 
+  // Efeito para conectar stream ao vídeo quando câmera ativa
+  useEffect(() => {
+    if (cameraAtiva && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(err => {
+        console.error('Erro ao iniciar vídeo:', err);
+      });
+    }
+  }, [cameraAtiva]);
+
   const loadLojas = async () => {
     try {
       let lojasData: Loja[] = [];
@@ -141,12 +151,11 @@ const ErrosDevolucoes = () => {
         });
       }
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        await videoRef.current.play();
-      }
+      // Armazena o stream PRIMEIRO
+      streamRef.current = stream;
       
+      // DEPOIS ativa a câmera (renderiza o <video>)
+      // O useEffect vai conectar o stream ao vídeo
       setCameraAtiva(true);
     } catch (error) {
       console.error('Erro ao acessar câmera:', error);
