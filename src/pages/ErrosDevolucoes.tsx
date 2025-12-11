@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Camera, X, RefreshCw } from 'lucide-react';
+import { Camera, X, RefreshCw, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,6 +42,7 @@ const ErrosDevolucoes = () => {
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // Verificar se usuário é apenas Loja (sem Admin ou Produção)
   const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
@@ -229,6 +230,51 @@ const ErrosDevolucoes = () => {
     } catch (error) {
       console.error('Erro ao fazer upload:', error);
       return null;
+    }
+  };
+
+  const handleExcluirOcorrencia = async (ocorrencia: Ocorrencia) => {
+    if (!isAdmin()) {
+      toast.error('Apenas administradores podem excluir ocorrências');
+      return;
+    }
+
+    if (!confirm(`Tem certeza que deseja excluir esta ocorrência de "${ocorrencia.loja_nome}"?\n\nEsta ação é PERMANENTE e IRREVERSÍVEL.`)) {
+      return;
+    }
+
+    setDeleting(ocorrencia.id);
+
+    try {
+      // Se houver foto, excluir do Storage primeiro
+      if (ocorrencia.foto_url) {
+        const urlParts = ocorrencia.foto_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        
+        const { error: storageError } = await supabase.storage
+          .from('erros-devolucoes')
+          .remove([fileName]);
+
+        if (storageError) {
+          console.error('Erro ao excluir foto do storage:', storageError);
+        }
+      }
+
+      // Excluir o registro da tabela
+      const { error } = await supabase
+        .from('erros_devolucoes')
+        .delete()
+        .eq('id', ocorrencia.id);
+
+      if (error) throw error;
+
+      toast.success('Ocorrência excluída com sucesso');
+      loadOcorrencias();
+    } catch (error) {
+      console.error('Erro ao excluir ocorrência:', error);
+      toast.error('Erro ao excluir ocorrência');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -456,15 +502,34 @@ const ErrosDevolucoes = () => {
                   ocorrencias.map((ocorrencia) => (
                     <Card key={ocorrencia.id} className="p-4">
                       <div className="space-y-2">
-                        <p className="font-medium">
-                          Ocorrência em:{' '}
-                          <span className="text-primary">{ocorrencia.loja_nome}</span>
-                        </p>
-                        <p className="text-sm">{ocorrencia.descricao}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(ocorrencia.created_at), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR })}
-                          {' '}por {ocorrencia.usuario_nome}
-                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <p className="font-medium">
+                              Ocorrência em:{' '}
+                              <span className="text-primary">{ocorrencia.loja_nome}</span>
+                            </p>
+                            <p className="text-sm">{ocorrencia.descricao}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(ocorrencia.created_at), "dd/MM/yyyy, HH:mm:ss", { locale: ptBR })}
+                              {' '}por {ocorrencia.usuario_nome}
+                            </p>
+                          </div>
+                          
+                          {/* Botão Excluir - apenas para Admin */}
+                          {isAdmin() && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              onClick={() => handleExcluirOcorrencia(ocorrencia)}
+                              disabled={deleting === ocorrencia.id}
+                              title="Excluir ocorrência"
+                            >
+                              <Trash2 className={`h-4 w-4 ${deleting === ocorrencia.id ? 'animate-pulse' : ''}`} />
+                            </Button>
+                          )}
+                        </div>
+                        
                         {ocorrencia.foto_url && (
                           <div className="mt-2">
                             <img
