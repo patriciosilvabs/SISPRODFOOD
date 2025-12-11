@@ -10,7 +10,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History, ShoppingCart } from 'lucide-react';
+import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History, TrendingDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -34,26 +34,36 @@ interface EstoqueCPD {
   quantidade: number;
 }
 
-interface Solicitacao {
-  id: string;
+interface EstoqueLoja {
   loja_id: string;
-  loja_nome: string;
   produto_id: string;
-  produto_nome: string;
-  quantidade_solicitada: number;
-  usuario_solicitante_nome: string;
-  data_solicitacao: string;
+  quantidade: number;
+  data_ultima_contagem: string | null;
+  usuario_nome: string | null;
 }
 
-interface DemandaLoja {
-  solicitacao_id: string;
+interface EstoqueMinimoSemanal {
+  loja_id: string;
+  produto_id: string;
+  segunda: number;
+  terca: number;
+  quarta: number;
+  quinta: number;
+  sexta: number;
+  sabado: number;
+  domingo: number;
+}
+
+interface DemandaCalculada {
   loja: Loja;
   produto: Produto;
-  quantidade_solicitada: number;
+  estoque_atual: number;
+  estoque_ideal: number;
+  deficit: number;
   estoque_cpd: number;
   quantidade_envio: number;
-  data_solicitacao: string;
-  usuario_solicitante: string;
+  data_ultima_contagem: string | null;
+  usuario_informou: string | null;
 }
 
 interface RomaneioAguardando {
@@ -90,6 +100,14 @@ interface RomaneioHistorico {
   }[];
 }
 
+// Helper para obter o dia da semana em português
+const getDiaSemana = (): keyof Omit<EstoqueMinimoSemanal, 'loja_id' | 'produto_id'> => {
+  const dias: (keyof Omit<EstoqueMinimoSemanal, 'loja_id' | 'produto_id'>)[] = [
+    'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'
+  ];
+  return dias[new Date().getDay()];
+};
+
 const ReposicaoLoja = () => {
   const { user } = useAuth();
   const { organizationId } = useOrganization();
@@ -98,7 +116,8 @@ const ReposicaoLoja = () => {
   const [lojaSelecionada, setLojaSelecionada] = useState<string>('todas');
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [estoqueCPD, setEstoqueCPD] = useState<EstoqueCPD[]>([]);
-  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>([]);
+  const [estoquesLojas, setEstoquesLojas] = useState<EstoqueLoja[]>([]);
+  const [estoquesMinimos, setEstoquesMinimos] = useState<EstoqueMinimoSemanal[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [quantidadesEnvio, setQuantidadesEnvio] = useState<{ [key: string]: number }>({});
@@ -147,15 +166,22 @@ const ReposicaoLoja = () => {
         setEstoqueCPD([]);
       }
 
-      // Buscar SOLICITAÇÕES PENDENTES das lojas
-      const { data: solicitacoesData, error: solicitacoesError } = await supabase
-        .from('solicitacoes_reposicao')
-        .select('id, loja_id, loja_nome, produto_id, produto_nome, quantidade_solicitada, usuario_solicitante_nome, data_solicitacao')
-        .eq('status', 'pendente')
-        .order('data_solicitacao', { ascending: false });
+      // Buscar estoque atual de todas as lojas (que informaram)
+      const { data: estoquesLojasData, error: estoquesLojasError } = await supabase
+        .from('estoque_loja_produtos')
+        .select('loja_id, produto_id, quantidade, data_ultima_contagem, usuario_nome')
+        .not('data_ultima_contagem', 'is', null);
 
-      if (solicitacoesError) throw solicitacoesError;
-      setSolicitacoes(solicitacoesData || []);
+      if (estoquesLojasError) throw estoquesLojasError;
+      setEstoquesLojas(estoquesLojasData || []);
+
+      // Buscar estoques mínimos semanais
+      const { data: estoquesMinimosData, error: estoquesMinimosError } = await supabase
+        .from('produtos_estoque_minimo_semanal')
+        .select('loja_id, produto_id, segunda, terca, quarta, quinta, sexta, sabado, domingo');
+
+      if (estoquesMinimosError) throw estoquesMinimosError;
+      setEstoquesMinimos(estoquesMinimosData || []);
 
       // Buscar romaneios enviados (aguardando confirmação)
       const { data: romaneiosEnviadosData, error: romaneiosEnviadosError } = await supabase
@@ -232,44 +258,76 @@ const ReposicaoLoja = () => {
     }
   }, [organizationId, cpdLojaId]);
 
-  // Calcular demandas baseadas nas SOLICITAÇÕES
-  const demandas = useMemo((): DemandaLoja[] => {
-    const solicitacoesFiltradas = lojaSelecionada === 'todas'
-      ? solicitacoes
-      : solicitacoes.filter(s => s.loja_id === lojaSelecionada);
+  // Calcular demandas baseadas no DÉFICIT (estoque ideal - estoque atual)
+  const demandas = useMemo((): DemandaCalculada[] => {
+    const diaSemana = getDiaSemana();
+    const demandasCalculadas: DemandaCalculada[] = [];
 
-    return solicitacoesFiltradas.map(sol => {
-      const loja = lojas.find(l => l.id === sol.loja_id) || { id: sol.loja_id, nome: sol.loja_nome };
-      const produto = produtos.find(p => p.id === sol.produto_id) || { 
-        id: sol.produto_id, 
-        nome: sol.produto_nome, 
-        codigo: null, 
-        categoria: '', 
-        unidade_consumo: 'un' 
-      };
-      const estoqueCPDItem = estoqueCPD.find(e => e.produto_id === sol.produto_id);
-      const estoqueAtualCPD = estoqueCPDItem?.quantidade || 0;
-      const key = sol.id;
-
-      return {
-        solicitacao_id: sol.id,
-        loja,
-        produto,
-        quantidade_solicitada: sol.quantidade_solicitada,
-        estoque_cpd: estoqueAtualCPD,
-        quantidade_envio: quantidadesEnvio[key] ?? sol.quantidade_solicitada,
-        data_solicitacao: sol.data_solicitacao,
-        usuario_solicitante: sol.usuario_solicitante_nome
-      };
+    // Para cada loja que informou estoque
+    const lojasQueInformaram = new Set(estoquesLojas.map(e => e.loja_id));
+    
+    // Filtrar lojas (excluindo CPD)
+    const lojasValidas = lojas.filter(l => {
+      if (lojaSelecionada !== 'todas' && l.id !== lojaSelecionada) return false;
+      return lojasQueInformaram.has(l.id);
     });
-  }, [solicitacoes, lojas, produtos, estoqueCPD, lojaSelecionada, quantidadesEnvio]);
+
+    lojasValidas.forEach(loja => {
+      produtos.forEach(produto => {
+        // Buscar estoque mínimo do dia para este produto/loja
+        const minimoSemanal = estoquesMinimos.find(
+          em => em.loja_id === loja.id && em.produto_id === produto.id
+        );
+        
+        if (!minimoSemanal) return; // Se não tem mínimo configurado, pular
+
+        const estoqueIdeal = minimoSemanal[diaSemana] || 0;
+        if (estoqueIdeal <= 0) return; // Se estoque ideal é 0, pular
+
+        // Buscar estoque atual da loja
+        const estoqueLojaData = estoquesLojas.find(
+          el => el.loja_id === loja.id && el.produto_id === produto.id
+        );
+        
+        if (!estoqueLojaData) return; // Se loja não informou este produto, pular
+
+        const estoqueAtual = estoqueLojaData.quantidade || 0;
+        const deficit = estoqueIdeal - estoqueAtual;
+
+        // Só adicionar se tem déficit (estoque atual < estoque ideal)
+        if (deficit <= 0) return;
+
+        // Buscar estoque CPD
+        const estoqueCPDItem = estoqueCPD.find(e => e.produto_id === produto.id);
+        const estoqueAtualCPD = estoqueCPDItem?.quantidade || 0;
+
+        const key = `${loja.id}-${produto.id}`;
+
+        demandasCalculadas.push({
+          loja,
+          produto,
+          estoque_atual: estoqueAtual,
+          estoque_ideal: estoqueIdeal,
+          deficit,
+          estoque_cpd: estoqueAtualCPD,
+          quantidade_envio: quantidadesEnvio[key] ?? deficit,
+          data_ultima_contagem: estoqueLojaData.data_ultima_contagem,
+          usuario_informou: estoqueLojaData.usuario_nome
+        });
+      });
+    });
+
+    // Ordenar por déficit (maior primeiro)
+    return demandasCalculadas.sort((a, b) => b.deficit - a.deficit);
+  }, [lojas, produtos, estoquesLojas, estoquesMinimos, estoqueCPD, lojaSelecionada, quantidadesEnvio]);
 
   // Inicializar quantidades de envio
   useEffect(() => {
     const novasQuantidades: { [key: string]: number } = {};
     demandas.forEach(d => {
-      if (quantidadesEnvio[d.solicitacao_id] === undefined) {
-        novasQuantidades[d.solicitacao_id] = d.quantidade_solicitada;
+      const key = `${d.loja.id}-${d.produto.id}`;
+      if (quantidadesEnvio[key] === undefined) {
+        novasQuantidades[key] = d.deficit;
       }
     });
     if (Object.keys(novasQuantidades).length > 0) {
@@ -278,13 +336,14 @@ const ReposicaoLoja = () => {
   }, [demandas]);
 
   // Atualizar quantidade de envio
-  const handleQuantidadeChange = (solicitacaoId: string, valor: string) => {
+  const handleQuantidadeChange = (lojaId: string, produtoId: string, valor: string) => {
+    const key = `${lojaId}-${produtoId}`;
     const quantidade = valor === '' ? 0 : Number(valor);
-    setQuantidadesEnvio(prev => ({ ...prev, [solicitacaoId]: quantidade }));
+    setQuantidadesEnvio(prev => ({ ...prev, [key]: quantidade }));
   };
 
   // Enviar item individual
-  const handleEnviarItem = async (item: DemandaLoja, quantidade: number) => {
+  const handleEnviarItem = async (item: DemandaCalculada, quantidade: number) => {
     if (!user || !organizationId || !cpdLojaId) return;
     
     if (quantidade <= 0) {
@@ -366,18 +425,6 @@ const ReposicaoLoja = () => {
           organization_id: organizationId
         });
 
-      // Marcar solicitação como atendida
-      await supabase
-        .from('solicitacoes_reposicao')
-        .update({
-          status: 'atendido',
-          quantidade_atendida: quantidade,
-          data_atendimento: new Date().toISOString(),
-          usuario_atendente_id: user.id,
-          usuario_atendente_nome: usuarioNome
-        })
-        .eq('id', item.solicitacao_id);
-
       toast.success(`${item.produto.nome} enviado para ${item.loja.nome}`);
       
       // Recarregar dados
@@ -392,7 +439,7 @@ const ReposicaoLoja = () => {
 
   // Agrupar demandas por loja
   const demandasPorLoja = useMemo(() => {
-    const agrupado = new Map<string, DemandaLoja[]>();
+    const agrupado = new Map<string, DemandaCalculada[]>();
     demandas.forEach(d => {
       const lista = agrupado.get(d.loja.id) || [];
       lista.push(d);
@@ -421,7 +468,7 @@ const ReposicaoLoja = () => {
               Reposição de Loja
             </h1>
             <p className="text-muted-foreground mt-1">
-              Visualize solicitações das lojas e envie os produtos solicitados
+              Visualize demandas calculadas automaticamente e envie os produtos necessários
             </p>
           </div>
           <Button onClick={fetchDados} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
@@ -433,8 +480,8 @@ const ReposicaoLoja = () => {
         <Tabs defaultValue="pendentes" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="pendentes" className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4" />
-              Solicitações Pendentes
+              <TrendingDown className="h-4 w-4" />
+              Demandas de Reposição
               {demandas.length > 0 && (
                 <Badge variant="destructive" className="ml-1">{demandas.length}</Badge>
               )}
@@ -452,16 +499,16 @@ const ReposicaoLoja = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* ABA: SOLICITAÇÕES PENDENTES */}
+          {/* ABA: DEMANDAS DE REPOSIÇÃO */}
           <TabsContent value="pendentes">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5" />
-                  Solicitações de Reposição
+                  <TrendingDown className="h-5 w-5" />
+                  Produtos Abaixo do Estoque Ideal
                 </CardTitle>
                 <CardDescription>
-                  Produtos solicitados pelas lojas aguardando envio
+                  Produtos onde o estoque informado pela loja está abaixo do mínimo configurado para hoje ({getDiaSemana()})
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -485,7 +532,7 @@ const ReposicaoLoja = () => {
                   </div>
                   <div className="flex items-end">
                     <Badge variant="secondary" className="text-sm">
-                      {demandas.length} solicitação(ões) pendente(s)
+                      {demandas.length} item(s) abaixo do ideal
                     </Badge>
                   </div>
                 </div>
@@ -500,8 +547,10 @@ const ReposicaoLoja = () => {
                 ) : demandas.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                    <p className="text-lg font-medium">Nenhuma solicitação pendente!</p>
-                    <p className="text-sm">Todas as solicitações foram atendidas.</p>
+                    <p className="text-lg font-medium">Nenhuma demanda de reposição!</p>
+                    <p className="text-sm text-center">
+                      Todos os produtos estão com estoque adequado ou as lojas não informaram o estoque ainda.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -524,21 +573,23 @@ const ReposicaoLoja = () => {
                                 <thead>
                                   <tr className="border-b text-sm">
                                     <th className="text-left p-2 font-medium">Produto</th>
-                                    <th className="text-center p-2 font-medium">Solicitado</th>
+                                    <th className="text-center p-2 font-medium">Est. Loja</th>
+                                    <th className="text-center p-2 font-medium">Ideal</th>
+                                    <th className="text-center p-2 font-medium">Déficit</th>
                                     <th className="text-center p-2 font-medium">Est. CPD</th>
                                     <th className="text-center p-2 font-medium">Qtd Envio</th>
-                                    <th className="text-center p-2 font-medium">Status</th>
-                                    <th className="text-center p-2 font-medium">Solicitante</th>
+                                    <th className="text-center p-2 font-medium">Informado</th>
                                     <th className="text-center p-2 font-medium">Ação</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {itens.map(item => {
-                                    const qtdEnvio = quantidadesEnvio[item.solicitacao_id] ?? item.quantidade_solicitada;
+                                    const key = `${item.loja.id}-${item.produto.id}`;
+                                    const qtdEnvio = quantidadesEnvio[key] ?? item.deficit;
                                     const semEstoque = qtdEnvio > item.estoque_cpd;
                                     
                                     return (
-                                      <tr key={item.solicitacao_id} className="border-b hover:bg-muted/50">
+                                      <tr key={key} className="border-b hover:bg-muted/50">
                                         <td className="p-2">
                                           <div className="font-medium">{item.produto.nome}</div>
                                           {item.produto.codigo && (
@@ -546,7 +597,13 @@ const ReposicaoLoja = () => {
                                           )}
                                         </td>
                                         <td className="p-2 text-center">
-                                          <span className="font-semibold text-primary">{item.quantidade_solicitada}</span>
+                                          <span className="text-destructive font-medium">{item.estoque_atual}</span>
+                                        </td>
+                                        <td className="p-2 text-center">
+                                          <span className="text-green-600 font-medium">{item.estoque_ideal}</span>
+                                        </td>
+                                        <td className="p-2 text-center">
+                                          <Badge variant="destructive">{item.deficit}</Badge>
                                         </td>
                                         <td className="p-2 text-center">
                                           <span className={semEstoque ? 'text-destructive font-medium' : ''}>
@@ -559,30 +616,17 @@ const ReposicaoLoja = () => {
                                             min="0"
                                             step="1"
                                             value={qtdEnvio}
-                                            onChange={(e) => handleQuantidadeChange(item.solicitacao_id, e.target.value)}
+                                            onChange={(e) => handleQuantidadeChange(item.loja.id, item.produto.id, e.target.value)}
                                             className="w-20 mx-auto text-center"
                                           />
                                         </td>
                                         <td className="p-2 text-center">
-                                          {semEstoque ? (
-                                            <div className="flex items-center justify-center gap-1 text-destructive">
-                                              <AlertCircle className="h-4 w-4" />
-                                              <span className="text-xs">Insuficiente</span>
-                                            </div>
-                                          ) : qtdEnvio > 0 ? (
-                                            <div className="flex items-center justify-center gap-1 text-green-600">
-                                              <CheckCircle className="h-4 w-4" />
-                                              <span className="text-xs">OK</span>
-                                            </div>
-                                          ) : (
-                                            <span className="text-xs text-muted-foreground">-</span>
-                                          )}
-                                        </td>
-                                        <td className="p-2 text-center">
                                           <div className="text-xs text-muted-foreground">
-                                            {item.usuario_solicitante}
+                                            {item.usuario_informou || '-'}
                                             <br />
-                                            {format(new Date(item.data_solicitacao), "dd/MM HH:mm", { locale: ptBR })}
+                                            {item.data_ultima_contagem 
+                                              ? format(new Date(item.data_ultima_contagem), "dd/MM HH:mm", { locale: ptBR })
+                                              : '-'}
                                           </div>
                                         </td>
                                         <td className="p-2 text-center">

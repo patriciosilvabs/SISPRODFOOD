@@ -9,21 +9,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Package, PackageCheck, AlertCircle, CheckCircle, AlertTriangle, Loader2, FileText, RefreshCw, ShoppingCart, Trash2, Send } from 'lucide-react';
+import { Package, PackageCheck, AlertCircle, CheckCircle, AlertTriangle, Loader2, FileText, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SaveButton } from '@/components/ui/save-button';
-
-interface Solicitacao {
-  id: string;
-  produto_id: string;
-  produto_nome: string;
-  quantidade_solicitada: number;
-  status: string;
-  data_solicitacao: string;
-}
 
 interface Loja {
   id: string;
@@ -77,7 +67,7 @@ interface RomaneioProdutoItem {
 }
 
 const EstoqueLoja = () => {
-  const { user, hasRole, isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { organizationId } = useOrganization();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [lojaSelecionada, setLojaSelecionada] = useState<string>('');
@@ -97,13 +87,6 @@ const EstoqueLoja = () => {
   const [loadingRomaneios, setLoadingRomaneios] = useState(false);
   const [receivingRomaneio, setReceivingRomaneio] = useState(false);
   const [quantidadesRecebidasRomaneio, setQuantidadesRecebidasRomaneio] = useState<{ [key: string]: number }>({});
-  const [observacoesRomaneio, setObservacoesRomaneio] = useState<{ [key: string]: string }>({});
-
-  // Estados para Solicitação de Reposição
-  const [solicitacoesPendentes, setSolicitacoesPendentes] = useState<Solicitacao[]>([]);
-  const [quantidadesSolicitacao, setQuantidadesSolicitacao] = useState<{ [key: string]: number }>({});
-  const [sendingSolicitacao, setSendingSolicitacao] = useState(false);
-  const [deletingSolicitacao, setDeletingSolicitacao] = useState<string | null>(null);
 
   // Buscar lojas do usuário
   useEffect(() => {
@@ -111,13 +94,10 @@ const EstoqueLoja = () => {
       if (!user) return;
 
       try {
-        // Verificar se é Admin
         const isUserAdmin = isAdmin();
-
         let lojasData: Loja[] = [];
 
         if (isUserAdmin) {
-          // Admin vê todas as lojas
           const { data: todasLojas, error: lojasError } = await supabase
             .from('lojas')
             .select('id, nome')
@@ -126,7 +106,6 @@ const EstoqueLoja = () => {
           if (lojasError) throw lojasError;
           lojasData = todasLojas || [];
         } else {
-          // Usuário comum só vê lojas de lojas_acesso
           const { data: lojasAcesso, error: acessoError } = await supabase
             .from('lojas_acesso')
             .select('loja_id')
@@ -170,7 +149,6 @@ const EstoqueLoja = () => {
       try {
         setLoading(true);
 
-        // Buscar produtos
         const { data: produtosData, error: produtosError } = await supabase
           .from('produtos')
           .select('id, nome, codigo, categoria, unidade_consumo, classificacao')
@@ -180,7 +158,6 @@ const EstoqueLoja = () => {
         if (produtosError) throw produtosError;
         setProdutos(produtosData || []);
 
-        // Buscar estoques atuais da loja
         const { data: estoquesAtuaisData, error: estoquesAtuaisError } = await supabase
           .from('estoque_loja_produtos')
           .select('produto_id, quantidade, quantidade_ultimo_envio, data_ultima_atualizacao, usuario_nome, data_ultima_contagem, data_ultimo_envio, data_confirmacao_recebimento')
@@ -198,7 +175,6 @@ const EstoqueLoja = () => {
         }));
         setEstoquesAtuais(estoquesMap);
         
-        // Salvar valores originais
         const originals: { [key: string]: number } = {};
         estoquesMap.forEach(e => {
           originals[e.produto_id] = e.quantidade;
@@ -206,7 +182,6 @@ const EstoqueLoja = () => {
         setOriginalEstoques(originals);
         setHasDirtyEstoque(false);
 
-        // Última atualização
         if (estoquesAtuaisData && estoquesAtuaisData.length > 0) {
           const maisRecente = estoquesAtuaisData.reduce((prev, current) => 
             new Date(current.data_ultima_atualizacao) > new Date(prev.data_ultima_atualizacao) 
@@ -274,114 +249,8 @@ const EstoqueLoja = () => {
   useEffect(() => {
     if (lojaSelecionada) {
       fetchRomaneiosProdutos();
-      fetchSolicitacoesPendentes();
     }
   }, [lojaSelecionada, organizationId]);
-
-  // Buscar solicitações pendentes da loja
-  const fetchSolicitacoesPendentes = async () => {
-    if (!lojaSelecionada || !organizationId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('solicitacoes_reposicao')
-        .select('id, produto_id, produto_nome, quantidade_solicitada, status, data_solicitacao')
-        .eq('loja_id', lojaSelecionada)
-        .eq('status', 'pendente')
-        .order('data_solicitacao', { ascending: false });
-
-      if (error) throw error;
-      setSolicitacoesPendentes(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar solicitações:', error);
-    }
-  };
-
-  // Criar nova solicitação
-  const handleCriarSolicitacao = async (produtoId: string) => {
-    if (!user || !organizationId || !lojaSelecionada) return;
-
-    const quantidade = quantidadesSolicitacao[produtoId] || 0;
-    if (quantidade <= 0) {
-      toast.error('Informe uma quantidade válida');
-      return;
-    }
-
-    // Verificar se já existe solicitação pendente para este produto
-    const jaExiste = solicitacoesPendentes.some(s => s.produto_id === produtoId);
-    if (jaExiste) {
-      toast.error('Já existe uma solicitação pendente para este produto');
-      return;
-    }
-
-    const produto = produtos.find(p => p.id === produtoId);
-    if (!produto) return;
-
-    const loja = lojas.find(l => l.id === lojaSelecionada);
-    if (!loja) return;
-
-    try {
-      setSendingSolicitacao(true);
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('nome')
-        .eq('id', user.id)
-        .single();
-
-      const usuarioNome = profile?.nome || user.email || 'Usuário';
-
-      const { error } = await supabase
-        .from('solicitacoes_reposicao')
-        .insert({
-          loja_id: lojaSelecionada,
-          loja_nome: loja.nome,
-          produto_id: produtoId,
-          produto_nome: produto.nome,
-          quantidade_solicitada: quantidade,
-          status: 'pendente',
-          usuario_solicitante_id: user.id,
-          usuario_solicitante_nome: usuarioNome,
-          organization_id: organizationId
-        });
-
-      if (error) throw error;
-
-      toast.success(`Solicitação de ${quantidade} ${produto.unidade_consumo || 'un'} de ${produto.nome} enviada!`);
-      setQuantidadesSolicitacao(prev => ({ ...prev, [produtoId]: 0 }));
-      fetchSolicitacoesPendentes();
-    } catch (error) {
-      console.error('Erro ao criar solicitação:', error);
-      toast.error('Erro ao criar solicitação');
-    } finally {
-      setSendingSolicitacao(false);
-    }
-  };
-
-  // Cancelar solicitação
-  const handleCancelarSolicitacao = async (solicitacaoId: string) => {
-    if (!confirm('Deseja cancelar esta solicitação?')) return;
-
-    try {
-      setDeletingSolicitacao(solicitacaoId);
-
-      const { error } = await supabase
-        .from('solicitacoes_reposicao')
-        .delete()
-        .eq('id', solicitacaoId);
-
-      if (error) throw error;
-
-      toast.success('Solicitação cancelada');
-      fetchSolicitacoesPendentes();
-    } catch (error) {
-      console.error('Erro ao cancelar solicitação:', error);
-      toast.error('Erro ao cancelar solicitação');
-    } finally {
-      setDeletingSolicitacao(null);
-    }
-  };
-
 
   // Confirmar recebimento de romaneio
   const handleConfirmarRecebimentoRomaneio = async (romaneioId: string) => {
@@ -401,18 +270,16 @@ const EstoqueLoja = () => {
       for (const item of itens) {
         const qtdRecebida = quantidadesRecebidasRomaneio[item.id] ?? item.quantidade;
         const divergencia = qtdRecebida !== item.quantidade;
-        const obs = observacoesRomaneio[item.id] || null;
 
         await supabase
           .from("romaneios_produtos_itens")
           .update({
             quantidade_recebida: qtdRecebida,
             divergencia,
-            observacao_divergencia: divergencia ? obs : null,
+            observacao_divergencia: divergencia ? null : null,
           })
           .eq("id", item.id);
 
-        // Atualizar estoque da loja
         const { data: estoqueAtual } = await supabase
           .from("estoque_loja_produtos")
           .select("quantidade")
@@ -492,12 +359,6 @@ const EstoqueLoja = () => {
     return cats.sort();
   }, [produtos]);
 
-  // Produtos disponíveis para solicitar (excluindo já solicitados)
-  const produtosParaSolicitar = useMemo(() => {
-    const solicitadosIds = new Set(solicitacoesPendentes.map(s => s.produto_id));
-    return produtosFiltrados.filter(p => !solicitadosIds.has(p.id));
-  }, [produtosFiltrados, solicitacoesPendentes]);
-
   // Atualizar estoque
   const handleEstoqueChange = (produtoId: string, valor: string) => {
     const quantidade = valor === '' ? 0 : Number(valor);
@@ -560,7 +421,7 @@ const EstoqueLoja = () => {
 
       if (error) throw error;
 
-      toast.success('Estoque atualizado com sucesso!');
+      toast.success('Estoque atualizado com sucesso! O CPD será notificado automaticamente sobre itens abaixo do ideal.');
       
       const { data: dadosAtualizados } = await supabase
         .from('estoque_loja_produtos')
@@ -626,7 +487,7 @@ const EstoqueLoja = () => {
           <div>
             <h1 className="text-3xl font-bold">Meu Estoque</h1>
             <p className="text-muted-foreground mt-1">
-              Informe o estoque atual de produtos da sua loja
+              Informe o estoque atual de produtos da sua loja. Itens abaixo do ideal aparecerão automaticamente para o CPD.
             </p>
           </div>
             <Button size="sm" onClick={() => setRefreshKey(prev => prev + 1)} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
@@ -636,19 +497,10 @@ const EstoqueLoja = () => {
         </div>
 
         <Tabs defaultValue="estoque" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="estoque" className="gap-2">
               <Package className="h-4 w-4" />
               Meu Estoque
-            </TabsTrigger>
-            <TabsTrigger value="solicitar" className="gap-2">
-              <ShoppingCart className="h-4 w-4" />
-              Solicitar Reposição
-              {solicitacoesPendentes.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 text-xs flex items-center justify-center">
-                  {solicitacoesPendentes.length}
-                </Badge>
-              )}
             </TabsTrigger>
             <TabsTrigger value="receber" className="gap-2">
               <PackageCheck className="h-4 w-4" />
@@ -670,7 +522,7 @@ const EstoqueLoja = () => {
                   Informar Estoque Atual
                 </CardTitle>
                 <CardDescription>
-                  Informe a quantidade atual de cada produto na loja
+                  Informe a quantidade atual de cada produto. O sistema calculará automaticamente o que precisa ser reposto.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -795,168 +647,6 @@ const EstoqueLoja = () => {
                     {saving ? 'Salvando...' : 'Salvar Estoque'}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ABA: SOLICITAR REPOSIÇÃO */}
-          <TabsContent value="solicitar">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShoppingCart className="h-5 w-5" />
-                  Solicitar Reposição
-                </CardTitle>
-                <CardDescription>
-                  Solicite os produtos que sua loja precisa receber do CPD
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Seletor de Loja */}
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Selecione a Loja</label>
-                    <Select value={lojaSelecionada} onValueChange={setLojaSelecionada}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma loja" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {lojas.map(loja => (
-                          <SelectItem key={loja.id} value={loja.id}>
-                            {loja.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Filtrar por Categoria</label>
-                    <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Todas as categorias" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todas">Todas as categorias</SelectItem>
-                        {categorias.map(cat => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Solicitações Pendentes */}
-                {solicitacoesPendentes.length > 0 && (
-                  <div className="border rounded-lg p-4 bg-muted/30">
-                    <h4 className="font-semibold mb-3 flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-yellow-500" />
-                      Solicitações Pendentes ({solicitacoesPendentes.length})
-                    </h4>
-                    <div className="space-y-2">
-                      {solicitacoesPendentes.map(sol => (
-                        <div key={sol.id} className="flex items-center justify-between p-2 bg-background rounded border">
-                          <div>
-                            <span className="font-medium">{sol.produto_nome}</span>
-                            <span className="ml-2 text-muted-foreground">
-                              {sol.quantidade_solicitada} un
-                            </span>
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {format(new Date(sol.data_solicitacao), "dd/MM HH:mm", { locale: ptBR })}
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => handleCancelarSolicitacao(sol.id)}
-                            disabled={deletingSolicitacao === sol.id}
-                          >
-                            {deletingSolicitacao === sol.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Lista de Produtos para Solicitar */}
-                {loading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : produtosParaSolicitar.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {solicitacoesPendentes.length > 0 
-                      ? 'Todos os produtos já foram solicitados.' 
-                      : 'Nenhum produto encontrado.'}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left p-3 font-medium">Produto</th>
-                          <th className="text-left p-3 font-medium">Código</th>
-                          <th className="text-center p-3 font-medium">Est. Atual</th>
-                          <th className="text-center p-3 font-medium">Quantidade</th>
-                          <th className="text-center p-3 font-medium">Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {produtosParaSolicitar.map(produto => (
-                          <tr key={produto.id} className="border-b hover:bg-muted/50">
-                            <td className="p-3">{produto.nome}</td>
-                            <td className="p-3 text-muted-foreground">{produto.codigo || '-'}</td>
-                            <td className="p-3 text-center">
-                              <span className={produto.estoque_atual === 0 ? 'text-destructive font-medium' : ''}>
-                                {produto.estoque_atual} {produto.unidade_consumo || 'un'}
-                              </span>
-                            </td>
-                            <td className="p-3">
-                              <Input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={quantidadesSolicitacao[produto.id] || ''}
-                                onChange={(e) => setQuantidadesSolicitacao(prev => ({
-                                  ...prev,
-                                  [produto.id]: Number(e.target.value)
-                                }))}
-                                className="w-24 mx-auto text-center"
-                                placeholder="0"
-                              />
-                            </td>
-                            <td className="p-3 text-center">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                disabled={sendingSolicitacao || !quantidadesSolicitacao[produto.id] || quantidadesSolicitacao[produto.id] <= 0}
-                                onClick={() => handleCriarSolicitacao(produto.id)}
-                                className="gap-1"
-                              >
-                                {sendingSolicitacao ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Send className="h-3 w-3" />
-                                )}
-                                Solicitar
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
