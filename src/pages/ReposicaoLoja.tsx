@@ -4,14 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History } from 'lucide-react';
+import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History, ShoppingCart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -35,39 +34,26 @@ interface EstoqueCPD {
   quantidade: number;
 }
 
-interface EstoqueMinimo {
-  produto_id: string;
+interface Solicitacao {
+  id: string;
   loja_id: string;
-  segunda: number;
-  terca: number;
-  quarta: number;
-  quinta: number;
-  sexta: number;
-  sabado: number;
-  domingo: number;
-}
-
-interface EstoqueLoja {
+  loja_nome: string;
   produto_id: string;
-  loja_id: string;
-  quantidade: number;
-  data_ultima_contagem: string | null;
-  data_ultima_atualizacao: string | null;
-  usuario_nome: string | null;
+  produto_nome: string;
+  quantidade_solicitada: number;
+  usuario_solicitante_nome: string;
+  data_solicitacao: string;
 }
 
 interface DemandaLoja {
+  solicitacao_id: string;
   loja: Loja;
   produto: Produto;
-  estoque_minimo: number;
-  estoque_atual_loja: number;
+  quantidade_solicitada: number;
   estoque_cpd: number;
-  a_repor: number;
-  quantidade_ja_enviada: number;
   quantidade_envio: number;
-  ultima_contagem: string | null;
-  ultima_atualizacao: string | null;
-  usuario_registro: string | null;
+  data_solicitacao: string;
+  usuario_solicitante: string;
 }
 
 interface RomaneioAguardando {
@@ -104,8 +90,6 @@ interface RomaneioHistorico {
   }[];
 }
 
-const DIAS_SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'] as const;
-
 const ReposicaoLoja = () => {
   const { user } = useAuth();
   const { organizationId } = useOrganization();
@@ -114,24 +98,14 @@ const ReposicaoLoja = () => {
   const [lojaSelecionada, setLojaSelecionada] = useState<string>('todas');
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [estoqueCPD, setEstoqueCPD] = useState<EstoqueCPD[]>([]);
-  const [estoquesMinimos, setEstoquesMinimos] = useState<EstoqueMinimo[]>([]);
-  const [estoquesLojas, setEstoquesLojas] = useState<EstoqueLoja[]>([]);
+  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [quantidadesEnvio, setQuantidadesEnvio] = useState<{ [key: string]: number }>({});
-  const [observacao, setObservacao] = useState('');
-  
-  // Estado para romaneios pendentes/enviados (para descontar do cálculo)
-  const [quantidadesJaEnviadas, setQuantidadesJaEnviadas] = useState<Map<string, number>>(new Map());
   
   // Estados para as abas
   const [romaneiosAguardando, setRomaneiosAguardando] = useState<RomaneioAguardando[]>([]);
   const [romaneiosHistorico, setRomaneiosHistorico] = useState<RomaneioHistorico[]>([]);
-
-  const diaAtual = useMemo(() => {
-    const dia = new Date().getDay();
-    return DIAS_SEMANA[dia];
-  }, []);
 
   // Buscar dados
   const fetchDados = async () => {
@@ -160,7 +134,7 @@ const ReposicaoLoja = () => {
       if (produtosError) throw produtosError;
       setProdutos(produtosData || []);
 
-      // Buscar estoque CPD (agora da tabela unificada)
+      // Buscar estoque CPD
       if (cpdLojaId) {
         const { data: estoqueCPDData, error: estoqueCPDError } = await supabase
           .from('estoque_loja_produtos')
@@ -173,23 +147,17 @@ const ReposicaoLoja = () => {
         setEstoqueCPD([]);
       }
 
-      // Buscar estoques mínimos semanais
-      const { data: estoquesMinimosData, error: estoquesMinimosError } = await supabase
-        .from('produtos_estoque_minimo_semanal')
-        .select('produto_id, loja_id, segunda, terca, quarta, quinta, sexta, sabado, domingo');
+      // Buscar SOLICITAÇÕES PENDENTES das lojas
+      const { data: solicitacoesData, error: solicitacoesError } = await supabase
+        .from('solicitacoes_reposicao')
+        .select('id, loja_id, loja_nome, produto_id, produto_nome, quantidade_solicitada, usuario_solicitante_nome, data_solicitacao')
+        .eq('status', 'pendente')
+        .order('data_solicitacao', { ascending: false });
 
-      if (estoquesMinimosError) throw estoquesMinimosError;
-      setEstoquesMinimos(estoquesMinimosData || []);
+      if (solicitacoesError) throw solicitacoesError;
+      setSolicitacoes(solicitacoesData || []);
 
-      // Buscar estoques das lojas
-      const { data: estoquesLojasData, error: estoquesLojasError } = await supabase
-        .from('estoque_loja_produtos')
-        .select('produto_id, loja_id, quantidade, data_ultima_contagem, data_ultima_atualizacao, usuario_nome');
-
-      if (estoquesLojasError) throw estoquesLojasError;
-      setEstoquesLojas(estoquesLojasData || []);
-
-      // ===== BUSCAR ROMANEIOS ENVIADOS (aguardando confirmação) =====
+      // Buscar romaneios enviados (aguardando confirmação)
       const { data: romaneiosEnviadosData, error: romaneiosEnviadosError } = await supabase
         .from('romaneios_produtos')
         .select(`
@@ -201,7 +169,6 @@ const ReposicaoLoja = () => {
 
       if (romaneiosEnviadosError) throw romaneiosEnviadosError;
 
-      // Mapear romaneios aguardando confirmação
       const aguardando: RomaneioAguardando[] = (romaneiosEnviadosData || []).map(r => ({
         id: r.id,
         loja_id: r.loja_id,
@@ -218,17 +185,7 @@ const ReposicaoLoja = () => {
       }));
       setRomaneiosAguardando(aguardando);
 
-      // Calcular quantidades já enviadas (para descontar do cálculo de demanda)
-      const jaEnviadas = new Map<string, number>();
-      aguardando.forEach(rom => {
-        rom.itens.forEach(item => {
-          const key = `${rom.loja_id}_${item.produto_id}`;
-          jaEnviadas.set(key, (jaEnviadas.get(key) || 0) + item.quantidade);
-        });
-      });
-      setQuantidadesJaEnviadas(jaEnviadas);
-
-      // ===== BUSCAR HISTÓRICO (recebidos) =====
+      // Buscar histórico (recebidos)
       const { data: romaneiosHistoricoData, error: romaneiosHistoricoError } = await supabase
         .from('romaneios_produtos')
         .select(`
@@ -275,73 +232,44 @@ const ReposicaoLoja = () => {
     }
   }, [organizationId, cpdLojaId]);
 
-  // Calcular demandas de reposição (DESCONTANDO romaneios já enviados)
+  // Calcular demandas baseadas nas SOLICITAÇÕES
   const demandas = useMemo((): DemandaLoja[] => {
-    const resultado: DemandaLoja[] = [];
+    const solicitacoesFiltradas = lojaSelecionada === 'todas'
+      ? solicitacoes
+      : solicitacoes.filter(s => s.loja_id === lojaSelecionada);
 
-    const lojasParaProcessar = lojaSelecionada === 'todas' 
-      ? lojas 
-      : lojas.filter(l => l.id === lojaSelecionada);
+    return solicitacoesFiltradas.map(sol => {
+      const loja = lojas.find(l => l.id === sol.loja_id) || { id: sol.loja_id, nome: sol.loja_nome };
+      const produto = produtos.find(p => p.id === sol.produto_id) || { 
+        id: sol.produto_id, 
+        nome: sol.produto_nome, 
+        codigo: null, 
+        categoria: '', 
+        unidade_consumo: 'un' 
+      };
+      const estoqueCPDItem = estoqueCPD.find(e => e.produto_id === sol.produto_id);
+      const estoqueAtualCPD = estoqueCPDItem?.quantidade || 0;
+      const key = sol.id;
 
-    for (const loja of lojasParaProcessar) {
-      for (const produto of produtos) {
-        // Estoque mínimo do dia atual para esta loja/produto
-        const estoqueMinConfig = estoquesMinimos.find(
-          e => e.produto_id === produto.id && e.loja_id === loja.id
-        );
-        const estoqueMinimo = estoqueMinConfig ? estoqueMinConfig[diaAtual] : 0;
-
-        // Estoque atual da loja
-        const estoqueLoja = estoquesLojas.find(
-          e => e.produto_id === produto.id && e.loja_id === loja.id
-        );
-        const estoqueAtualLoja = estoqueLoja?.quantidade || 0;
-
-        // Estoque CPD
-        const estoqueCPDItem = estoqueCPD.find(e => e.produto_id === produto.id);
-        const estoqueAtualCPD = estoqueCPDItem?.quantidade || 0;
-
-        // Quantidade já enviada (romaneios com status 'enviado' não confirmados)
-        const key = `${loja.id}_${produto.id}`;
-        const quantidadeJaEnviada = quantidadesJaEnviadas.get(key) || 0;
-
-        // Calcular a repor (DESCONTANDO quantidade já enviada)
-        const aRepor = Math.max(0, estoqueMinimo - estoqueAtualLoja - quantidadeJaEnviada);
-
-        // Só incluir se há necessidade de reposição
-        if (aRepor > 0) {
-          resultado.push({
-            loja,
-            produto,
-            estoque_minimo: estoqueMinimo,
-            estoque_atual_loja: estoqueAtualLoja,
-            estoque_cpd: estoqueAtualCPD,
-            a_repor: aRepor,
-            quantidade_ja_enviada: quantidadeJaEnviada,
-            quantidade_envio: quantidadesEnvio[key] ?? aRepor,
-            ultima_contagem: estoqueLoja?.data_ultima_contagem || null,
-            ultima_atualizacao: estoqueLoja?.data_ultima_atualizacao || null,
-            usuario_registro: estoqueLoja?.usuario_nome || null
-          });
-        }
-      }
-    }
-
-    return resultado.sort((a, b) => {
-      // Ordenar por loja, depois por produto
-      const lojaCompare = a.loja.nome.localeCompare(b.loja.nome);
-      if (lojaCompare !== 0) return lojaCompare;
-      return a.produto.nome.localeCompare(b.produto.nome);
+      return {
+        solicitacao_id: sol.id,
+        loja,
+        produto,
+        quantidade_solicitada: sol.quantidade_solicitada,
+        estoque_cpd: estoqueAtualCPD,
+        quantidade_envio: quantidadesEnvio[key] ?? sol.quantidade_solicitada,
+        data_solicitacao: sol.data_solicitacao,
+        usuario_solicitante: sol.usuario_solicitante_nome
+      };
     });
-  }, [lojas, produtos, estoqueCPD, estoquesMinimos, estoquesLojas, lojaSelecionada, diaAtual, quantidadesEnvio, quantidadesJaEnviadas]);
+  }, [solicitacoes, lojas, produtos, estoqueCPD, lojaSelecionada, quantidadesEnvio]);
 
   // Inicializar quantidades de envio
   useEffect(() => {
     const novasQuantidades: { [key: string]: number } = {};
     demandas.forEach(d => {
-      const key = `${d.loja.id}_${d.produto.id}`;
-      if (quantidadesEnvio[key] === undefined) {
-        novasQuantidades[key] = d.a_repor;
+      if (quantidadesEnvio[d.solicitacao_id] === undefined) {
+        novasQuantidades[d.solicitacao_id] = d.quantidade_solicitada;
       }
     });
     if (Object.keys(novasQuantidades).length > 0) {
@@ -350,10 +278,9 @@ const ReposicaoLoja = () => {
   }, [demandas]);
 
   // Atualizar quantidade de envio
-  const handleQuantidadeChange = (lojaId: string, produtoId: string, valor: string) => {
-    const key = `${lojaId}_${produtoId}`;
+  const handleQuantidadeChange = (solicitacaoId: string, valor: string) => {
     const quantidade = valor === '' ? 0 : Number(valor);
-    setQuantidadesEnvio(prev => ({ ...prev, [key]: quantidade }));
+    setQuantidadesEnvio(prev => ({ ...prev, [solicitacaoId]: quantidade }));
   };
 
   // Enviar item individual
@@ -370,18 +297,9 @@ const ReposicaoLoja = () => {
       return;
     }
 
-    // Validar duplicidade
-    const key = `${item.loja.id}_${item.produto.id}`;
-    const jaEnviado = quantidadesJaEnviadas.get(key) || 0;
-    if (jaEnviado > 0) {
-      toast.error(`${item.produto.nome} já foi enviado para ${item.loja.nome} e aguarda confirmação (${jaEnviado} un)`);
-      return;
-    }
-
     try {
       setSending(true);
 
-      // Buscar nome do usuário
       const { data: profile } = await supabase
         .from('profiles')
         .select('nome')
@@ -390,7 +308,7 @@ const ReposicaoLoja = () => {
 
       const usuarioNome = profile?.nome || user.email || 'Usuário';
 
-      // Criar romaneio individual
+      // Criar romaneio
       const { data: romaneio, error: romaneioError } = await supabase
         .from('romaneios_produtos')
         .insert({
@@ -448,22 +366,19 @@ const ReposicaoLoja = () => {
           organization_id: organizationId
         });
 
-      // Atualizar estoque loja
+      // Marcar solicitação como atendida
       await supabase
-        .from('estoque_loja_produtos')
-        .upsert({
-          loja_id: item.loja.id,
-          produto_id: item.produto.id,
-          quantidade: item.estoque_atual_loja + quantidade,
-          quantidade_ultimo_envio: quantidade,
-          data_ultimo_envio: new Date().toISOString(),
-          organization_id: organizationId
-        }, { onConflict: 'loja_id,produto_id' });
+        .from('solicitacoes_reposicao')
+        .update({
+          status: 'atendido',
+          quantidade_atendida: quantidade,
+          data_atendimento: new Date().toISOString(),
+          usuario_atendente_id: user.id,
+          usuario_atendente_nome: usuarioNome
+        })
+        .eq('id', item.solicitacao_id);
 
       toast.success(`${item.produto.nome} enviado para ${item.loja.nome}`);
-      
-      // Limpar quantidade do item enviado
-      setQuantidadesEnvio(prev => ({ ...prev, [key]: 0 }));
       
       // Recarregar dados
       fetchDados();
@@ -475,166 +390,7 @@ const ReposicaoLoja = () => {
     }
   };
 
-  // Confirmar envio de reposição
-  const handleConfirmarEnvio = async () => {
-    if (!user || !organizationId) return;
-
-    // Filtrar apenas produtos com quantidade > 0
-    const itensParaEnviar = demandas.filter(d => {
-      const key = `${d.loja.id}_${d.produto.id}`;
-      return (quantidadesEnvio[key] || 0) > 0;
-    });
-
-    if (itensParaEnviar.length === 0) {
-      toast.error('Nenhum item selecionado para envio');
-      return;
-    }
-
-    // Validar estoque CPD
-    const semEstoque: string[] = [];
-    itensParaEnviar.forEach(item => {
-      const key = `${item.loja.id}_${item.produto.id}`;
-      const qtdEnvio = quantidadesEnvio[key] || 0;
-      if (qtdEnvio > item.estoque_cpd) {
-        semEstoque.push(`${item.produto.nome} (CPD: ${item.estoque_cpd}, Solicitado: ${qtdEnvio})`);
-      }
-    });
-
-    if (semEstoque.length > 0) {
-      toast.error(`Estoque CPD insuficiente para: ${semEstoque.join(', ')}`);
-      return;
-    }
-
-    // ===== VALIDAR DUPLICIDADE: verificar se já existe romaneio enviado para mesma loja/produto =====
-    for (const item of itensParaEnviar) {
-      const key = `${item.loja.id}_${item.produto.id}`;
-      const jaEnviado = quantidadesJaEnviadas.get(key) || 0;
-      if (jaEnviado > 0) {
-        toast.error(`${item.produto.nome} já foi enviado para ${item.loja.nome} e aguarda confirmação (${jaEnviado} un). Não é possível reenviar.`);
-        return;
-      }
-    }
-
-    try {
-      setSending(true);
-
-      // Buscar nome do usuário
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('nome')
-        .eq('id', user.id)
-        .single();
-
-      const usuarioNome = profile?.nome || user.email || 'Usuário';
-
-      // Agrupar por loja
-      const porLoja = new Map<string, typeof itensParaEnviar>();
-      itensParaEnviar.forEach(item => {
-        const lista = porLoja.get(item.loja.id) || [];
-        lista.push(item);
-        porLoja.set(item.loja.id, lista);
-      });
-
-      // Processar cada loja
-      for (const [lojaId, itens] of porLoja) {
-        const loja = lojas.find(l => l.id === lojaId);
-        if (!loja) continue;
-
-        // Criar romaneio de produtos com status 'enviado' e data_envio preenchida
-        const { data: romaneio, error: romaneioError } = await supabase
-          .from('romaneios_produtos')
-          .insert({
-            loja_id: lojaId,
-            loja_nome: loja.nome,
-            usuario_id: user.id,
-            usuario_nome: usuarioNome,
-            status: 'enviado',
-            data_criacao: new Date().toISOString(),
-            data_envio: new Date().toISOString(),
-            observacao: observacao || null,
-            organization_id: organizationId
-          })
-          .select()
-          .single();
-
-        if (romaneioError) throw romaneioError;
-
-        // Adicionar itens ao romaneio
-        for (const item of itens) {
-          const key = `${item.loja.id}_${item.produto.id}`;
-          const qtdEnvio = quantidadesEnvio[key] || 0;
-
-          // Inserir item do romaneio
-          await supabase
-            .from('romaneios_produtos_itens')
-            .insert({
-              romaneio_id: romaneio.id,
-              produto_id: item.produto.id,
-              produto_nome: item.produto.nome,
-              quantidade: qtdEnvio,
-              unidade: item.produto.unidade_consumo || 'un',
-              organization_id: organizationId
-            });
-
-          // Debitar estoque CPD (tabela unificada)
-          const novoEstoqueCPD = item.estoque_cpd - qtdEnvio;
-          await supabase
-            .from('estoque_loja_produtos')
-            .update({ 
-              quantidade: novoEstoqueCPD,
-              data_ultima_atualizacao: new Date().toISOString()
-            })
-            .eq('loja_id', cpdLojaId)
-            .eq('produto_id', item.produto.id);
-
-          // Registrar movimentação CPD (log imutável)
-          await supabase
-            .from('movimentacoes_cpd_produtos')
-            .insert({
-              produto_id: item.produto.id,
-              produto_nome: item.produto.nome,
-              quantidade: qtdEnvio,
-              quantidade_anterior: item.estoque_cpd,
-              quantidade_posterior: novoEstoqueCPD,
-              tipo: 'saida_romaneio',
-              observacao: `Reposição para ${loja.nome}`,
-              usuario_id: user.id,
-              usuario_nome: usuarioNome,
-              organization_id: organizationId
-            });
-
-          // Atualizar estoque loja - INCREMENTAR com quantidade enviada
-          await supabase
-            .from('estoque_loja_produtos')
-            .upsert({
-              loja_id: lojaId,
-              produto_id: item.produto.id,
-              quantidade: item.estoque_atual_loja + qtdEnvio,
-              quantidade_ultimo_envio: qtdEnvio,
-              data_ultimo_envio: new Date().toISOString(),
-              organization_id: organizationId
-            }, { onConflict: 'loja_id,produto_id' });
-        }
-      }
-
-      toast.success(`Reposição enviada para ${porLoja.size} loja(s) com sucesso!`);
-      
-      // Resetar estados
-      setQuantidadesEnvio({});
-      setObservacao('');
-      
-      // Recarregar dados (item desaparece da aba "Pendentes" e aparece em "Aguardando")
-      await fetchDados();
-
-    } catch (error) {
-      console.error('Erro ao enviar reposição:', error);
-      toast.error('Erro ao enviar reposição');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  // Agrupar demandas por loja para exibição
+  // Agrupar demandas por loja
   const demandasPorLoja = useMemo(() => {
     const agrupado = new Map<string, DemandaLoja[]>();
     demandas.forEach(d => {
@@ -644,16 +400,6 @@ const ReposicaoLoja = () => {
     });
     return agrupado;
   }, [demandas]);
-
-  // Formatar data
-  const formatarData = (dataStr: string | null) => {
-    if (!dataStr) return '-';
-    try {
-      return format(new Date(dataStr), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
-    } catch {
-      return dataStr;
-    }
-  };
 
   if (!user) {
     return (
@@ -675,7 +421,7 @@ const ReposicaoLoja = () => {
               Reposição de Loja
             </h1>
             <p className="text-muted-foreground mt-1">
-              Visualize demandas consolidadas e envie reposição para as lojas
+              Visualize solicitações das lojas e envie os produtos solicitados
             </p>
           </div>
           <Button onClick={fetchDados} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
@@ -687,8 +433,8 @@ const ReposicaoLoja = () => {
         <Tabs defaultValue="pendentes" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="pendentes" className="flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Pendentes de Envio
+              <ShoppingCart className="h-4 w-4" />
+              Solicitações Pendentes
               {demandas.length > 0 && (
                 <Badge variant="destructive" className="ml-1">{demandas.length}</Badge>
               )}
@@ -706,16 +452,16 @@ const ReposicaoLoja = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* ===== ABA: PENDENTES DE ENVIO ===== */}
+          {/* ABA: SOLICITAÇÕES PENDENTES */}
           <TabsContent value="pendentes">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Demandas de Reposição
+                  <ShoppingCart className="h-5 w-5" />
+                  Solicitações de Reposição
                 </CardTitle>
                 <CardDescription>
-                  Produtos com estoque abaixo do mínimo configurado (descontando envios pendentes)
+                  Produtos solicitados pelas lojas aguardando envio
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -739,7 +485,7 @@ const ReposicaoLoja = () => {
                   </div>
                   <div className="flex items-end">
                     <Badge variant="secondary" className="text-sm">
-                      {demandas.length} produto(s) com demanda de reposição
+                      {demandas.length} solicitação(ões) pendente(s)
                     </Badge>
                   </div>
                 </div>
@@ -754,8 +500,8 @@ const ReposicaoLoja = () => {
                 ) : demandas.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                    <p className="text-lg font-medium">Nenhuma demanda de reposição!</p>
-                    <p className="text-sm">Todas as lojas estão com estoque adequado ou envios já foram realizados.</p>
+                    <p className="text-lg font-medium">Nenhuma solicitação pendente!</p>
+                    <p className="text-sm">Todas as solicitações foram atendidas.</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -766,7 +512,7 @@ const ReposicaoLoja = () => {
                           <CardHeader className="pb-2">
                             <CardTitle className="text-lg flex items-center gap-2">
                               <Store className="h-5 w-5 text-primary" />
-                              {loja?.nome}
+                              {loja?.nome || itens[0]?.loja.nome}
                               <Badge variant="outline" className="ml-2">
                                 {itens.length} item(s)
                               </Badge>
@@ -778,58 +524,34 @@ const ReposicaoLoja = () => {
                                 <thead>
                                   <tr className="border-b text-sm">
                                     <th className="text-left p-2 font-medium">Produto</th>
-                                    <th className="text-center p-2 font-medium">Est. Mín<br />(Hoje)</th>
-                                    <th className="text-center p-2 font-medium">Est. Loja</th>
+                                    <th className="text-center p-2 font-medium">Solicitado</th>
                                     <th className="text-center p-2 font-medium">Est. CPD</th>
-                                    <th className="text-center p-2 font-medium">Já Enviado<br />(Pendente)</th>
-                                    <th className="text-center p-2 font-medium">A Repor</th>
                                     <th className="text-center p-2 font-medium">Qtd Envio</th>
                                     <th className="text-center p-2 font-medium">Status</th>
+                                    <th className="text-center p-2 font-medium">Solicitante</th>
                                     <th className="text-center p-2 font-medium">Ação</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {itens.map(item => {
-                                    const key = `${item.loja.id}_${item.produto.id}`;
-                                    const qtdEnvio = quantidadesEnvio[key] ?? item.a_repor;
+                                    const qtdEnvio = quantidadesEnvio[item.solicitacao_id] ?? item.quantidade_solicitada;
                                     const semEstoque = qtdEnvio > item.estoque_cpd;
                                     
                                     return (
-                                      <tr key={key} className="border-b hover:bg-muted/50">
+                                      <tr key={item.solicitacao_id} className="border-b hover:bg-muted/50">
                                         <td className="p-2">
                                           <div className="font-medium">{item.produto.nome}</div>
                                           {item.produto.codigo && (
                                             <div className="text-xs text-muted-foreground">{item.produto.codigo}</div>
                                           )}
                                         </td>
-                                        <td className="p-2 text-center font-medium">{item.estoque_minimo}</td>
                                         <td className="p-2 text-center">
-                                          <div className="flex flex-col items-center">
-                                            <span>{item.estoque_atual_loja}</span>
-                                            {item.ultima_atualizacao && (
-                                              <div className="text-xs text-muted-foreground mt-0.5">
-                                                <div>{format(new Date(item.ultima_atualizacao), "dd/MM HH:mm", { locale: ptBR })}</div>
-                                                {item.usuario_registro && (
-                                                  <div className="italic">{item.usuario_registro}</div>
-                                                )}
-                                              </div>
-                                            )}
-                                          </div>
+                                          <span className="font-semibold text-primary">{item.quantidade_solicitada}</span>
                                         </td>
                                         <td className="p-2 text-center">
                                           <span className={semEstoque ? 'text-destructive font-medium' : ''}>
                                             {item.estoque_cpd}
                                           </span>
-                                        </td>
-                                        <td className="p-2 text-center">
-                                          {item.quantidade_ja_enviada > 0 ? (
-                                            <Badge variant="secondary">{item.quantidade_ja_enviada}</Badge>
-                                          ) : (
-                                            <span className="text-muted-foreground">-</span>
-                                          )}
-                                        </td>
-                                        <td className="p-2 text-center">
-                                          <span className="text-primary font-semibold">{item.a_repor}</span>
                                         </td>
                                         <td className="p-2">
                                           <Input
@@ -837,7 +559,7 @@ const ReposicaoLoja = () => {
                                             min="0"
                                             step="1"
                                             value={qtdEnvio}
-                                            onChange={(e) => handleQuantidadeChange(item.loja.id, item.produto.id, e.target.value)}
+                                            onChange={(e) => handleQuantidadeChange(item.solicitacao_id, e.target.value)}
                                             className="w-20 mx-auto text-center"
                                           />
                                         </td>
@@ -855,6 +577,13 @@ const ReposicaoLoja = () => {
                                           ) : (
                                             <span className="text-xs text-muted-foreground">-</span>
                                           )}
+                                        </td>
+                                        <td className="p-2 text-center">
+                                          <div className="text-xs text-muted-foreground">
+                                            {item.usuario_solicitante}
+                                            <br />
+                                            {format(new Date(item.data_solicitacao), "dd/MM HH:mm", { locale: ptBR })}
+                                          </div>
                                         </td>
                                         <td className="p-2 text-center">
                                           <Button
@@ -884,114 +613,56 @@ const ReposicaoLoja = () => {
                     })}
                   </div>
                 )}
-
-                {/* Observação e Botão de Envio */}
-                {demandas.length > 0 && (
-                  <>
-                    <div className="space-y-2 pt-4 border-t">
-                      <label className="text-sm font-medium">Observação do Envio (opcional)</label>
-                      <Textarea
-                        placeholder="Adicione uma observação sobre a reposição"
-                        value={observacao}
-                        onChange={(e) => setObservacao(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex justify-end pt-4">
-                      <Button 
-                        onClick={handleConfirmarEnvio}
-                        disabled={sending || demandas.every(d => {
-                          const key = `${d.loja.id}_${d.produto.id}`;
-                          return (quantidadesEnvio[key] || 0) === 0;
-                        })}
-                        size="lg"
-                        className="gap-2"
-                      >
-                        {sending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Truck className="h-4 w-4" />
-                        )}
-                        {sending ? 'Enviando...' : 'Confirmar Envio de Reposição'}
-                      </Button>
-                    </div>
-                  </>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* ===== ABA: AGUARDANDO CONFIRMAÇÃO ===== */}
+          {/* ABA: AGUARDANDO CONFIRMAÇÃO */}
           <TabsContent value="aguardando">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5" />
-                  Romaneios Aguardando Confirmação da Loja
+                  Romaneios Aguardando Confirmação
                 </CardTitle>
                 <CardDescription>
-                  Envios realizados que ainda não foram confirmados pelo recebimento na loja
+                  Envios realizados aguardando confirmação de recebimento pela loja
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <div className="space-y-4">
-                    {[1, 2].map(i => (
+                    {[1, 2, 3].map(i => (
                       <Skeleton key={i} className="h-32 w-full" />
                     ))}
                   </div>
                 ) : romaneiosAguardando.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                    <p className="text-lg font-medium">Nenhum romaneio aguardando</p>
-                    <p className="text-sm">Todas as lojas já confirmaram o recebimento.</p>
+                    <p className="text-lg font-medium">Nenhum romaneio aguardando!</p>
+                    <p className="text-sm">Todos os envios foram confirmados.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {romaneiosAguardando.map(rom => (
-                      <Card key={rom.id} className="border-l-4 border-l-yellow-500">
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <Store className="h-4 w-4" />
-                              {rom.loja_nome}
-                            </CardTitle>
-                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                              <Clock className="h-3 w-3 mr-1" />
-                              Aguardando
-                            </Badge>
+                    {romaneiosAguardando.map(romaneio => (
+                      <Card key={romaneio.id} className="border-l-4 border-l-yellow-500">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <h4 className="font-semibold">{romaneio.loja_nome}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Enviado em {format(new Date(romaneio.data_envio), "dd/MM/yyyy HH:mm", { locale: ptBR })} por {romaneio.usuario_nome}
+                              </p>
+                            </div>
+                            <Badge variant="secondary">Aguardando</Badge>
                           </div>
-                          <CardDescription>
-                            Enviado por {rom.usuario_nome} em {formatarData(rom.data_envio)}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="border-b">
-                                  <th className="text-left p-2">Produto</th>
-                                  <th className="text-center p-2">Quantidade Enviada</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {rom.itens.map((item, idx) => (
-                                  <tr key={idx} className="border-b">
-                                    <td className="p-2">{item.produto_nome}</td>
-                                    <td className="p-2 text-center font-medium">
-                                      {item.quantidade} {item.unidade}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="flex flex-wrap gap-2">
+                            {romaneio.itens.map((item, idx) => (
+                              <Badge key={idx} variant="outline">
+                                {item.produto_nome}: {item.quantidade} {item.unidade}
+                              </Badge>
+                            ))}
                           </div>
-                          {rom.observacao && (
-                            <p className="mt-2 text-sm text-muted-foreground italic">
-                              Obs: {rom.observacao}
-                            </p>
-                          )}
                         </CardContent>
                       </Card>
                     ))}
@@ -1001,86 +672,59 @@ const ReposicaoLoja = () => {
             </Card>
           </TabsContent>
 
-          {/* ===== ABA: HISTÓRICO FINALIZADO ===== */}
+          {/* ABA: HISTÓRICO */}
           <TabsContent value="historico">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <History className="h-5 w-5" />
-                  Histórico de Romaneios Finalizados
+                  Histórico de Reposições
                 </CardTitle>
                 <CardDescription>
-                  Últimos 50 romaneios confirmados pelas lojas
+                  Últimas reposições finalizadas
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <div className="space-y-4">
-                    {[1, 2].map(i => (
+                    {[1, 2, 3].map(i => (
                       <Skeleton key={i} className="h-32 w-full" />
                     ))}
                   </div>
                 ) : romaneiosHistorico.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <History className="h-12 w-12 mb-4" />
+                    <Package className="h-12 w-12 mb-4" />
                     <p className="text-lg font-medium">Nenhum histórico</p>
-                    <p className="text-sm">Ainda não há romaneios finalizados.</p>
+                    <p className="text-sm">Ainda não há reposições finalizadas.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {romaneiosHistorico.map(rom => {
-                      const temDivergencia = rom.itens.some(i => i.divergencia);
-                      return (
-                        <Card key={rom.id} className={`border-l-4 ${temDivergencia ? 'border-l-orange-500' : 'border-l-green-500'}`}>
-                          <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                              <CardTitle className="text-base flex items-center gap-2">
-                                <Store className="h-4 w-4" />
-                                {rom.loja_nome}
-                              </CardTitle>
-                              <Badge variant={temDivergencia ? 'destructive' : 'default'} className={!temDivergencia ? 'bg-green-600' : ''}>
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                {temDivergencia ? 'Com Divergência' : 'Concluído'}
+                    {romaneiosHistorico.map(romaneio => (
+                      <Card key={romaneio.id} className="border-l-4 border-l-green-500">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <h4 className="font-semibold">{romaneio.loja_nome}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Recebido em {romaneio.data_recebimento ? format(new Date(romaneio.data_recebimento), "dd/MM/yyyy HH:mm", { locale: ptBR }) : '-'} por {romaneio.recebido_por_nome || '-'}
+                              </p>
+                            </div>
+                            <Badge className="bg-green-500">Finalizado</Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {romaneio.itens.map((item, idx) => (
+                              <Badge 
+                                key={idx} 
+                                variant={item.divergencia ? "destructive" : "outline"}
+                              >
+                                {item.produto_nome}: {item.quantidade_recebida ?? item.quantidade}/{item.quantidade} {item.unidade}
+                                {item.divergencia && " ⚠️"}
                               </Badge>
-                            </div>
-                            <CardDescription>
-                              Enviado: {formatarData(rom.data_envio)} | 
-                              Recebido: {formatarData(rom.data_recebimento)} por {rom.recebido_por_nome || 'N/A'}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b">
-                                    <th className="text-left p-2">Produto</th>
-                                    <th className="text-center p-2">Enviado</th>
-                                    <th className="text-center p-2">Recebido</th>
-                                    <th className="text-center p-2">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {rom.itens.map((item, idx) => (
-                                    <tr key={idx} className="border-b">
-                                      <td className="p-2">{item.produto_nome}</td>
-                                      <td className="p-2 text-center">{item.quantidade} {item.unidade}</td>
-                                      <td className="p-2 text-center">{item.quantidade_recebida ?? '-'} {item.unidade}</td>
-                                      <td className="p-2 text-center">
-                                        {item.divergencia ? (
-                                          <Badge variant="destructive" className="text-xs">Divergência</Badge>
-                                        ) : (
-                                          <Badge className="bg-green-600 text-xs">OK</Badge>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
                 )}
               </CardContent>
