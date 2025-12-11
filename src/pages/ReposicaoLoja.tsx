@@ -121,6 +121,7 @@ const ReposicaoLoja = () => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [quantidadesEnvio, setQuantidadesEnvio] = useState<{ [key: string]: number }>({});
+  const [itensEnviados, setItensEnviados] = useState<Set<string>>(new Set());
   
   // Estados para as abas
   const [romaneiosAguardando, setRomaneiosAguardando] = useState<RomaneioAguardando[]>([]);
@@ -317,9 +318,15 @@ const ReposicaoLoja = () => {
       });
     });
 
+    // Filtrar itens já enviados na sessão atual
+    const demandasFiltradas = demandasCalculadas.filter(d => {
+      const key = `${d.loja.id}-${d.produto.id}`;
+      return !itensEnviados.has(key);
+    });
+
     // Ordenar por déficit (maior primeiro)
-    return demandasCalculadas.sort((a, b) => b.deficit - a.deficit);
-  }, [lojas, produtos, estoquesLojas, estoquesMinimos, estoqueCPD, lojaSelecionada, quantidadesEnvio]);
+    return demandasFiltradas.sort((a, b) => b.deficit - a.deficit);
+  }, [lojas, produtos, estoquesLojas, estoquesMinimos, estoqueCPD, lojaSelecionada, quantidadesEnvio, itensEnviados]);
 
   // Inicializar quantidades de envio
   useEffect(() => {
@@ -427,8 +434,16 @@ const ReposicaoLoja = () => {
 
       toast.success(`${item.produto.nome} enviado para ${item.loja.nome}`);
       
-      // Recarregar dados
-      fetchDados();
+      // Marcar item como enviado para remover da tela imediatamente
+      const key = `${item.loja.id}-${item.produto.id}`;
+      setItensEnviados(prev => new Set(prev).add(key));
+      
+      // Atualizar estoque CPD localmente
+      setEstoqueCPD(prev => prev.map(e => 
+        e.produto_id === item.produto.id 
+          ? { ...e, quantidade: e.quantidade - quantidade }
+          : e
+      ));
     } catch (error) {
       console.error('Erro ao enviar item:', error);
       toast.error('Erro ao enviar item');
@@ -471,7 +486,7 @@ const ReposicaoLoja = () => {
               Visualize demandas calculadas automaticamente e envie os produtos necessários
             </p>
           </div>
-          <Button onClick={fetchDados} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
+          <Button onClick={() => { setItensEnviados(new Set()); fetchDados(); }} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Atualizar
           </Button>
