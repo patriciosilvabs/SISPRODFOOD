@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Package } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { TrendingUp, TrendingDown, Package, Printer } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -61,6 +62,109 @@ const RelatorioInsumos = () => {
     setFilteredLogs(filtered);
   };
 
+  const handlePrintAuditoria = async () => {
+    try {
+      // Buscar lista de insumos para auditoria
+      const { data: insumos, error } = await supabase
+        .from('insumos')
+        .select('id, nome, quantidade_em_estoque, unidade_medida')
+        .order('nome');
+
+      if (error) throw error;
+
+      const dataAtual = format(new Date(), "dd/MM/yyyy", { locale: ptBR });
+      
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error('Bloqueador de pop-up ativo. Permita pop-ups para imprimir.');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Folha de Auditoria - Insumos</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .header h1 { font-size: 18px; margin-bottom: 5px; }
+            .header-info { display: flex; justify-content: space-between; margin-top: 10px; }
+            .field { border-bottom: 1px solid #000; min-width: 200px; display: inline-block; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
+            th { background-color: #f0f0f0; font-weight: bold; }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+            .campo-vazio { width: 80px; }
+            .footer { margin-top: 30px; }
+            .footer-line { display: flex; justify-content: space-between; margin-top: 40px; }
+            .signature { border-top: 1px solid #000; width: 250px; text-align: center; padding-top: 5px; }
+            @media print {
+              body { padding: 10px; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>📋 FOLHA DE AUDITORIA DE ESTOQUE - INSUMOS</h1>
+            <p>Conferência Semanal de Estoque</p>
+            <div class="header-info">
+              <div>Data: <span class="field">${dataAtual}</span></div>
+              <div>Conferente: <span class="field" style="min-width: 250px;"></span></div>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th>Nome do Insumo</th>
+                <th style="width: 80px;">Unidade</th>
+                <th style="width: 100px;" class="text-right">Estoque Sistema</th>
+                <th style="width: 100px;" class="text-center">Contagem Física</th>
+                <th style="width: 100px;" class="text-center">Diferença</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(insumos || []).map((insumo, index) => `
+                <tr>
+                  <td class="text-center">${index + 1}</td>
+                  <td>${insumo.nome}</td>
+                  <td class="text-center">${insumo.unidade_medida || '-'}</td>
+                  <td class="text-right">${Number(insumo.quantidade_em_estoque || 0).toFixed(2)}</td>
+                  <td class="campo-vazio"></td>
+                  <td class="campo-vazio"></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            <p><strong>Observações:</strong></p>
+            <div style="border: 1px solid #000; height: 60px; margin-top: 5px;"></div>
+            
+            <div class="footer-line">
+              <div class="signature">Assinatura do Conferente</div>
+              <div class="signature">Data: ____/____/________</div>
+              <div class="signature">Visto do Supervisor</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+      
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => printWindow.print(), 250);
+    } catch (error) {
+      console.error('Erro ao gerar folha de auditoria:', error);
+      toast.error('Erro ao gerar folha de auditoria');
+    }
+  };
+
   const totalEntradas = logs.filter((l) => l.tipo === 'entrada').reduce((sum, l) => sum + Number(l.quantidade), 0);
   const totalSaidas = logs.filter((l) => l.tipo === 'saida').reduce((sum, l) => sum + Number(l.quantidade), 0);
   const saldoTotal = totalEntradas - totalSaidas;
@@ -78,9 +182,15 @@ const RelatorioInsumos = () => {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Relatório de Insumos</h1>
-          <p className="text-muted-foreground">Entradas e saídas de insumos do CPD</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Relatório de Insumos</h1>
+            <p className="text-muted-foreground">Entradas e saídas de insumos do CPD</p>
+          </div>
+          <Button onClick={handlePrintAuditoria} variant="outline" className="gap-2">
+            <Printer className="h-4 w-4" />
+            Imprimir Auditoria
+          </Button>
         </div>
 
         {/* Cards de Resumo */}
