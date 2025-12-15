@@ -209,7 +209,36 @@ serve(async (req) => {
         throw new Error("Já existe um convite pendente para este email");
       }
       if (existingInvite.status === "aceito") {
-        throw new Error("Este email já aceitou um convite para esta organização");
+        // AUTO-CORREÇÃO: Verificar se o usuário ainda é membro da organização
+        // Se não for mais membro (foi excluído), deletar convite órfão e permitir reconvite
+        const { data: existingProfileCheck } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("email", normalizedEmail)
+          .single();
+
+        let isStillMember = false;
+        if (existingProfileCheck) {
+          const { data: memberCheck } = await supabase
+            .from("organization_members")
+            .select("id")
+            .eq("organization_id", orgMember.organization_id)
+            .eq("user_id", existingProfileCheck.id)
+            .single();
+          
+          isStillMember = !!memberCheck;
+        }
+
+        if (isStillMember) {
+          throw new Error("Este usuário já pertence à organização");
+        } else {
+          // Usuário não é mais membro - deletar convite órfão para permitir reconvite
+          console.log("Deleting orphan accepted invite (user no longer member):", existingInvite.id);
+          await supabase
+            .from("convites_pendentes")
+            .delete()
+            .eq("id", existingInvite.id);
+        }
       }
       // Se o convite foi cancelado, deletar para permitir novo convite
       if (existingInvite.status === "cancelado") {
