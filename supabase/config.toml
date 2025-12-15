@@ -61,3 +61,6 @@ verify_jwt = false
 
 [functions.verificar-alertas-estoque]
 verify_jwt = false
+
+[functions.excluir-usuario]
+verify_jwt = true
