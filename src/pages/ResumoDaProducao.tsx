@@ -701,6 +701,16 @@ const ResumoDaProducao = () => {
       // Buscar dados do item para verificar configurações
       const itemData = await getItemInsumoData(selectedRegistro.item_id);
       
+      // Verificar se deve debitar insumos (apenas no primeiro lote da sequência)
+      const deveDebitarInsumosEEmbalagem = 
+        selectedRegistro.sequencia_traco === 1 || 
+        selectedRegistro.sequencia_traco === undefined || 
+        selectedRegistro.sequencia_traco === null;
+
+      if (!deveDebitarInsumosEEmbalagem) {
+        console.log(`[SKIP DÉBITO] Lote ${selectedRegistro.sequencia_traco} - insumos/embalagem já debitados no Lote 1`);
+      }
+
       // Buscar TODOS os insumos vinculados (agora unificados na tabela insumos_extras)
       const { data: insumosVinculados, error: insumosError } = await supabase
         .from('insumos_extras')
@@ -709,7 +719,7 @@ const ResumoDaProducao = () => {
 
       if (insumosError) {
         console.error('Erro ao buscar insumos vinculados:', insumosError);
-      } else if (insumosVinculados && insumosVinculados.length > 0) {
+      } else if (deveDebitarInsumosEEmbalagem && insumosVinculados && insumosVinculados.length > 0) {
         // Debitar cada insumo vinculado
         for (const insumoVinculado of insumosVinculados) {
           let quantidadeTotal = 0;
@@ -804,17 +814,19 @@ const ResumoDaProducao = () => {
         }
       }
 
-      // === DÉBITO DE EMBALAGEM ===
-      console.log('[DEBUG EMBALAGEM]', {
-        usaEmbalagem: itemData?.usa_embalagem_por_porcao,
-        insumoEmbalagemId: itemData?.insumo_embalagem_id,
-        fator: itemData?.fator_consumo_embalagem_por_porcao,
-        unidadesReais: data.unidades_reais,
-        demandaLojas: selectedRegistro.demanda_lojas,
-        hasLotesMasseira: selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0
-      });
+      // === DÉBITO DE EMBALAGEM (apenas no Lote 1) ===
+      if (deveDebitarInsumosEEmbalagem) {
+        console.log('[DEBUG EMBALAGEM]', {
+          usaEmbalagem: itemData?.usa_embalagem_por_porcao,
+          insumoEmbalagemId: itemData?.insumo_embalagem_id,
+          fator: itemData?.fator_consumo_embalagem_por_porcao,
+          unidadesReais: data.unidades_reais,
+          demandaLojas: selectedRegistro.demanda_lojas,
+          hasLotesMasseira: selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0
+        });
+      }
 
-      if (itemData?.usa_embalagem_por_porcao && itemData.insumo_embalagem_id) {
+      if (deveDebitarInsumosEEmbalagem && itemData?.usa_embalagem_por_porcao && itemData.insumo_embalagem_id) {
         const fator = itemData.fator_consumo_embalagem_por_porcao || 1;
         const hasLotesMasseiraEmb = selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0;
         
