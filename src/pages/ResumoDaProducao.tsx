@@ -16,6 +16,7 @@ import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
 
 
 interface DetalheLojaProducao {
@@ -111,6 +112,7 @@ const ResumoDaProducao = () => {
   const { cpdLojaId } = useCPDLoja();
   const { playAlarm, stopAlarm } = useAlarmSound();
   const { log } = useAuditLog();
+  const { registrarMovimentacao } = useMovimentacaoEstoque();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -193,59 +195,45 @@ const ResumoDaProducao = () => {
     return data;
   };
 
-  // Função para movimentar estoque de insumo
+  // Função para movimentar estoque de insumo com auditoria completa
   const movimentarEstoqueInsumo = async (
     insumoId: string,
     quantidade: number,
     itemNome: string,
-    tipo: 'entrada' | 'saida'
+    tipo: 'entrada' | 'saida',
+    referenciaId?: string,
+    referenciaTipo?: string
   ) => {
     try {
-      // 1. Buscar insumo e estoque atual
+      // 1. Buscar nome do insumo
       const { data: insumo, error: insumoError } = await supabase
         .from('insumos')
-        .select('nome, quantidade_em_estoque')
+        .select('nome, unidade_medida')
         .eq('id', insumoId)
         .single();
 
       if (insumoError) throw insumoError;
 
-      // 2. Calcular novo estoque
-      const estoqueAtual = insumo.quantidade_em_estoque || 0;
-      const novoEstoque = tipo === 'saida' 
-        ? estoqueAtual - quantidade 
-        : estoqueAtual + quantidade;
+      // 2. Usar hook centralizado que registra estoque anterior/posterior automaticamente
+      const tipoMovimentacao = tipo === 'saida' ? 'consumo_producao' : 'cancelamento_preparo';
+      
+      const result = await registrarMovimentacao({
+        entidadeTipo: 'insumo',
+        entidadeId: insumoId,
+        entidadeNome: insumo.nome,
+        tipoMovimentacao,
+        quantidade,
+        unidadeOrigem: 'CPD',
+        observacao: `Produção: ${itemNome}`,
+        referenciaId,
+        referenciaTipo,
+      });
 
-      // 3. Atualizar estoque do insumo
-      const { error: updateError } = await supabase
-        .from('insumos')
-        .update({ 
-          quantidade_em_estoque: novoEstoque,
-          data_ultima_movimentacao: new Date().toISOString()
-        })
-        .eq('id', insumoId);
+      if (!result.success) {
+        throw new Error(result.error || 'Erro ao movimentar estoque');
+      }
 
-      if (updateError) throw updateError;
-
-      // 4. Registrar no log
-      const { error: logError } = await supabase
-        .from('insumos_log')
-        .insert({
-          insumo_id: insumoId,
-          insumo_nome: insumo.nome,
-          quantidade: tipo === 'saida' ? -quantidade : quantidade,
-          tipo: tipo,
-          usuario_id: user?.id || '',
-          usuario_nome: profile?.nome || 'Sistema',
-          organization_id: organizationId,
-        });
-
-      if (logError) throw logError;
-
-      // 5. Toast de sucesso
-      toast.success(
-        `✅ Estoque de ${insumo.nome} atualizado: ${tipo === 'saida' ? '-' : '+'}${quantidade} kg`
-      );
+      // Toast é exibido automaticamente pelo hook
     } catch (error) {
       console.error('Erro ao movimentar estoque:', error);
       toast.error('Erro ao atualizar estoque do insumo');

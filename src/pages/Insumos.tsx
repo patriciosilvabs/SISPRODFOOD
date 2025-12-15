@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Package, RefreshCw, Settings } from 'lucide-react';
 import { ConfigurarEstoqueMinimoInsumoModal } from '@/components/modals/ConfigurarEstoqueMinimoInsumoModal';
@@ -12,6 +13,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { numberToWords } from '@/lib/numberToWords';
+import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
 import {
   Dialog,
   DialogContent,
@@ -53,11 +55,13 @@ interface Insumo {
 
 const Insumos = () => {
   const { organizationId } = useOrganization();
+  const { registrarMovimentacao, requerObservacao } = useMovimentacaoEstoque();
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [estoqueModalOpen, setEstoqueModalOpen] = useState(false);
   const [editingInsumo, setEditingInsumo] = useState<Insumo | null>(null);
+  const [observacaoAjuste, setObservacaoAjuste] = useState('');
   const [formData, setFormData] = useState({
     nome: '',
     quantidade_em_estoque: '0',
@@ -98,9 +102,19 @@ const Insumos = () => {
     }
 
     try {
+      const novaQuantidade = parseFloat(formData.quantidade_em_estoque);
+      const quantidadeAnterior = editingInsumo?.quantidade_em_estoque || 0;
+      const houveMudancaEstoque = editingInsumo && novaQuantidade !== quantidadeAnterior;
+      
+      // Se houve mudança de estoque, exigir observação
+      if (houveMudancaEstoque && !observacaoAjuste.trim()) {
+        toast.error('Observação/Motivo é obrigatória para ajustes de estoque');
+        return;
+      }
+
       const data = {
         nome: formData.nome,
-        quantidade_em_estoque: parseFloat(formData.quantidade_em_estoque),
+        quantidade_em_estoque: novaQuantidade,
         unidade_medida: formData.unidade_medida as UnidadeMedida,
         estoque_minimo: parseFloat(formData.estoque_minimo),
         perda_percentual: parseFloat(formData.perda_percentual),
@@ -110,13 +124,49 @@ const Insumos = () => {
       };
 
       if (editingInsumo) {
-        const { error } = await supabase
-          .from('insumos')
-          .update(data)
-          .eq('id', editingInsumo.id);
+        // Se houve mudança de estoque, registrar via hook de movimentação (com auditoria completa)
+        if (houveMudancaEstoque) {
+          const diferenca = Math.abs(novaQuantidade - quantidadeAnterior);
+          const tipoMovimentacao = novaQuantidade > quantidadeAnterior ? 'ajuste_positivo' : 'ajuste_negativo';
+          
+          const result = await registrarMovimentacao({
+            entidadeTipo: 'insumo',
+            entidadeId: editingInsumo.id,
+            entidadeNome: formData.nome,
+            tipoMovimentacao,
+            quantidade: diferenca,
+            unidadeOrigem: 'Insumos',
+            observacao: observacaoAjuste.trim(),
+          });
 
-        if (error) throw error;
-        toast.success('Insumo atualizado com sucesso!');
+          if (!result.success) {
+            throw new Error(result.error || 'Erro ao registrar movimentação');
+          }
+          
+          // Atualizar apenas os outros campos (estoque já foi atualizado pelo RPC)
+          const { error } = await supabase
+            .from('insumos')
+            .update({
+              nome: data.nome,
+              unidade_medida: data.unidade_medida,
+              estoque_minimo: data.estoque_minimo,
+              perda_percentual: data.perda_percentual,
+              dias_cobertura_desejado: data.dias_cobertura_desejado,
+              lead_time_real_dias: data.lead_time_real_dias,
+            })
+            .eq('id', editingInsumo.id);
+
+          if (error) throw error;
+        } else {
+          // Sem mudança de estoque, atualizar normalmente
+          const { error } = await supabase
+            .from('insumos')
+            .update(data)
+            .eq('id', editingInsumo.id);
+
+          if (error) throw error;
+          toast.success('Insumo atualizado com sucesso!');
+        }
       } else {
         const { error } = await supabase
           .from('insumos')
@@ -167,6 +217,7 @@ const Insumos = () => {
 
   const resetForm = () => {
     setEditingInsumo(null);
+    setObservacaoAjuste('');
     setFormData({
       nome: '',
       quantidade_em_estoque: '0',
@@ -177,6 +228,10 @@ const Insumos = () => {
       lead_time_real_dias: '',
     });
   };
+  
+  // Verificar se houve mudança no estoque para exigir observação
+  const estoqueMudou = editingInsumo && 
+    parseFloat(formData.quantidade_em_estoque) !== editingInsumo.quantidade_em_estoque;
 
   if (loading) {
     return (
@@ -372,6 +427,26 @@ const Insumos = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Campo de Observação para ajustes de estoque */}
+                  {estoqueMudou && (
+                    <div className="pt-2 border-t border-orange-200 bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg">
+                      <Label htmlFor="observacao_ajuste" className="text-orange-700 dark:text-orange-300 font-medium flex items-center gap-2">
+                        ⚠️ Motivo do Ajuste de Estoque (obrigatório)
+                      </Label>
+                      <p className="text-xs text-orange-600 dark:text-orange-400 mb-2">
+                        Estoque anterior: {editingInsumo?.quantidade_em_estoque.toFixed(2)} → Novo: {parseFloat(formData.quantidade_em_estoque).toFixed(2)} {formData.unidade_medida}
+                      </p>
+                      <Textarea
+                        id="observacao_ajuste"
+                        value={observacaoAjuste}
+                        onChange={(e) => setObservacaoAjuste(e.target.value)}
+                        placeholder="Ex: Conferência física, correção de inventário, entrada de compra..."
+                        className="min-h-[80px]"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -382,7 +457,7 @@ const Insumos = () => {
                   >
                     Cancelar
                   </Button>
-                  <Button type="submit">
+                  <Button type="submit" disabled={estoqueMudou && !observacaoAjuste.trim()}>
                     {editingInsumo ? 'Atualizar' : 'Criar'}
                   </Button>
                 </DialogFooter>
