@@ -105,6 +105,7 @@ const GerenciarUsuarios = () => {
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingUser, setDeletingUser] = useState<UsuarioCompleto | null>(null);
+  const [deleting, setDeleting] = useState(false);
   
   // Invite modal state
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -455,45 +456,37 @@ const GerenciarUsuarios = () => {
     }
 
     try {
-      // 1. Remover acesso a lojas
-      const { error: lojasError } = await supabase
-        .from('lojas_acesso')
-        .delete()
-        .eq('user_id', deletingUser.id);
+      setDeleting(true);
       
-      if (lojasError) console.error('Erro ao remover lojas_acesso:', lojasError);
-
-      // 2. Remover page overrides
-      const { error: pageError } = await supabase
-        .from('user_page_access')
-        .delete()
-        .eq('user_id', deletingUser.id)
-        .eq('organization_id', organizationId);
-      
-      if (pageError) console.error('Erro ao remover user_page_access:', pageError);
-
-      // 3. REMOVER COMPLETAMENTE da organização
-      const { error: memberError } = await supabase
-        .from('organization_members')
-        .delete()
-        .eq('user_id', deletingUser.id)
-        .eq('organization_id', organizationId);
-
-      if (memberError) {
-        console.error('Erro ao remover organization_members:', memberError);
-        throw memberError;
-      }
-
-      await auditLog.log('user.remove', 'user', deletingUser.id, {
-        target_email: deletingUser.email,
+      // Chamar Edge Function para exclusão completa em cascata
+      const { data, error } = await supabase.functions.invoke('excluir-usuario', {
+        body: {
+          userId: deletingUser.id,
+          organizationId: organizationId,
+        },
       });
 
-      toast.success('Usuário removido da organização com sucesso');
+      if (error) {
+        console.error('Erro ao excluir usuário:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        console.error('Erro retornado pela Edge Function:', data.error);
+        throw new Error(data.error);
+      }
+
+      console.log('[GerenciarUsuarios] Resultado da exclusão:', data);
+      
+      toast.success(data?.message || 'Usuário excluído permanentemente do sistema');
       setDeleteDialogOpen(false);
+      setDeletingUser(null);
       fetchData();
-    } catch (error) {
-      console.error('Erro ao remover usuário:', error);
-      toast.error('Erro ao remover usuário');
+    } catch (error: any) {
+      console.error('Erro ao excluir usuário:', error);
+      toast.error(error.message || 'Erro ao excluir usuário');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1082,20 +1075,41 @@ const GerenciarUsuarios = () => {
       </Dialog>
 
       {/* Delete Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => !deleting && setDeleteDialogOpen(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover Permissões?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogTitle>⚠️ Excluir Usuário PERMANENTEMENTE?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
               {deletingUser && (
-                <>Isso removerá todas as permissões e vínculos de <strong>{deletingUser.nome}</strong>.</>
+                <>
+                  <p>Esta ação é <strong className="text-destructive">PERMANENTE e IRREVERSÍVEL</strong>.</p>
+                  <p>O usuário <strong>{deletingUser.nome}</strong> ({deletingUser.email}) será completamente removido do sistema, incluindo:</p>
+                  <ul className="list-disc list-inside text-sm mt-2 space-y-1">
+                    <li>Todos os registros de produção</li>
+                    <li>Todas as contagens realizadas</li>
+                    <li>Todos os romaneios criados</li>
+                    <li>Todos os vínculos com lojas</li>
+                    <li>Conta de acesso ao sistema</li>
+                  </ul>
+                </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
-              Remover
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              disabled={deleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                'Excluir Permanentemente'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
