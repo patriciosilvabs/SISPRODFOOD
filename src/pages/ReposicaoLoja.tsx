@@ -10,7 +10,8 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History, TrendingDown } from 'lucide-react';
+import { Store, Package, Truck, AlertCircle, CheckCircle, Loader2, RefreshCw, Clock, History, TrendingDown, Settings, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -463,6 +464,33 @@ const ReposicaoLoja = () => {
     return agrupado;
   }, [demandas]);
 
+  // Verificar lojas sem configuração de estoque mínimo
+  const diagnosticoLojas = useMemo(() => {
+    const lojasComMinimo = new Set(estoquesMinimos.map(em => em.loja_id));
+    const lojasQueInformaram = new Set(estoquesLojas.map(e => e.loja_id));
+    
+    const lojasSemMinimo = lojas.filter(l => !lojasComMinimo.has(l.id));
+    const lojasComMinimoSemDemanda = lojas.filter(l => 
+      lojasComMinimo.has(l.id) && 
+      lojasQueInformaram.has(l.id) && 
+      !demandasPorLoja.has(l.id)
+    );
+    const lojasQueNaoInformaram = lojas.filter(l => !lojasQueInformaram.has(l.id));
+    
+    // Loja específica selecionada
+    const lojaSelecionadaSemMinimo = lojaSelecionada !== 'todas' && !lojasComMinimo.has(lojaSelecionada);
+    const lojaSelecionadaNaoInformou = lojaSelecionada !== 'todas' && !lojasQueInformaram.has(lojaSelecionada);
+    
+    return {
+      lojasSemMinimo,
+      lojasComMinimoSemDemanda,
+      lojasQueNaoInformaram,
+      lojaSelecionadaSemMinimo,
+      lojaSelecionadaNaoInformou,
+      temAlgumaConfiguracao: estoquesMinimos.length > 0
+    };
+  }, [lojas, estoquesMinimos, estoquesLojas, demandasPorLoja, lojaSelecionada]);
+
   if (!user) {
     return (
       <Layout>
@@ -560,12 +588,88 @@ const ReposicaoLoja = () => {
                     ))}
                   </div>
                 ) : demandas.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                    <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
-                    <p className="text-lg font-medium">Nenhuma demanda de reposição!</p>
-                    <p className="text-sm text-center">
-                      Todos os produtos estão com estoque adequado ou as lojas não informaram o estoque ainda.
-                    </p>
+                  <div className="space-y-4">
+                    {/* Aviso: Loja selecionada não tem mínimo configurado */}
+                    {diagnosticoLojas.lojaSelecionadaSemMinimo && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Estoque Mínimo Não Configurado</AlertTitle>
+                        <AlertDescription>
+                          A loja selecionada não possui estoque mínimo configurado. Configure em:{' '}
+                          <strong>Configurações → Gerenciar Produtos → Estoque Mínimo por Loja</strong>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Aviso: Loja selecionada não informou estoque */}
+                    {diagnosticoLojas.lojaSelecionadaNaoInformou && !diagnosticoLojas.lojaSelecionadaSemMinimo && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Estoque Não Informado</AlertTitle>
+                        <AlertDescription>
+                          A loja selecionada ainda não informou o estoque atual. A loja deve informar em:{' '}
+                          <strong>Estoque Loja → Meu Estoque</strong>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Aviso global: Nenhuma loja tem mínimo configurado */}
+                    {lojaSelecionada === 'todas' && !diagnosticoLojas.temAlgumaConfiguracao && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Configuração Necessária</AlertTitle>
+                        <AlertDescription>
+                          Nenhuma loja possui estoque mínimo configurado. Configure em:{' '}
+                          <strong>Configurações → Gerenciar Produtos → Estoque Mínimo por Loja</strong>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Aviso: Algumas lojas sem configuração */}
+                    {lojaSelecionada === 'todas' && diagnosticoLojas.temAlgumaConfiguracao && diagnosticoLojas.lojasSemMinimo.length > 0 && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Lojas sem Estoque Mínimo Configurado</AlertTitle>
+                        <AlertDescription>
+                          As seguintes lojas não possuem estoque mínimo configurado e não aparecem nas demandas:{' '}
+                          <strong>{diagnosticoLojas.lojasSemMinimo.map(l => l.nome).join(', ')}</strong>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Aviso: Lojas que não informaram */}
+                    {lojaSelecionada === 'todas' && diagnosticoLojas.lojasQueNaoInformaram.length > 0 && (
+                      <Alert>
+                        <Clock className="h-4 w-4" />
+                        <AlertTitle>Aguardando Informação de Estoque</AlertTitle>
+                        <AlertDescription>
+                          As seguintes lojas ainda não informaram o estoque atual:{' '}
+                          <strong>{diagnosticoLojas.lojasQueNaoInformaram.map(l => l.nome).join(', ')}</strong>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {/* Estado final: Tudo OK */}
+                    {(
+                      (lojaSelecionada !== 'todas' && !diagnosticoLojas.lojaSelecionadaSemMinimo && !diagnosticoLojas.lojaSelecionadaNaoInformou) ||
+                      (lojaSelecionada === 'todas' && diagnosticoLojas.temAlgumaConfiguracao && diagnosticoLojas.lojasSemMinimo.length === 0 && diagnosticoLojas.lojasQueNaoInformaram.length === 0)
+                    ) && (
+                      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                        <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
+                        <p className="text-lg font-medium">Todos os produtos estão com estoque adequado!</p>
+                        <p className="text-sm text-center">
+                          Nenhum produto está abaixo do estoque mínimo configurado.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Estado vazio genérico quando não há alertas específicos */}
+                    {lojaSelecionada === 'todas' && !diagnosticoLojas.temAlgumaConfiguracao === false && diagnosticoLojas.lojasSemMinimo.length === 0 && diagnosticoLojas.lojasQueNaoInformaram.length === 0 && demandas.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                        <CheckCircle className="h-12 w-12 mb-4 text-green-500" />
+                        <p className="text-lg font-medium">Nenhuma demanda de reposição!</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-6">
