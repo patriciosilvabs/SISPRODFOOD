@@ -2998,7 +2998,13 @@ export type Database = {
         | "descartaveis"
         | "equipamentos"
       tipo_movimento: "entrada" | "saida"
-      tipo_produto: "lacrado" | "porcionado" | "lote" | "simples"
+      tipo_produto:
+        | "lacrado"
+        | "porcionado"
+        | "lote"
+        | "simples"
+        | "lote_kg"
+        | "lote_qtde"
       unidade_medida:
         | "kg"
         | "unidade"
@@ -3153,7 +3159,14 @@ export const Constants = {
         "equipamentos",
       ],
       tipo_movimento: ["entrada", "saida"],
-      tipo_produto: ["lacrado", "porcionado", "lote", "simples"],
+      tipo_produto: [
+        "lacrado",
+        "porcionado",
+        "lote",
+        "simples",
+        "lote_kg",
+        "lote_qtde",
+      ],
       unidade_medida: [
         "kg",
         "unidade",
