@@ -73,13 +73,47 @@ const tipoProdutoOptions = [
   { value: 'lacrado', label: 'Lacrado' },
   { value: 'porcionado', label: 'Porcionado' },
   { value: 'lote', label: 'Lote' },
+  { value: 'lote_kg', label: 'Lote: KG' },
+  { value: 'lote_qtde', label: 'Lote: QTDE' },
   { value: 'simples', label: 'Simples' },
 ];
 
 const modoEnvioOptions = [
   { value: 'peso', label: 'Por Peso (fracionado)' },
   { value: 'unidade', label: 'Por Unidade (lacrado/fechado)' },
+  { value: 'lote_kg', label: 'Por Lote KG (peso fixo)' },
+  { value: 'lote_qtde', label: 'Por Lote QTDE (quantidade fixa)' },
 ];
+
+// Helper para obter configuração do campo dinâmico
+const getCampoDinamico = (modoEnvio: string) => {
+  switch (modoEnvio) {
+    case 'unidade':
+      return { label: 'Peso por Unidade (kg)', placeholder: 'Ex: 1.5', descricao: 'Ex: Catupiry 1,5kg = cada bisnaga pesa 1.5 kg' };
+    case 'lote_kg':
+      return { label: 'Peso Total do Lote (kg)', placeholder: 'Ex: 5.0', descricao: 'Ex: Caixa de frango = 5kg por caixa' };
+    case 'lote_qtde':
+      return { label: 'Quantidade por Lote', placeholder: 'Ex: 50', descricao: 'Ex: Caixa de salgados = 50 unidades por caixa' };
+    default:
+      return null;
+  }
+};
+
+// Helper para descrição do modo de envio
+const getDescricaoModoEnvio = (modoEnvio: string) => {
+  switch (modoEnvio) {
+    case 'peso':
+      return '⚖️ Envio fracionado por peso (kg, g).';
+    case 'unidade':
+      return '📦 Enviado em unidades fechadas. O sistema converterá peso → unidades.';
+    case 'lote_kg':
+      return '📦 Enviado em lotes com peso fixo. Ex: caixas de 5kg.';
+    case 'lote_qtde':
+      return '📦 Enviado em lotes com quantidade fixa. Ex: caixas de 50 unidades.';
+    default:
+      return '';
+  }
+};
 
 export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalProps) {
   const { organizationId } = useOrganization();
@@ -148,8 +182,11 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
       return;
     }
 
-    if (formData.modo_envio === 'unidade' && (!formData.peso_por_unidade_kg || parseFloat(formData.peso_por_unidade_kg) <= 0)) {
-      toast.error('Peso por unidade é obrigatório para produtos enviados em unidades');
+    // Validação do campo dinâmico baseado no modo de envio
+    const modoRequerCampo = ['unidade', 'lote_kg', 'lote_qtde'].includes(formData.modo_envio);
+    if (modoRequerCampo && (!formData.peso_por_unidade_kg || parseFloat(formData.peso_por_unidade_kg) <= 0)) {
+      const campoDinamico = getCampoDinamico(formData.modo_envio);
+      toast.error(`${campoDinamico?.label || 'Campo'} é obrigatório para este modo de envio`);
       return;
     }
 
@@ -171,7 +208,7 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
         ativo: formData.ativo,
         organization_id: organizationId,
         modo_envio: formData.modo_envio,
-        peso_por_unidade_kg: formData.modo_envio === 'unidade' && formData.peso_por_unidade_kg 
+        peso_por_unidade_kg: ['unidade', 'lote_kg', 'lote_qtde'].includes(formData.modo_envio) && formData.peso_por_unidade_kg 
           ? parseFloat(formData.peso_por_unidade_kg) 
           : null,
         dias_cobertura_desejado: parseInt(formData.dias_cobertura_desejado) || 7,
@@ -396,27 +433,26 @@ export function ProdutoFormModal({ open, onClose, produto }: ProdutoFormModalPro
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {formData.modo_envio === 'unidade' 
-                  ? '📦 Este item é enviado somente em unidades fechadas. O sistema converterá o peso informado pela loja e arredondará o envio.' 
-                  : '⚖️ Envio fracionado por peso (kg, g).'}
+                {getDescricaoModoEnvio(formData.modo_envio)}
               </p>
             </div>
 
-            {formData.modo_envio === 'unidade' && (
+            {/* Campo dinâmico baseado no modo de envio */}
+            {getCampoDinamico(formData.modo_envio) && (
               <div className="space-y-2">
-                <Label htmlFor="peso_por_unidade_kg">Peso por Unidade (kg) *</Label>
+                <Label htmlFor="peso_por_unidade_kg">{getCampoDinamico(formData.modo_envio)?.label} *</Label>
                 <Input
                   id="peso_por_unidade_kg"
                   type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="Ex: 1.5"
+                  step={formData.modo_envio === 'lote_qtde' ? '1' : '0.01'}
+                  min={formData.modo_envio === 'lote_qtde' ? '1' : '0.01'}
+                  placeholder={getCampoDinamico(formData.modo_envio)?.placeholder}
                   value={formData.peso_por_unidade_kg}
                   onChange={(e) => setFormData({ ...formData, peso_por_unidade_kg: e.target.value })}
-                  required={formData.modo_envio === 'unidade'}
+                  required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Ex: Catupiry 1,5kg = cada bisnaga pesa 1.5 kg
+                  {getCampoDinamico(formData.modo_envio)?.descricao}
                 </p>
               </div>
             )}
