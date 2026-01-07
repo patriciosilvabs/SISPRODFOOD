@@ -51,11 +51,15 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Buscar organização do usuário via organization_members com campos de assinatura
-        const { data: memberData, error: memberError } = await supabase
+        // Usa limit(1) para suportar usuários em múltiplas organizações
+        const { data: memberDataArray, error: memberError } = await supabase
           .from('organization_members')
           .select('organization_id, organizations(nome, subscription_status, trial_end_date, subscription_expires_at, subscription_plan)')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const memberData = memberDataArray?.[0] || null;
 
         if (!isMounted) return;
 
@@ -131,11 +135,14 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         return false;
       }
 
-      const { data: memberData, error: memberError } = await supabase
+      const { data: memberDataArray, error: memberError } = await supabase
         .from('organization_members')
         .select('organization_id, organizations(nome, subscription_status, trial_end_date, subscription_expires_at, subscription_plan)')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const memberData = memberDataArray?.[0] || null;
 
       if (memberError || !memberData) {
         clearState();
