@@ -109,7 +109,7 @@ export function WeightInputInline({
         onChange={handleChange}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        className="h-8 text-sm"
+        className="h-12 text-center text-base font-medium"
       />
       {hasValue && !isFocused && (
         <p className="text-xs text-muted-foreground truncate" title={pesoProgressivoToWords(value)}>
