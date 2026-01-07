@@ -10,7 +10,7 @@ interface OrganizationContextType {
   trialEndDate: string | null;
   subscriptionExpiresAt: string | null;
   subscriptionPlan: string | null;
-  refreshOrganization: () => Promise<void>;
+  refreshOrganization: () => Promise<boolean>;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -121,14 +121,14 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const refreshOrganization = async () => {
+  const refreshOrganization = async (): Promise<boolean> => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
         clearState();
-        return;
+        return false;
       }
 
       const { data: memberData, error: memberError } = await supabase
@@ -140,6 +140,7 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
       if (memberError || !memberData) {
         clearState();
         setNeedsOnboarding(true);
+        return false;
       } else {
         const org = memberData.organizations as any;
         setOrganizationId(memberData.organization_id);
@@ -149,11 +150,13 @@ export const OrganizationProvider = ({ children }: { children: ReactNode }) => {
         setSubscriptionExpiresAt(org?.subscription_expires_at || null);
         setSubscriptionPlan(org?.subscription_plan || null);
         setNeedsOnboarding(false);
+        return true;
       }
     } catch (error) {
       console.error('Erro ao recarregar organização:', error);
       clearState();
       setNeedsOnboarding(true);
+      return false;
     } finally {
       setLoading(false);
     }

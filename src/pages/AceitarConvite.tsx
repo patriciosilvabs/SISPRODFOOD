@@ -106,13 +106,20 @@ export default function AceitarConvite() {
       setMessage(data.message || 'Convite aceito com sucesso!');
       toast.success('Bem-vindo! Convite aceito com sucesso.');
 
-      // Clear pending invite token
+      // PRIMEIRO: Refresh organization context e aguardar resultado
+      let hasOrganization = await refreshOrganization();
+
+      // Se não encontrou, tentar novamente após pequeno delay
+      if (!hasOrganization) {
+        console.log('Organização não encontrada, tentando novamente...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        hasOrganization = await refreshOrganization();
+      }
+
+      // DEPOIS: Clear pending invite token (só agora!)
       localStorage.removeItem('pendingInviteToken');
 
-      // Refresh organization context
-      await refreshOrganization();
-
-      // Redirect to dashboard after 2 seconds
+      // Redirect to dashboard after delay to ensure state propagation
       setTimeout(() => {
         navigate('/');
       }, 2000);
