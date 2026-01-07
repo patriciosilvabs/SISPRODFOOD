@@ -165,23 +165,46 @@ export const SuperAdminOrganizacoes = () => {
     }
   };
 
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const handleDelete = async () => {
     if (!deletingOrg) return;
 
+    setIsDeleting(true);
     try {
-      const { error } = await supabase
-        .from('organizations')
-        .delete()
-        .eq('id', deletingOrg.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        return;
+      }
 
-      if (error) throw error;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/excluir-organizacao`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ organizationId: deletingOrg.id }),
+        }
+      );
 
-      toast.success('Organização excluída com sucesso');
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao excluir organização');
+      }
+
+      toast.success(`Organização excluída com sucesso. ${result.deletedUsers || 0} usuários removidos.`);
       setDeletingOrg(null);
       fetchOrganizations();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting organization:', error);
-      toast.error('Erro ao excluir organização');
+      toast.error(error.message || 'Erro ao excluir organização');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
