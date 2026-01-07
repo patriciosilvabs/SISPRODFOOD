@@ -64,3 +64,6 @@ verify_jwt = false
 
 [functions.excluir-usuario]
 verify_jwt = true
+
+[functions.excluir-organizacao]
+verify_jwt = true
