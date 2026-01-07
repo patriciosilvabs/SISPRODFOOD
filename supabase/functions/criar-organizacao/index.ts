@@ -184,7 +184,8 @@ serve(async (req) => {
       .insert({
         user_id: userId,
         organization_id: org.id,
-        role: 'Admin'
+        role: 'Admin',
+        is_admin: true
       });
 
     if (memberError) {
