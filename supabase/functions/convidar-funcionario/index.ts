@@ -165,13 +165,18 @@ serve(async (req) => {
       throw new Error("Usuário não pertence a nenhuma organização");
     }
 
-    // Check if user is admin
+    // Check if user is admin or superadmin
     const { data: isAdmin } = await supabase.rpc("has_role", {
       _user_id: user.id,
       _role: "Admin",
     });
 
-    if (!isAdmin) {
+    const { data: isSuperAdmin } = await supabase.rpc("has_role", {
+      _user_id: user.id,
+      _role: "SuperAdmin",
+    });
+
+    if (!isAdmin && !isSuperAdmin) {
       throw new Error("Apenas administradores podem convidar funcionários");
     }
 
