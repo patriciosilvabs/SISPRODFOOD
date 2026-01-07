@@ -108,7 +108,7 @@ const Assinatura = () => {
     // Fechar modal e redirecionar para Dashboard após a atualização
     setTimeout(() => {
       handleCloseModal();
-      navigate('/dashboard');
+      navigate('/');
     }, 500);
   }, [refreshSubscription, navigate]);
 
