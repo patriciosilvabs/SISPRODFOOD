@@ -615,7 +615,7 @@ const ContagemPorcionados = () => {
                               type="number"
                               value={finalSobra}
                               onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
-                              className="h-8 text-center text-sm"
+                              className="h-12 text-center text-base font-medium"
                               placeholder="0"
                             />
                           </div>
@@ -633,13 +633,13 @@ const ContagemPorcionados = () => {
                               type="number"
                               value={idealAmanha}
                               onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
-                              className="h-8 text-center text-sm"
+                              className="h-12 text-center text-base font-medium"
                               placeholder="0"
                             />
                           </div>
 
                           <div className="col-span-2">
-                            <div className={`text-center font-bold text-sm py-1.5 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                            <div className={`text-center font-bold text-base py-3 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
                               {aProduzir} un
                             </div>
                           </div>
