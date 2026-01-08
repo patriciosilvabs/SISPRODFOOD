@@ -1154,6 +1154,56 @@ export type Database = {
           },
         ]
       }
+      lembretes_audio: {
+        Row: {
+          ativo: boolean | null
+          audio_url: string
+          created_at: string | null
+          descricao: string | null
+          dias_semana: number[] | null
+          horario: string
+          id: string
+          organization_id: string | null
+          perfis_destino: string[] | null
+          titulo: string
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          audio_url: string
+          created_at?: string | null
+          descricao?: string | null
+          dias_semana?: number[] | null
+          horario: string
+          id?: string
+          organization_id?: string | null
+          perfis_destino?: string[] | null
+          titulo: string
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          audio_url?: string
+          created_at?: string | null
+          descricao?: string | null
+          dias_semana?: number[] | null
+          horario?: string
+          id?: string
+          organization_id?: string | null
+          perfis_destino?: string[] | null
+          titulo?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lembretes_audio_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lojas: {
         Row: {
           created_at: string | null
