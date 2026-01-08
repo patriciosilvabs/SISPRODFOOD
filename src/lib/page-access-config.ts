@@ -53,6 +53,7 @@ export const SYSTEM_PAGES: PageConfig[] = [
   { route: '/gerenciar-produtos', label: 'Gerenciar Produtos', description: 'Cadastro de produtos', section: 'admin' },
   { route: '/itens-porcionados', label: 'Itens Porcionados', description: 'Cadastro de itens', section: 'admin' },
   { route: '/lojas', label: 'Gerenciar Lojas', description: 'Cadastro de lojas', section: 'admin' },
+  { route: '/configurar-lembretes-audio', label: 'Lembretes de Áudio', description: 'Configurar lembretes sonoros', section: 'admin' },
 ];
 
 // Páginas default por perfil
