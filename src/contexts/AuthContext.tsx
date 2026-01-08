@@ -175,7 +175,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     navigate('/auth');
   };
 
-  const isAdmin = () => roles.includes('Admin');
+  const isAdmin = () => roles.includes('Admin') || roles.includes('SuperAdmin');
   const isSuperAdmin = () => roles.includes('SuperAdmin');
   const hasRole = (role: string) => roles.includes(role);
 
