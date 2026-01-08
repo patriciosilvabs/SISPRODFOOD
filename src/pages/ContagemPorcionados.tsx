@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -497,9 +497,22 @@ const ContagemPorcionados = () => {
     return defaultValue;
   };
 
+  // Ref para gerenciar timeout do save
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
+    // IMPORTANTE: Cancelar qualquer timeout de save anterior
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    
+    // Resetar estado de salvamento para garantir que não está travado
+    setSavingDialog(false);
+    
     // Setar item e valores padrão ANTES de abrir o dialog
-    setSelectedItem({ lojaId, itemId, itemNome });
+    const newItem = { lojaId, itemId, itemNome };
+    setSelectedItem(newItem);
     setEstoquesIdeais({
       segunda: 200,
       terca: 200,
@@ -529,14 +542,20 @@ const ContagemPorcionados = () => {
       }
       
       if (data) {
-        setEstoquesIdeais({
-          segunda: data.segunda,
-          terca: data.terca,
-          quarta: data.quarta,
-          quinta: data.quinta,
-          sexta: data.sexta,
-          sabado: data.sabado,
-          domingo: data.domingo,
+        // Só atualizar se ainda é o mesmo item selecionado
+        setSelectedItem(current => {
+          if (current?.lojaId === lojaId && current?.itemId === itemId) {
+            setEstoquesIdeais({
+              segunda: data.segunda,
+              terca: data.terca,
+              quarta: data.quarta,
+              quinta: data.quinta,
+              sexta: data.sexta,
+              sabado: data.sabado,
+              domingo: data.domingo,
+            });
+          }
+          return current;
         });
       }
     } catch (err) {
@@ -558,50 +577,68 @@ const ContagemPorcionados = () => {
 
     setSavingDialog(true);
 
-    // Timeout de segurança - 15 segundos
-    const timeoutId = setTimeout(() => {
+    // Cancelar timeout anterior se existir
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Timeout de segurança - 15 segundos (usar ref para poder cancelar)
+    saveTimeoutRef.current = setTimeout(() => {
       setSavingDialog(false);
       toast.error('A operação demorou muito. Tente novamente.');
       setDialogOpen(false);
+      saveTimeoutRef.current = null;
     }, 15000);
+
+    // Capturar valores atuais para evitar problemas de closure
+    const currentItem = selectedItem;
+    const currentEstoques = { ...estoquesIdeais };
 
     try {
       const { error } = await supabase
         .from('estoques_ideais_semanais')
         .upsert({
-          loja_id: selectedItem.lojaId,
-          item_porcionado_id: selectedItem.itemId,
-          segunda: estoquesIdeais.segunda,
-          terca: estoquesIdeais.terca,
-          quarta: estoquesIdeais.quarta,
-          quinta: estoquesIdeais.quinta,
-          sexta: estoquesIdeais.sexta,
-          sabado: estoquesIdeais.sabado,
-          domingo: estoquesIdeais.domingo,
+          loja_id: currentItem.lojaId,
+          item_porcionado_id: currentItem.itemId,
+          segunda: currentEstoques.segunda,
+          terca: currentEstoques.terca,
+          quarta: currentEstoques.quarta,
+          quinta: currentEstoques.quinta,
+          sexta: currentEstoques.sexta,
+          sabado: currentEstoques.sabado,
+          domingo: currentEstoques.domingo,
           organization_id: organizationId,
         }, {
           onConflict: 'loja_id,item_porcionado_id',
         });
 
-      clearTimeout(timeoutId);
+      // Limpar timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
 
       if (error) throw error;
 
-      // Atualizar o mapa local em vez de recarregar tudo
-      const key = `${selectedItem.lojaId}-${selectedItem.itemId}`;
+      // Atualizar o mapa local
+      const key = `${currentItem.lojaId}-${currentItem.itemId}`;
       setEstoquesIdeaisMap(prev => ({
         ...prev,
-        [key]: { ...estoquesIdeais },
+        [key]: { ...currentEstoques },
       }));
 
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
       setSelectedItem(null);
+      setSavingDialog(false);
     } catch (error) {
-      clearTimeout(timeoutId);
+      // Limpar timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
       console.error('Erro ao salvar:', error);
       toast.error('Erro ao salvar estoques ideais');
-    } finally {
       setSavingDialog(false);
     }
   };
@@ -790,7 +827,13 @@ const ContagemPorcionados = () => {
           onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) {
+              // Limpar tudo quando fecha o dialog
               setSelectedItem(null);
+              setSavingDialog(false);
+              if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+                saveTimeoutRef.current = null;
+              }
             }
           }}
         >
