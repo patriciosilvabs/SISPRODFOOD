@@ -40,29 +40,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let isMounted = true;
+    let initialLoadHandled = false;
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         if (!isMounted) return;
+        
+        // Se o carregamento inicial já foi tratado por getSession, ignorar o primeiro evento
+        if (!initialLoadHandled) {
+          initialLoadHandled = true;
+          return;
+        }
         
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Defer fetchProfile to prevent deadlock
-          setTimeout(() => {
-            fetchProfile(session.user.id).finally(() => {
-              if (isMounted) setLoading(false);
-            });
-          }, 0);
+          await fetchProfile(session.user.id);
         } else {
           setProfile(null);
           setRoles([]);
-          setLoading(false);
         }
+        
+        if (isMounted) setLoading(false);
       }
     );
 
+    // Carregamento inicial - garantir que roles são carregadas ANTES de loading = false
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (!isMounted) return;
@@ -71,12 +75,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (session?.user) {
           await fetchProfile(session.user.id);
         }
+        if (isMounted) setLoading(false);
+        initialLoadHandled = true;
       })
       .catch((error) => {
         console.error('Erro ao obter sessão:', error);
-      })
-      .finally(() => {
         if (isMounted) setLoading(false);
+        initialLoadHandled = true;
       });
 
     return () => {
