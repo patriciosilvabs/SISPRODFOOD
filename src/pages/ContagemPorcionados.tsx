@@ -104,6 +104,7 @@ const ContagemPorcionados = () => {
     itemId: string;
     warnings: string[];
   } | null>(null);
+  const [savingDialog, setSavingDialog] = useState(false);
 
   // Verificar se usuário é apenas Loja (sem Admin ou Produção)
   const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
@@ -545,12 +546,17 @@ const ContagemPorcionados = () => {
   };
 
   const handleSaveEstoquesIdeais = async () => {
-    if (!selectedItem) return;
+    if (!selectedItem) {
+      toast.error('Nenhum item selecionado. Feche e reabra o dialog.');
+      return;
+    }
 
     if (!organizationId) {
       toast.error('Organização não identificada. Faça login novamente.');
       return;
     }
+
+    setSavingDialog(true);
 
     try {
       const { error } = await supabase
@@ -568,10 +574,13 @@ const ContagemPorcionados = () => {
 
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
-      loadData(); // Recarregar dados para atualizar os ideais
+      setSelectedItem(null);
+      loadData();
     } catch (error) {
       console.error('Erro ao salvar:', error);
       toast.error('Erro ao salvar estoques ideais');
+    } finally {
+      setSavingDialog(false);
     }
   };
 
@@ -754,7 +763,15 @@ const ContagemPorcionados = () => {
         </div>
 
         {/* Dialog de Estoques Ideais */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog 
+          open={dialogOpen} 
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) {
+              setSelectedItem(null);
+            }
+          }}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -844,8 +861,15 @@ const ContagemPorcionados = () => {
               <Button variant="secondary" onClick={() => setDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveEstoquesIdeais}>
-                Salvar Estoques Ideais
+              <Button onClick={handleSaveEstoquesIdeais} disabled={savingDialog}>
+                {savingDialog ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Salvar Estoques Ideais'
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
