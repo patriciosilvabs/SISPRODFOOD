@@ -497,46 +497,51 @@ const ContagemPorcionados = () => {
   };
 
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
+    // Setar item e valores padrão ANTES de abrir o dialog
     setSelectedItem({ lojaId, itemId, itemNome });
+    setEstoquesIdeais({
+      segunda: 200,
+      terca: 200,
+      quarta: 200,
+      quinta: 200,
+      sexta: 200,
+      sabado: 200,
+      domingo: 200,
+    });
     
-    // Carregar estoques ideais existentes
-    const { data, error } = await supabase
-      .from('estoques_ideais_semanais')
-      .select('*')
-      .eq('loja_id', lojaId)
-      .eq('item_porcionado_id', itemId)
-      .maybeSingle();
-    
-    if (error && error.code !== 'PGRST116') {
-      console.error('Erro ao carregar estoques ideais:', error);
-      toast.error('Erro ao carregar estoques ideais');
-      return;
-    }
-    
-    if (data) {
-      setEstoquesIdeais({
-        segunda: data.segunda,
-        terca: data.terca,
-        quarta: data.quarta,
-        quinta: data.quinta,
-        sexta: data.sexta,
-        sabado: data.sabado,
-        domingo: data.domingo,
-      });
-    } else {
-      // Valores padrão
-      setEstoquesIdeais({
-        segunda: 200,
-        terca: 200,
-        quarta: 200,
-        quinta: 200,
-        sexta: 200,
-        sabado: 200,
-        domingo: 200,
-      });
-    }
-    
+    // Abrir o dialog imediatamente
     setDialogOpen(true);
+    
+    // Tentar carregar dados existentes em background
+    try {
+      const { data, error } = await supabase
+        .from('estoques_ideais_semanais')
+        .select('*')
+        .eq('loja_id', lojaId)
+        .eq('item_porcionado_id', itemId)
+        .maybeSingle();
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error('Erro ao carregar estoques ideais:', error);
+        toast.error('Erro ao carregar dados. Usando valores padrão.');
+        return;
+      }
+      
+      if (data) {
+        setEstoquesIdeais({
+          segunda: data.segunda,
+          terca: data.terca,
+          quarta: data.quarta,
+          quinta: data.quinta,
+          sexta: data.sexta,
+          sabado: data.sabado,
+          domingo: data.domingo,
+        });
+      }
+    } catch (err) {
+      console.error('Erro inesperado:', err);
+      toast.error('Erro ao carregar. Usando valores padrão.');
+    }
   };
 
   const handleSaveEstoquesIdeais = async () => {
@@ -722,7 +727,11 @@ const ContagemPorcionados = () => {
                                 variant="ghost" 
                                 size="icon"
                                 className="h-8 w-8"
-                                onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  openEstoquesDialog(loja.id, item.id, item.nome);
+                                }}
                               >
                                 <Settings className="h-3.5 w-3.5" />
                               </Button>
