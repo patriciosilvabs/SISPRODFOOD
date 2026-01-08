@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from '@/components/ui/badge';
 import { getProfileLabel } from '@/lib/page-access-config';
+import { LembretesAudioPlayer } from '@/components/LembretesAudioPlayer';
 
 interface LayoutProps {
   children: ReactNode;
@@ -298,6 +299,9 @@ export const Layout = ({ children }: LayoutProps) => {
           {children}
         </main>
       </div>
+
+      {/* Player de Lembretes de Áudio */}
+      <LembretesAudioPlayer />
     </div>
   );
 };

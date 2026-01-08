@@ -43,6 +43,7 @@ import DashboardConsumo from "./pages/relatorios/DashboardConsumo";
 import RelatorioMovimentacoes from "./pages/relatorios/RelatorioMovimentacoes";
 import NotFound from "./pages/NotFound";
 import AceitarConvite from "./pages/AceitarConvite";
+import ConfigurarLembretesAudio from "./pages/ConfigurarLembretesAudio";
 import {
   SuperAdminDashboard,
   SuperAdminOrganizacoes,
@@ -232,6 +233,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRoles={['Admin']}>
                       <GerenciarProdutos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/configurar-lembretes-audio"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <ConfigurarLembretesAudio />
                     </ProtectedRoute>
                   }
                 />
