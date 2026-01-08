@@ -55,7 +55,7 @@ const DIAS_SEMANA = [
 const PERFIS = ['Admin', 'Produção', 'Loja'];
 
 export default function ConfigurarLembretesAudio() {
-  const { organizationId } = useOrganization();
+  const { organizationId, loading: orgLoading } = useOrganization();
   const { isAdmin, loading: authLoading } = useAuth();
   const [lembretes, setLembretes] = useState<LembreteAudio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,8 +79,12 @@ export default function ConfigurarLembretesAudio() {
   const isEditing = !!formData.id;
 
   useEffect(() => {
-    loadLembretes();
-  }, [organizationId]);
+    if (organizationId) {
+      loadLembretes();
+    } else if (!orgLoading) {
+      setLoading(false);
+    }
+  }, [organizationId, orgLoading]);
 
   const loadLembretes = async () => {
     if (!organizationId) return;
@@ -265,7 +269,7 @@ export default function ConfigurarLembretesAudio() {
     });
   };
 
-  if (loading || authLoading) {
+  if (loading || authLoading || orgLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
