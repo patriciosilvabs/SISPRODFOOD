@@ -279,6 +279,13 @@ const ContagemPorcionados = () => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
     
+    // Validar peso obrigatório
+    const pesoValue = values?.peso_total_g ? parseFloat(values.peso_total_g) : 0;
+    if (!pesoValue || pesoValue <= 0) {
+      toast.error("O campo Peso é obrigatório");
+      return;
+    }
+    
     // Marcar como salvando
     setSavingKeys(prev => new Set([...prev, key]));
 
@@ -628,11 +635,13 @@ const ContagemPorcionados = () => {
                           </div>
 
                           <div className="col-span-2">
-                            <WeightInputInline
-                              value={pesoTotal}
-                              onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                              placeholder="0"
-                            />
+                            <div className={`${(!pesoTotal || pesoTotal === '0') ? '[&_input]:border-destructive [&_input]:ring-destructive' : ''}`}>
+                              <WeightInputInline
+                                value={pesoTotal}
+                                onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                                placeholder="0"
+                              />
+                            </div>
                           </div>
 
                           {isAdminUser && (
