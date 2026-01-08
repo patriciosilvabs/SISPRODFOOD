@@ -579,14 +579,19 @@ const ContagemPorcionados = () => {
                 <CollapsibleContent>
                   <div className="border-t">
                     {/* Cabeçalho */}
-                    <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
-                      <div className="col-span-3">Item</div>
-                      <div className="col-span-2 text-center">Sobra</div>
-                      <div className="col-span-2 text-center">Peso</div>
-                      <div className="col-span-2 text-center">Ideal</div>
-                      <div className="col-span-2 text-center">A Produzir</div>
-                      <div className="col-span-1 text-center">Ação</div>
-                    </div>
+                    {(() => {
+                      const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                      return (
+                        <div className={`grid ${isAdminUser ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground`}>
+                          <div className="col-span-3">Item</div>
+                          <div className="col-span-2 text-center">Sobra</div>
+                          <div className="col-span-2 text-center">Peso</div>
+                          {isAdminUser && <div className="col-span-2 text-center">Ideal</div>}
+                          {isAdminUser && <div className="col-span-2 text-center">A Produzir</div>}
+                          <div className="col-span-1 text-center">Ação</div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Itens */}
                     {itens.map((item) => {
@@ -598,9 +603,11 @@ const ContagemPorcionados = () => {
                       const idealAmanha = idealAmanhaRaw === '' ? '' : idealAmanhaRaw;
                       const aProduzir = Math.max(0, Number(idealAmanha || 0) - Number(finalSobra || 0));
 
+                      const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                      
                       return (
                         <div key={item.id} 
-                             className="grid grid-cols-12 gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20">
+                             className={`grid ${isAdminUser ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20`}>
                           <div className="col-span-3">
                             <span className="font-medium text-sm">{item.nome}</span>
                             {contagem && (
@@ -628,24 +635,28 @@ const ContagemPorcionados = () => {
                             />
                           </div>
 
-                          <div className="col-span-2">
-                            <Input
-                              type="number"
-                              value={idealAmanha}
-                              onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
-                              className="h-12 text-center text-base font-medium"
-                              placeholder="0"
-                            />
-                          </div>
-
-                          <div className="col-span-2">
-                            <div className={`text-center font-bold text-base py-3 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                              {aProduzir} un
+                          {isAdminUser && (
+                            <div className="col-span-2">
+                              <Input
+                                type="number"
+                                value={idealAmanha}
+                                onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
+                                className="h-12 text-center text-base font-medium"
+                                placeholder="0"
+                              />
                             </div>
-                          </div>
+                          )}
+
+                          {isAdminUser && (
+                            <div className="col-span-2">
+                              <div className={`text-center font-bold text-base py-3 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                                {aProduzir} un
+                              </div>
+                            </div>
+                          )}
 
                           <div className="col-span-1 flex gap-1 justify-center">
-                            {(roles.includes('Admin') || roles.includes('SuperAdmin')) && (
+                            {isAdminUser && (
                               <Button 
                                 variant="ghost" 
                                 size="icon"
