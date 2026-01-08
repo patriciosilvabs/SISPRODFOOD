@@ -645,7 +645,7 @@ const ContagemPorcionados = () => {
                           </div>
 
                           <div className="col-span-1 flex gap-1 justify-center">
-                            {roles.includes('Admin') && (
+                            {(roles.includes('Admin') || roles.includes('SuperAdmin')) && (
                               <Button 
                                 variant="ghost" 
                                 size="icon"
