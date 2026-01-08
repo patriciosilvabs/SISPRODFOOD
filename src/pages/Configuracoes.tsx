@@ -14,7 +14,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 
 const Configuracoes = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { organizationId } = useOrganization();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
@@ -200,13 +200,13 @@ const Configuracoes = () => {
       color: 'bg-blue-100 text-blue-600',
       onClick: () => navigate('/gerenciar-usuarios'),
     },
-    {
+    ...(isAdmin() ? [{
       title: 'Lembretes de Áudio',
       description: 'Configure lembretes sonoros agendados para lembrar os usuários de suas tarefas.',
       icon: Megaphone,
       color: 'bg-violet-100 text-violet-600',
       onClick: () => navigate('/configurar-lembretes-audio'),
-    },
+    }] : []),
     {
       title: 'Configurar Interface',
       description: 'Personalize quais elementos da interface os usuários podem ver.',
