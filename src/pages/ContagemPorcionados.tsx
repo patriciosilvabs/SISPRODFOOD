@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -497,20 +497,11 @@ const ContagemPorcionados = () => {
     return defaultValue;
   };
 
-  // Ref para gerenciar timeout do save
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
-    // IMPORTANTE: Cancelar qualquer timeout de save anterior
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    
-    // Resetar estado de salvamento para garantir que não está travado
+    // Resetar estado de salvamento
     setSavingDialog(false);
     
-    // Setar item e valores padrão ANTES de abrir o dialog
+    // Setar item e valores padrão
     const newItem = { lojaId, itemId, itemNome };
     setSelectedItem(newItem);
     setEstoquesIdeais({
@@ -523,10 +514,10 @@ const ContagemPorcionados = () => {
       domingo: 200,
     });
     
-    // Abrir o dialog imediatamente
+    // Abrir o dialog
     setDialogOpen(true);
     
-    // Tentar carregar dados existentes em background
+    // Carregar dados existentes
     try {
       const { data, error } = await supabase
         .from('estoques_ideais_semanais')
@@ -537,30 +528,22 @@ const ContagemPorcionados = () => {
       
       if (error && error.code !== 'PGRST116') {
         console.error('Erro ao carregar estoques ideais:', error);
-        toast.error('Erro ao carregar dados. Usando valores padrão.');
         return;
       }
       
       if (data) {
-        // Só atualizar se ainda é o mesmo item selecionado
-        setSelectedItem(current => {
-          if (current?.lojaId === lojaId && current?.itemId === itemId) {
-            setEstoquesIdeais({
-              segunda: data.segunda,
-              terca: data.terca,
-              quarta: data.quarta,
-              quinta: data.quinta,
-              sexta: data.sexta,
-              sabado: data.sabado,
-              domingo: data.domingo,
-            });
-          }
-          return current;
+        setEstoquesIdeais({
+          segunda: data.segunda,
+          terca: data.terca,
+          quarta: data.quarta,
+          quinta: data.quinta,
+          sexta: data.sexta,
+          sabado: data.sabado,
+          domingo: data.domingo,
         });
       }
     } catch (err) {
       console.error('Erro inesperado:', err);
-      toast.error('Erro ao carregar. Usando valores padrão.');
     }
   };
 
@@ -577,21 +560,8 @@ const ContagemPorcionados = () => {
 
     setSavingDialog(true);
 
-    // Cancelar timeout anterior se existir
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    // Timeout de segurança - 15 segundos (usar ref para poder cancelar)
-    saveTimeoutRef.current = setTimeout(() => {
-      setSavingDialog(false);
-      toast.error('A operação demorou muito. Tente novamente.');
-      setDialogOpen(false);
-      saveTimeoutRef.current = null;
-    }, 15000);
-
     // Capturar valores atuais para evitar problemas de closure
-    const currentItem = selectedItem;
+    const currentItem = { ...selectedItem };
     const currentEstoques = { ...estoquesIdeais };
 
     try {
@@ -612,15 +582,12 @@ const ContagemPorcionados = () => {
           onConflict: 'loja_id,item_porcionado_id',
         });
 
-      // Limpar timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-        saveTimeoutRef.current = null;
+      if (error) {
+        console.error('Erro Supabase:', error);
+        throw error;
       }
 
-      if (error) throw error;
-
-      // Atualizar o mapa local
+      // Atualizar o mapa local APENAS após confirmação de sucesso
       const key = `${currentItem.lojaId}-${currentItem.itemId}`;
       setEstoquesIdeaisMap(prev => ({
         ...prev,
@@ -630,15 +597,16 @@ const ContagemPorcionados = () => {
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
       setSelectedItem(null);
-      setSavingDialog(false);
-    } catch (error) {
-      // Limpar timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-        saveTimeoutRef.current = null;
-      }
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar estoques ideais');
+      if (error?.code === '42501' || error?.message?.includes('policy')) {
+        toast.error('Você não tem permissão para editar este item.');
+      } else if (error?.code === 'PGRST301') {
+        toast.error('Conexão perdida. Verifique sua internet.');
+      } else {
+        toast.error('Erro ao salvar estoques ideais. Tente novamente.');
+      }
+    } finally {
       setSavingDialog(false);
     }
   };
@@ -827,13 +795,8 @@ const ContagemPorcionados = () => {
           onOpenChange={(open) => {
             setDialogOpen(open);
             if (!open) {
-              // Limpar tudo quando fecha o dialog
               setSelectedItem(null);
               setSavingDialog(false);
-              if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-                saveTimeoutRef.current = null;
-              }
             }
           }}
         >
