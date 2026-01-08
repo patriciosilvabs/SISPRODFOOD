@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Sparkles, Eye, ChevronDown, ChevronUp, X, Loader2, RefreshCw } from 'lucide-react';
+import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -651,7 +651,7 @@ const ContagemPorcionados = () => {
                               className="h-8 w-8"
                               onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
                             >
-                              <Eye className="h-3.5 w-3.5" />
+                              <Settings className="h-3.5 w-3.5" />
                             </Button>
                             <SaveButton
                               isDirty={isRowDirty(loja.id, item.id)}
