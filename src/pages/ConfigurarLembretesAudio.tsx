@@ -56,7 +56,7 @@ const PERFIS = ['Admin', 'Produção', 'Loja'];
 
 export default function ConfigurarLembretesAudio() {
   const { organizationId } = useOrganization();
-  const { isAdmin } = useAuth();
+  const { isAdmin, loading: authLoading } = useAuth();
   const [lembretes, setLembretes] = useState<LembreteAudio[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -265,7 +265,7 @@ export default function ConfigurarLembretesAudio() {
     });
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
