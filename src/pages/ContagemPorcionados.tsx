@@ -324,14 +324,7 @@ const ContagemPorcionados = () => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
     
-    // Validar peso obrigatório (erro bloqueante)
-    const pesoValue = values?.peso_total_g ? parseFloat(values.peso_total_g) : 0;
-    if (!pesoValue || pesoValue <= 0) {
-      toast.error("O campo Peso é obrigatório");
-      return;
-    }
-    
-    // Verificar valores suspeitos
+    // Verificar valores suspeitos (inclui zero e valores altos)
     const warnings = validateSuspiciousValues(values);
     if (warnings.length > 0) {
       setConfirmDialog({ open: true, lojaId, itemId, warnings });
