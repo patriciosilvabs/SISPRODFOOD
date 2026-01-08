@@ -40,48 +40,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let isMounted = true;
-    let initialLoadHandled = false;
     
+    // Configurar listener de auth state (sem async para evitar deadlock)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
         
-        // Se o carregamento inicial já foi tratado por getSession, ignorar o primeiro evento
-        if (!initialLoadHandled) {
-          initialLoadHandled = true;
-          return;
-        }
+        console.log('Auth event:', event);
         
+        // Atualizar estado de forma síncrona
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          // Usar setTimeout(0) para evitar deadlock
+          setTimeout(() => {
+            if (isMounted) {
+              fetchProfile(session.user.id);
+            }
+          }, 0);
         } else {
           setProfile(null);
           setRoles([]);
+          setLoading(false);
         }
-        
-        if (isMounted) setLoading(false);
       }
     );
 
-    // Carregamento inicial - garantir que roles são carregadas ANTES de loading = false
+    // Verificar sessão existente
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
+      .then(({ data: { session } }) => {
         if (!isMounted) return;
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          fetchProfile(session.user.id);
+        } else {
+          setLoading(false);
         }
-        if (isMounted) setLoading(false);
-        initialLoadHandled = true;
       })
       .catch((error) => {
         console.error('Erro ao obter sessão:', error);
         if (isMounted) setLoading(false);
-        initialLoadHandled = true;
       });
 
     return () => {
@@ -167,17 +167,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    
-    if (error) {
-      toast.error('Erro ao sair');
-      throw error;
-    }
+    try {
+      console.log('Iniciando logout...');
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Erro no signOut:', error);
+        toast.error('Erro ao sair: ' + error.message);
+        return;
+      }
 
-    setProfile(null);
-    setRoles([]);
-    toast.success('Logout realizado');
-    navigate('/auth');
+      console.log('Logout bem-sucedido, limpando estados...');
+      setProfile(null);
+      setRoles([]);
+      setUser(null);
+      setSession(null);
+      
+      toast.success('Logout realizado');
+      navigate('/auth');
+    } catch (err) {
+      console.error('Exceção no signOut:', err);
+      toast.error('Erro inesperado ao sair');
+    }
   };
 
   const isAdmin = () => roles.includes('Admin') || roles.includes('SuperAdmin');
