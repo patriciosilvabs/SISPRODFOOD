@@ -558,25 +558,47 @@ const ContagemPorcionados = () => {
 
     setSavingDialog(true);
 
+    // Timeout de segurança - 15 segundos
+    const timeoutId = setTimeout(() => {
+      setSavingDialog(false);
+      toast.error('A operação demorou muito. Tente novamente.');
+      setDialogOpen(false);
+    }, 15000);
+
     try {
       const { error } = await supabase
         .from('estoques_ideais_semanais')
         .upsert({
           loja_id: selectedItem.lojaId,
           item_porcionado_id: selectedItem.itemId,
-          ...estoquesIdeais,
+          segunda: estoquesIdeais.segunda,
+          terca: estoquesIdeais.terca,
+          quarta: estoquesIdeais.quarta,
+          quinta: estoquesIdeais.quinta,
+          sexta: estoquesIdeais.sexta,
+          sabado: estoquesIdeais.sabado,
+          domingo: estoquesIdeais.domingo,
           organization_id: organizationId,
         }, {
           onConflict: 'loja_id,item_porcionado_id',
         });
 
+      clearTimeout(timeoutId);
+
       if (error) throw error;
+
+      // Atualizar o mapa local em vez de recarregar tudo
+      const key = `${selectedItem.lojaId}-${selectedItem.itemId}`;
+      setEstoquesIdeaisMap(prev => ({
+        ...prev,
+        [key]: { ...estoquesIdeais },
+      }));
 
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
       setSelectedItem(null);
-      loadData();
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Erro ao salvar:', error);
       toast.error('Erro ao salvar estoques ideais');
     } finally {
