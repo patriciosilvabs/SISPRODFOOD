@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -105,6 +105,9 @@ const ContagemPorcionados = () => {
     warnings: string[];
   } | null>(null);
   const [savingDialog, setSavingDialog] = useState(false);
+  
+  // Ref para rastrear a operação atual e evitar race conditions
+  const currentOperationId = useRef<string | null>(null);
 
   // Verificar se usuário é apenas Loja (sem Admin ou Produção)
   const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
@@ -498,12 +501,15 @@ const ContagemPorcionados = () => {
   };
 
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
+    // Gerar ID único para esta operação
+    const operationId = `${Date.now()}-${Math.random()}`;
+    currentOperationId.current = operationId;
+    
     // Resetar estado de salvamento
     setSavingDialog(false);
     
     // Setar item e valores padrão
-    const newItem = { lojaId, itemId, itemNome };
-    setSelectedItem(newItem);
+    setSelectedItem({ lojaId, itemId, itemNome });
     setEstoquesIdeais({
       segunda: 200,
       terca: 200,
@@ -525,6 +531,11 @@ const ContagemPorcionados = () => {
         .eq('loja_id', lojaId)
         .eq('item_porcionado_id', itemId)
         .maybeSingle();
+      
+      // Verificar se ainda é a mesma operação
+      if (currentOperationId.current !== operationId) {
+        return; // Operação cancelada - dialog foi aberto para outro item
+      }
       
       if (error && error.code !== 'PGRST116') {
         console.error('Erro ao carregar estoques ideais:', error);
@@ -558,11 +569,14 @@ const ContagemPorcionados = () => {
       return;
     }
 
-    setSavingDialog(true);
-
-    // Capturar valores atuais para evitar problemas de closure
+    // Capturar o ID da operação atual
+    const operationId = currentOperationId.current;
+    
+    // Capturar valores no momento do clique
     const currentItem = { ...selectedItem };
     const currentEstoques = { ...estoquesIdeais };
+
+    setSavingDialog(true);
 
     try {
       const { error } = await supabase
@@ -582,22 +596,33 @@ const ContagemPorcionados = () => {
           onConflict: 'loja_id,item_porcionado_id',
         });
 
-      if (error) {
-        console.error('Erro Supabase:', error);
-        throw error;
-      }
-
-      // Atualizar o mapa local APENAS após confirmação de sucesso
+      // Atualizar mapa local independentemente (dados foram salvos)
       const key = `${currentItem.lojaId}-${currentItem.itemId}`;
       setEstoquesIdeaisMap(prev => ({
         ...prev,
         [key]: { ...currentEstoques },
       }));
 
+      if (error) {
+        console.error('Erro Supabase:', error);
+        throw error;
+      }
+
+      // Verificar se ainda é a mesma operação antes de modificar UI
+      if (currentOperationId.current !== operationId) {
+        return; // Outro item foi aberto, não interferir
+      }
+
       toast.success('Estoques ideais salvos com sucesso');
       setDialogOpen(false);
       setSelectedItem(null);
+      setSavingDialog(false);
     } catch (error: any) {
+      // Verificar se ainda é a mesma operação
+      if (currentOperationId.current !== operationId) {
+        return; // Ignorar erro de operação antiga
+      }
+      
       console.error('Erro ao salvar:', error);
       if (error?.code === '42501' || error?.message?.includes('policy')) {
         toast.error('Você não tem permissão para editar este item.');
@@ -606,7 +631,6 @@ const ContagemPorcionados = () => {
       } else {
         toast.error('Erro ao salvar estoques ideais. Tente novamente.');
       }
-    } finally {
       setSavingDialog(false);
     }
   };
@@ -797,6 +821,7 @@ const ContagemPorcionados = () => {
             if (!open) {
               setSelectedItem(null);
               setSavingDialog(false);
+              currentOperationId.current = null; // Limpar operação
             }
           }}
         >
