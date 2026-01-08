@@ -645,14 +645,16 @@ const ContagemPorcionados = () => {
                           </div>
 
                           <div className="col-span-1 flex gap-1 justify-center">
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
-                            >
-                              <Settings className="h-3.5 w-3.5" />
-                            </Button>
+                            {isAdmin() && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                              >
+                                <Settings className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                             <SaveButton
                               isDirty={isRowDirty(loja.id, item.id)}
                               isSaving={savingKeys.has(`${loja.id}-${item.id}`)}
