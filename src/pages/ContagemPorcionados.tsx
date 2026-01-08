@@ -6,7 +6,17 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw } from 'lucide-react';
+import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -88,6 +98,12 @@ const ContagemPorcionados = () => {
     domingo: 200,
   });
   const [estoquesIdeaisMap, setEstoquesIdeaisMap] = useState<Record<string, EstoqueIdeal>>({});
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    lojaId: string;
+    itemId: string;
+    warnings: string[];
+  } | null>(null);
 
   // Verificar se usuário é apenas Loja (sem Admin ou Produção)
   const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
@@ -275,16 +291,60 @@ const ContagemPorcionados = () => {
     return false;
   };
 
+  // Função para validar valores suspeitos
+  const validateSuspiciousValues = (values: any): string[] => {
+    const warnings: string[] = [];
+    const sobra = parseInt(values?.final_sobra) || 0;
+    const pesoKg = values?.peso_total_g ? parseFloat(values.peso_total_g) / 1000 : 0;
+    
+    // Verificar se ambos são zero
+    if (sobra === 0 && pesoKg === 0) {
+      warnings.push("Sobra e Peso estão zerados. Tem certeza que deseja salvar?");
+    } else {
+      if (sobra === 0) {
+        warnings.push("A Sobra está zerada (0 unidades).");
+      }
+      if (pesoKg === 0) {
+        warnings.push("O Peso está zerado (0 kg).");
+      }
+    }
+    
+    // Verificar valores maiores que 499
+    if (sobra > 499) {
+      warnings.push(`Sobra muito alta: ${sobra} unidades. Verifique se está correto.`);
+    }
+    if (pesoKg > 499) {
+      warnings.push(`Peso muito alto: ${pesoKg.toFixed(2)} kg. Verifique se está correto.`);
+    }
+    
+    return warnings;
+  };
+
   const handleSave = async (lojaId: string, itemId: string) => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
     
-    // Validar peso obrigatório
+    // Validar peso obrigatório (erro bloqueante)
     const pesoValue = values?.peso_total_g ? parseFloat(values.peso_total_g) : 0;
     if (!pesoValue || pesoValue <= 0) {
       toast.error("O campo Peso é obrigatório");
       return;
     }
+    
+    // Verificar valores suspeitos
+    const warnings = validateSuspiciousValues(values);
+    if (warnings.length > 0) {
+      setConfirmDialog({ open: true, lojaId, itemId, warnings });
+      return;
+    }
+    
+    // Se não há alertas, salvar normalmente
+    await executeSave(lojaId, itemId);
+  };
+
+  const executeSave = async (lojaId: string, itemId: string) => {
+    const key = `${lojaId}-${itemId}`;
+    const values = editingValues[key];
     
     // Marcar como salvando
     setSavingKeys(prev => new Set([...prev, key]));
@@ -335,7 +395,7 @@ const ContagemPorcionados = () => {
       const dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
-        dia_operacional: diaOperacional, // NOVO CAMPO OBRIGATÓRIO
+        dia_operacional: diaOperacional,
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
@@ -354,14 +414,13 @@ const ContagemPorcionados = () => {
       if (error) throw error;
 
       // Chamar função SECURITY DEFINER para criar/atualizar registro de produção
-      // Esta função pode ser chamada por qualquer usuário autenticado (incluindo Loja)
       const { data: rpcResult, error: rpcError } = await supabase
         .rpc('criar_ou_atualizar_producao_registro', {
           p_item_id: itemId,
           p_organization_id: organizationId,
           p_usuario_id: user.id,
           p_usuario_nome: profile?.nome || user.email || 'Usuário',
-          p_dia_operacional: diaOperacional, // PASSAR DIA OPERACIONAL CORRETO
+          p_dia_operacional: diaOperacional,
         });
 
       if (rpcError) {
@@ -789,6 +848,47 @@ const ContagemPorcionados = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* AlertDialog de Confirmação para Valores Suspeitos */}
+        <AlertDialog open={confirmDialog?.open} onOpenChange={(open) => !open && setConfirmDialog(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-orange-600">
+                <AlertTriangle className="h-5 w-5" />
+                Atenção: Valores Suspeitos Detectados
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  <p className="font-medium text-foreground">Os seguintes alertas foram identificados:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {confirmDialog?.warnings.map((w, i) => (
+                      <li key={i} className="text-orange-600">{w}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-4 font-medium text-foreground">
+                    Deseja continuar salvando mesmo assim?
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setConfirmDialog(null)}>
+                Cancelar e Revisar
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                className="bg-orange-500 hover:bg-orange-600"
+                onClick={() => {
+                  if (confirmDialog) {
+                    executeSave(confirmDialog.lojaId, confirmDialog.itemId);
+                  }
+                  setConfirmDialog(null);
+                }}
+              >
+                Confirmar e Salvar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );
