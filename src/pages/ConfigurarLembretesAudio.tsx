@@ -29,7 +29,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Volume2, Clock, Calendar, Users, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Volume2, Clock, Calendar, Users, Loader2, AlertTriangle } from 'lucide-react';
 
 interface LembreteAudio {
   id: string;
@@ -56,6 +56,7 @@ const PERFIS = ['Admin', 'Produção', 'Loja'];
 
 export default function ConfigurarLembretesAudio() {
   const { organizationId } = useOrganization();
+  const { isAdmin } = useAuth();
   const [lembretes, setLembretes] = useState<LembreteAudio[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -269,6 +270,20 @@ export default function ConfigurarLembretesAudio() {
       <Layout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!isAdmin()) {
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center h-64">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-xl font-semibold">Acesso Negado</h2>
+          <p className="text-muted-foreground">
+            Apenas administradores podem configurar lembretes de áudio.
+          </p>
         </div>
       </Layout>
     );
