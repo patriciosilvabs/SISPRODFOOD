@@ -11,6 +11,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState } from 'react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 
 interface Produto {
   id: string;
@@ -25,9 +26,16 @@ interface DeleteProdutoDialogProps {
 
 export function DeleteProdutoDialog({ produto, onClose }: DeleteProdutoDialogProps) {
   const [loading, setLoading] = useState(false);
+  const { canDelete } = useCanDelete();
 
   const handleDelete = async () => {
     if (!produto) return;
+
+    if (!canDelete) {
+      toast.error('Você não tem permissão para excluir produtos.');
+      onClose();
+      return;
+    }
 
     try {
       setLoading(true);

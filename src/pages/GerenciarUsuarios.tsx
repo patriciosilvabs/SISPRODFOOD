@@ -40,6 +40,7 @@ import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Pencil, Trash2, User, Mail, Calendar, UserPlus, Clock, XCircle, Send, Loader2, Shield, Store, Factory, FileText, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,6 +89,7 @@ interface ConvitePendente {
 const GerenciarUsuarios = () => {
   const { user: currentUser } = useAuth();
   const { organizationId } = useOrganization();
+  const { canDelete } = useCanDelete();
   const auditLog = useAuditLog();
   const [usuarios, setUsuarios] = useState<UsuarioCompleto[]>([]);
   const [convitesPendentes, setConvitesPendentes] = useState<ConvitePendente[]>([]);
@@ -806,17 +808,20 @@ const GerenciarUsuarios = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => handleEditClick(usuario)}>
+                          <Button variant="ghost" size="icon" onClick={() => handleEditClick(usuario)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteClick(usuario)}
-                              disabled={usuario.id === currentUser?.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteClick(usuario)}
+                                disabled={usuario.id === currentUser?.id}
+                                title={usuario.id === currentUser?.id ? 'Você não pode excluir sua própria conta' : 'Excluir usuário'}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

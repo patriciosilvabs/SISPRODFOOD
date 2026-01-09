@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Package, RefreshCw, Settings } from 'lucide-react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 import { ConfigurarEstoqueMinimoInsumoModal } from '@/components/modals/ConfigurarEstoqueMinimoInsumoModal';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -55,6 +56,7 @@ interface Insumo {
 
 const Insumos = () => {
   const { organizationId } = useOrganization();
+  const { canDelete } = useCanDelete();
   const { registrarMovimentacao, requerObservacao } = useMovimentacaoEstoque();
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,6 +187,10 @@ const Insumos = () => {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDelete) {
+      toast.error('Você não tem permissão para excluir insumos.');
+      return;
+    }
     if (!confirm('Tem certeza que deseja excluir este insumo?')) return;
 
     try {
@@ -549,13 +555,16 @@ const Insumos = () => {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(insumo.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(insumo.id)}
+                            title="Excluir insumo"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

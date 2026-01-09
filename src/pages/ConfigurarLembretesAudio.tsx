@@ -30,6 +30,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, Volume2, Clock, Calendar, Users, Loader2, AlertTriangle } from 'lucide-react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 
 interface LembreteAudio {
   id: string;
@@ -57,6 +58,7 @@ const PERFIS = ['Admin', 'Produção', 'Loja'];
 export default function ConfigurarLembretesAudio() {
   const { organizationId, loading: orgLoading } = useOrganization();
   const { isAdmin, loading: authLoading } = useAuth();
+  const { canDelete } = useCanDelete();
   const [lembretes, setLembretes] = useState<LembreteAudio[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -349,16 +351,19 @@ export default function ConfigurarLembretesAudio() {
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setLembreteParaExcluir(lembrete.id);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setLembreteParaExcluir(lembrete.id);
+                            setDeleteDialogOpen(true);
+                          }}
+                          title="Excluir lembrete"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
