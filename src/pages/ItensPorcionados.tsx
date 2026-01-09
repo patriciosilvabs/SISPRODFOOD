@@ -261,14 +261,19 @@ const ItensPorcionados = () => {
     }
 
     // Verificar se já existe item com este nome na organização
-    const { data: existingItem } = await supabase
+    const { data: existingItems } = await supabase
       .from('itens_porcionados')
-      .select('id, nome')
+      .select('id, nome, organization_id')
       .eq('organization_id', organizationId)
-      .ilike('nome', formData.nome.trim())
-      .maybeSingle();
+      .eq('ativo', true)
+      .ilike('nome', formData.nome.trim());
 
-    if (existingItem && (!editingItem || existingItem.id !== editingItem.id)) {
+    // Verificar se há algum item com mesmo nome que NÃO seja o item sendo editado
+    const itemDuplicado = existingItems?.find(
+      item => !editingItem || item.id !== editingItem.id
+    );
+
+    if (itemDuplicado) {
       toast.error(`Já existe um item com o nome "${formData.nome}".`);
       return;
     }
