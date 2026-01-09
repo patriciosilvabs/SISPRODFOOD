@@ -67,6 +67,8 @@ interface ItemPorcionado {
   peso_maximo_bolinha_g?: number;
   peso_alvo_bolinha_g?: number;
   peso_medio_operacional_bolinha_g?: number;
+  // Campo de Margem para LOTE_MASSEIRA
+  margem_lote_percentual?: number;
 }
 
 interface Insumo {
@@ -120,6 +122,8 @@ const ItensPorcionados = () => {
     peso_minimo_bolinha_g: '',
     peso_maximo_bolinha_g: '',
     peso_alvo_bolinha_g: '',
+    // Campo de Margem para LOTE_MASSEIRA
+    margem_lote_percentual: '',
   });
 
   // Cálculos automáticos para Lote com Perda
@@ -325,6 +329,9 @@ const ItensPorcionados = () => {
         const massaGeradaKg = parseFloat(formData.massa_gerada_por_lote_kg);
         const unidadesPorLote = Math.floor(massaGeradaKg / (pesoMedioOperacional / 1000));
         insertData.equivalencia_traco = unidadesPorLote;
+        // Margem de flexibilização de lotes
+        const margemLote = parseFloat(formData.margem_lote_percentual);
+        insertData.margem_lote_percentual = !isNaN(margemLote) ? margemLote : 0;
       }
 
       if (editingItem) {
@@ -610,6 +617,8 @@ const ItensPorcionados = () => {
       peso_minimo_bolinha_g: item.peso_minimo_bolinha_g?.toString() || '',
       peso_maximo_bolinha_g: item.peso_maximo_bolinha_g?.toString() || '',
       peso_alvo_bolinha_g: item.peso_alvo_bolinha_g?.toString() || '',
+      // Campo de Margem
+      margem_lote_percentual: item.margem_lote_percentual?.toString() || '',
     });
     await loadInsumosVinculados(item.id);
     setDialogOpen(true);
@@ -638,6 +647,8 @@ const ItensPorcionados = () => {
       peso_minimo_bolinha_g: '',
       peso_maximo_bolinha_g: '',
       peso_alvo_bolinha_g: '',
+      // Campo de Margem
+      margem_lote_percentual: '',
     });
   };
 
@@ -884,6 +895,8 @@ const ItensPorcionados = () => {
                             const pesoMedioOp = (pesoMin + pesoMax) / 2;
                             const massaGerada = parseFloat(formData.massa_gerada_por_lote_kg) || 0;
                             const unidadesPorLote = pesoMedioOp > 0 ? Math.floor(massaGerada / (pesoMedioOp / 1000)) : 0;
+                            const margem = parseFloat(formData.margem_lote_percentual) || 0;
+                            const capacidadeComMargem = Math.floor(unidadesPorLote * (1 + margem / 100));
                             return (
                               <div className="grid grid-cols-2 gap-4">
                                 <div className="p-2 bg-background rounded border text-sm">
@@ -894,11 +907,68 @@ const ItensPorcionados = () => {
                                   <span className="text-muted-foreground">Unidades por Lote:</span>
                                   <span className="font-bold ml-2">{unidadesPorLote} un</span>
                                 </div>
+                                {margem > 0 && (
+                                  <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded border border-green-300 dark:border-green-700 text-sm col-span-2">
+                                    <span className="text-green-700 dark:text-green-300">✅ Com margem de {margem}%:</span>
+                                    <span className="font-bold ml-2 text-green-800 dark:text-green-200">
+                                      Demanda até {capacidadeComMargem} un → 1 lote
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
                         </div>
                       )}
+
+                      {/* Margem de Flexibilização de Lotes */}
+                      <div className="pt-3 border-t border-amber-200 dark:border-amber-700">
+                        <Label className="font-semibold mb-2 block">⚖️ Margem de Flexibilização (Opcional)</Label>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Permite evitar a produção de um lote extra quando a demanda excede minimamente a capacidade do lote.
+                        </p>
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="margem_lote">Margem (%)</Label>
+                            <Input
+                              id="margem_lote"
+                              type="number"
+                              step="1"
+                              min="0"
+                              max="30"
+                              value={formData.margem_lote_percentual}
+                              onChange={(e) =>
+                                setFormData({ ...formData, margem_lote_percentual: e.target.value })
+                              }
+                              placeholder="Ex: 15"
+                              className="max-w-[150px]"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              0% = sem margem (padrão) | Máximo recomendado: 30%
+                            </p>
+                          </div>
+                          {parseFloat(formData.margem_lote_percentual) > 0 && formData.massa_gerada_por_lote_kg && formData.peso_minimo_bolinha_g && formData.peso_maximo_bolinha_g && (() => {
+                            const pesoMin = parseFloat(formData.peso_minimo_bolinha_g) || 0;
+                            const pesoMax = parseFloat(formData.peso_maximo_bolinha_g) || 0;
+                            const pesoMedioOp = (pesoMin + pesoMax) / 2;
+                            const massaGerada = parseFloat(formData.massa_gerada_por_lote_kg) || 0;
+                            const unidadesPorLote = pesoMedioOp > 0 ? Math.floor(massaGerada / (pesoMedioOp / 1000)) : 0;
+                            const margem = parseFloat(formData.margem_lote_percentual) || 0;
+                            const capacidadeComMargem = Math.floor(unidadesPorLote * (1 + margem / 100));
+                            return (
+                              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <p className="text-xs text-blue-800 dark:text-blue-200">
+                                  <strong>📌 Exemplo:</strong> Com {unidadesPorLote} un/lote e margem de {margem}%:
+                                </p>
+                                <ul className="text-xs text-blue-700 dark:text-blue-300 mt-1 list-disc list-inside">
+                                  <li>Demanda até <strong>{capacidadeComMargem} un</strong> → 1 lote</li>
+                                  <li>Demanda de <strong>{capacidadeComMargem + 1}+ un</strong> → 2 lotes</li>
+                                </ul>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
 
                       <div className="p-3 bg-amber-100/50 dark:bg-amber-900/30 rounded-lg border border-amber-300 dark:border-amber-700 mt-2">
                         <p className="text-xs text-amber-800 dark:text-amber-200">

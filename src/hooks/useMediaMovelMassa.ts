@@ -267,28 +267,34 @@ export const useMediaMovelMassa = () => {
 
   /**
    * Calcula lotes e farinha necessários para uma demanda
+   * @param margemPercentual - Margem de flexibilização para evitar lotes extras (ex: 15 = 15%)
    */
   const calcularProducaoMasseira = useCallback((
     demandaUnidades: number,
     massaGeradaPorLoteKg: number,
     pesoMedioOperacionalG: number,
-    farinhaPorLoteKg: number
+    farinhaPorLoteKg: number,
+    margemPercentual: number = 0
   ): { 
     lotesNecessarios: number;
     farinhaKg: number;
     unidadesEstimadas: number;
     massaTotalKg: number;
+    capacidadeComMargem: number;
   } => {
     // Unidades por lote = massa gerada / peso médio bolinha
     const unidadesPorLote = massaGeradaPorLoteKg / (pesoMedioOperacionalG / 1000);
     
-    // Lotes necessários (arredondando para cima)
-    const lotesNecessarios = Math.ceil(demandaUnidades / unidadesPorLote);
+    // Aplicar margem ao cálculo de capacidade
+    const capacidadeComMargem = unidadesPorLote * (1 + margemPercentual / 100);
+    
+    // Lotes necessários (arredondando para cima, usando capacidade com margem)
+    const lotesNecessarios = Math.ceil(demandaUnidades / capacidadeComMargem);
     
     // Farinha total necessária
     const farinhaKg = lotesNecessarios * farinhaPorLoteKg;
     
-    // Unidades estimadas que serão produzidas
+    // Unidades estimadas que serão produzidas (lotes reais × unidades por lote)
     const unidadesEstimadas = Math.floor(lotesNecessarios * unidadesPorLote);
     
     // Massa total que será gerada
@@ -299,6 +305,7 @@ export const useMediaMovelMassa = () => {
       farinhaKg,
       unidadesEstimadas,
       massaTotalKg,
+      capacidadeComMargem,
     };
   }, []);
 
