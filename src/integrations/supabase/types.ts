@@ -2279,6 +2279,7 @@ export type Database = {
           producao_registro_id: string | null
           quantidade: number
           quantidade_recebida: number | null
+          quantidade_volumes: number | null
           romaneio_id: string
         }
         Insert: {
@@ -2292,6 +2293,7 @@ export type Database = {
           producao_registro_id?: string | null
           quantidade: number
           quantidade_recebida?: number | null
+          quantidade_volumes?: number | null
           romaneio_id: string
         }
         Update: {
@@ -2305,6 +2307,7 @@ export type Database = {
           producao_registro_id?: string | null
           quantidade?: number
           quantidade_recebida?: number | null
+          quantidade_volumes?: number | null
           romaneio_id?: string
         }
         Relationships: [
