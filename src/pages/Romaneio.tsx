@@ -467,11 +467,10 @@ const Romaneio = () => {
       const serverDate = serverDateResult || new Date().toISOString().split('T')[0];
       console.log('[Romaneio] Data do servidor:', serverDate);
 
-      // 1. Buscar estoque CPD
+      // 1. Buscar estoque CPD (tabela dedicada estoque_cpd)
       const { data: estoqueCpd, error: estoqueError } = await supabase
-        .from('estoque_loja_itens')
-        .select(`item_porcionado_id, quantidade, itens_porcionados!inner(nome)`)
-        .eq('loja_id', cpdLojaId)
+        .from('estoque_cpd')
+        .select(`item_porcionado_id, quantidade, itens_porcionados:itens_porcionados!inner(nome)`)
         .gt('quantidade', 0);
 
       if (estoqueError) throw estoqueError;
