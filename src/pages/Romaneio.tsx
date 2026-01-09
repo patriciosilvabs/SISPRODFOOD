@@ -42,6 +42,7 @@ interface ItemSelecionadoLoja {
   item_id: string;
   item_nome: string;
   quantidade: number;
+  peso_g: string;  // Peso em gramas por item
 }
 
 interface DemandaPorLoja {
@@ -50,7 +51,6 @@ interface DemandaPorLoja {
   itens: ItemDemandaLoja[];
   itensSelecionados: ItemSelecionadoLoja[];
   enviando: boolean;
-  pesoTotalEnvio: string;
   quantidadeVolumes: string;
 }
 
@@ -104,15 +104,15 @@ interface RomaneioAvulso {
 
 interface SecaoLojaRomaneioProps {
   demanda: DemandaPorLoja;
-  onEnviar: (lojaId: string, itens: ItemSelecionadoLoja[], pesoTotal: string, volumes: string) => Promise<void>;
+  onEnviar: (lojaId: string, itens: ItemSelecionadoLoja[], volumes: string) => Promise<void>;
   onUpdateQuantidade: (lojaId: string, itemId: string, quantidade: number) => void;
+  onUpdatePesoItem: (lojaId: string, itemId: string, peso: string) => void;
   onRemoveItem: (lojaId: string, itemId: string) => void;
   onAddItem: (lojaId: string, item: ItemDemandaLoja) => void;
-  onUpdatePesoTotal: (lojaId: string, valor: string) => void;
   onUpdateVolumes: (lojaId: string, valor: string) => void;
 }
 
-const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem, onAddItem, onUpdatePesoTotal, onUpdateVolumes }: SecaoLojaRomaneioProps) => {
+const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePesoItem, onRemoveItem, onAddItem, onUpdateVolumes }: SecaoLojaRomaneioProps) => {
   const itensNaoSelecionados = demanda.itens.filter(
     item => !demanda.itensSelecionados.find(sel => sel.item_id === item.item_id)
   );
@@ -123,10 +123,12 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
       return;
     }
     
-    // Validação de campos obrigatórios
-    if (!demanda.pesoTotalEnvio || demanda.pesoTotalEnvio === '0') {
-      toast.error('Informe o Peso Total do envio');
-      return;
+    // Validação de peso por item
+    for (const item of demanda.itensSelecionados) {
+      if (!item.peso_g || item.peso_g === '0') {
+        toast.error(`Informe o peso do item: ${item.item_nome}`);
+        return;
+      }
     }
     
     if (!demanda.quantidadeVolumes || demanda.quantidadeVolumes === '0') {
@@ -134,15 +136,16 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
       return;
     }
     
-    onEnviar(demanda.loja_id, demanda.itensSelecionados, demanda.pesoTotalEnvio, demanda.quantidadeVolumes);
+    onEnviar(demanda.loja_id, demanda.itensSelecionados, demanda.quantidadeVolumes);
   };
 
   const totalItens = demanda.itensSelecionados.reduce((acc, item) => acc + item.quantidade, 0);
+  const pesoTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + (parseFloat(item.peso_g) || 0), 0);
   
   // Verificar se campos obrigatórios estão preenchidos
+  const todosPesosPreenchidos = demanda.itensSelecionados.every(item => item.peso_g && item.peso_g !== '0');
   const camposObrigatoriosPreenchidos = 
-    demanda.pesoTotalEnvio && 
-    demanda.pesoTotalEnvio !== '0' && 
+    todosPesosPreenchidos && 
     demanda.quantidadeVolumes && 
     demanda.quantidadeVolumes !== '0';
 
@@ -232,7 +235,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
               </p>
             ) : (
               <>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {demanda.itensSelecionados.map(item => (
                     <div key={item.item_id} className="flex items-center gap-2 p-2 bg-background border rounded text-sm">
                       <div className="flex-1 min-w-0">
@@ -246,6 +249,14 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
                         min={1}
                       />
                       <span className="text-xs text-muted-foreground">un</span>
+                      <Input
+                        type="number"
+                        value={item.peso_g || ''}
+                        onChange={(e) => onUpdatePesoItem(demanda.loja_id, item.item_id, e.target.value)}
+                        className="w-20 h-7 text-center text-sm"
+                        placeholder="Peso"
+                      />
+                      <span className="text-xs text-muted-foreground">g</span>
                       <Button 
                         size="sm" 
                         variant="ghost" 
@@ -258,17 +269,14 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onRemoveItem
                   ))}
                 </div>
                 
-                {/* Campos de Peso Total e Quantidade de Volumes - OBRIGATÓRIOS */}
+                {/* Peso Total calculado + Quantidade de Volumes */}
                 <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
-                  <WeightInput
-                    value={demanda.pesoTotalEnvio}
-                    onChange={(v) => onUpdatePesoTotal(demanda.loja_id, v)}
-                    label="Peso Total"
-                    required
-                    compact
-                    showLabel
-                    placeholder="Ex: 5500"
-                  />
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Peso Total</p>
+                    <p className="text-sm font-semibold">
+                      {pesoTotalCalculado > 0 ? `${(pesoTotalCalculado / 1000).toFixed(2)} kg` : '—'}
+                    </p>
+                  </div>
                   <VolumeInput
                     value={demanda.quantidadeVolumes}
                     onChange={(v) => onUpdateVolumes(demanda.loja_id, v)}
@@ -619,7 +627,8 @@ const Romaneio = () => {
             itensSelecionados.push({
               item_id: itemId,
               item_nome: estoque.nome,
-              quantidade: disponivel
+              quantidade: disponivel,
+              peso_g: ''
             });
           }
         });
@@ -634,7 +643,6 @@ const Romaneio = () => {
           itens,
           itensSelecionados,
           enviando: false,
-          pesoTotalEnvio: '',
           quantidadeVolumes: ''
         };
       });
@@ -754,12 +762,13 @@ const Romaneio = () => {
 
   // ==================== HANDLERS: ENVIAR POR LOJA ====================
 
-  const handleEnviarRomaneioLoja = async (lojaId: string, itens: ItemSelecionadoLoja[], pesoTotal: string, volumes: string) => {
+  const handleEnviarRomaneioLoja = async (lojaId: string, itens: ItemSelecionadoLoja[], volumes: string) => {
     if (itens.length === 0) {
       toast.error('Nenhum item selecionado');
       return;
     }
-    console.log(`[Romaneio] Enviando para loja ${lojaId} - Peso Total: ${pesoTotal}, Volumes: ${volumes}`);
+    const pesoTotalGramas = itens.reduce((acc, item) => acc + (parseFloat(item.peso_g) || 0), 0);
+    console.log(`[Romaneio] Enviando para loja ${lojaId} - Peso Total: ${pesoTotalGramas}g, Volumes: ${volumes}`);
 
     // Marcar loja como enviando
     setDemandasPorLoja(prev => prev.map(d => 
@@ -802,19 +811,19 @@ const Romaneio = () => {
         usuario_id: user.id,
         usuario_nome: userProfile?.nome || 'Usuário',
         organization_id: organizationId,
-        peso_total_envio_g: parseInt(pesoTotal) || 0,
+        peso_total_envio_g: pesoTotalGramas,
         quantidade_volumes_envio: parseInt(volumes) || 0
       }).select().single();
 
       if (romaneioError) throw romaneioError;
 
-      // Inserir itens
+      // Inserir itens com peso individual
       const itensRomaneio = itens.map(item => ({
         romaneio_id: romaneio.id,
         item_porcionado_id: item.item_id,
         item_nome: item.item_nome,
         quantidade: item.quantidade,
-        peso_total_kg: 0,
+        peso_total_kg: (parseFloat(item.peso_g) || 0) / 1000, // Converter g para kg
         organization_id: organizationId
       }));
 
@@ -868,11 +877,6 @@ const Romaneio = () => {
     }));
   };
 
-  const handleUpdatePesoTotalLoja = (lojaId: string, valor: string) => {
-    setDemandasPorLoja(prev => prev.map(d => 
-      d.loja_id === lojaId ? { ...d, pesoTotalEnvio: valor } : d
-    ));
-  };
 
   const handleUpdateVolumesLoja = (lojaId: string, valor: string) => {
     setDemandasPorLoja(prev => prev.map(d => 
@@ -900,8 +904,21 @@ const Romaneio = () => {
         itensSelecionados: [...d.itensSelecionados, {
           item_id: item.item_id,
           item_nome: item.item_nome,
-          quantidade: item.quantidade_disponivel
+          quantidade: item.quantidade_disponivel,
+          peso_g: ''
         }]
+      };
+    }));
+  };
+
+  const handleUpdatePesoItemLoja = (lojaId: string, itemId: string, peso: string) => {
+    setDemandasPorLoja(prev => prev.map(d => {
+      if (d.loja_id !== lojaId) return d;
+      return {
+        ...d,
+        itensSelecionados: d.itensSelecionados.map(item =>
+          item.item_id === itemId ? { ...item, peso_g: peso } : item
+        )
       };
     }));
   };
@@ -1372,9 +1389,9 @@ const Romaneio = () => {
                           demanda={demanda}
                           onEnviar={handleEnviarRomaneioLoja}
                           onUpdateQuantidade={handleUpdateQuantidadeLoja}
+                          onUpdatePesoItem={handleUpdatePesoItemLoja}
                           onRemoveItem={handleRemoveItemLoja}
                           onAddItem={handleAddItemLoja}
-                          onUpdatePesoTotal={handleUpdatePesoTotalLoja}
                           onUpdateVolumes={handleUpdateVolumesLoja}
                         />
                       ))}
