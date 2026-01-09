@@ -19,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Plus, Sparkles, Pencil, Trash2, Search, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ProdutoFormModal } from '@/components/modals/ProdutoFormModal';
@@ -59,6 +60,7 @@ const tipoProdutoLabels: Record<string, string> = {
 };
 
 const GerenciarProdutos = () => {
+  const { canDelete } = useCanDelete();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filteredProdutos, setFilteredProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -319,13 +321,16 @@ const GerenciarProdutos = () => {
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteProduto(produto)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteProduto(produto)}
+                                title="Excluir produto"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

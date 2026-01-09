@@ -9,6 +9,7 @@ import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle } from '
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useCanDelete } from '@/hooks/useCanDelete';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -87,6 +88,7 @@ interface InsumoVinculado {
 
 const ItensPorcionados = () => {
   const { organizationId } = useOrganization();
+  const { canDelete } = useCanDelete();
   const [itens, setItens] = useState<ItemPorcionado[]>([]);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [insumosVinculados, setInsumosVinculados] = useState<InsumoVinculado[]>([]);
@@ -394,6 +396,10 @@ const ItensPorcionados = () => {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDelete) {
+      toast.error('Você não tem permissão para excluir itens.');
+      return;
+    }
     if (!confirm('⚠️ ATENÇÃO: Tem certeza que deseja EXCLUIR PERMANENTEMENTE este item?\n\nEsta ação é IRREVERSÍVEL e todos os dados relacionados serão perdidos.')) return;
 
     try {
@@ -1516,13 +1522,16 @@ const ItensPorcionados = () => {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(item.id)}
+                            title="Excluir item"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

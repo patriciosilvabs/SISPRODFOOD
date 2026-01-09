@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Edit, Trash2, Store, RefreshCw, Clock, Globe } from 'lucide-react';
+import { useCanDelete } from '@/hooks/useCanDelete';
 import { toast } from 'sonner';
 import {
   Select,
@@ -56,6 +57,7 @@ const FUSOS_HORARIOS = [
 
 const Lojas = () => {
   const { organizationId } = useOrganization();
+  const { canDelete } = useCanDelete();
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -130,6 +132,12 @@ const Lojas = () => {
   };
 
   const handleDelete = async (loja: Loja) => {
+    // Verificar permissão de exclusão
+    if (!canDelete) {
+      toast.error('Você não tem permissão para excluir lojas.');
+      return;
+    }
+
     // Impedir exclusão do CPD
     if (loja.tipo === 'cpd') {
       toast.error('O CPD é obrigatório e não pode ser excluído.');
@@ -389,15 +397,17 @@ const Lojas = () => {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(loja)}
-                            disabled={isCPD}
-                            title={isCPD ? 'CPD não pode ser excluído' : 'Excluir loja'}
-                          >
-                            <Trash2 className={`h-4 w-4 ${isCPD ? 'opacity-30' : ''}`} />
-                          </Button>
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(loja)}
+                              disabled={isCPD}
+                              title={isCPD ? 'CPD não pode ser excluído' : 'Excluir loja'}
+                            >
+                              <Trash2 className={`h-4 w-4 text-destructive ${isCPD ? 'opacity-30' : ''}`} />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
