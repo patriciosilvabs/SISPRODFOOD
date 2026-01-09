@@ -988,6 +988,7 @@ export type Database = {
           id: string
           insumo_embalagem_id: string | null
           insumo_vinculado_id: string | null
+          margem_lote_percentual: number | null
           massa_gerada_por_lote_kg: number | null
           nome: string
           organization_id: string | null
@@ -1019,6 +1020,7 @@ export type Database = {
           id?: string
           insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
+          margem_lote_percentual?: number | null
           massa_gerada_por_lote_kg?: number | null
           nome: string
           organization_id?: string | null
@@ -1050,6 +1052,7 @@ export type Database = {
           id?: string
           insumo_embalagem_id?: string | null
           insumo_vinculado_id?: string | null
+          margem_lote_percentual?: number | null
           massa_gerada_por_lote_kg?: number | null
           nome?: string
           organization_id?: string | null
