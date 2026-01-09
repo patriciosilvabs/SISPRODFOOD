@@ -19,6 +19,51 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { WeightInput } from '@/components/ui/weight-input';
 import { VolumeInput } from '@/components/ui/volume-input';
+import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weightUtils';
+import { pesoProgressivoToWords } from '@/lib/numberToWords';
+
+// ==================== COMPONENTE: INPUT PESO INLINE COMPACTO ====================
+
+interface PesoInputInlineCompactoProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+const PesoInputInlineCompacto = ({ value, onChange }: PesoInputInlineCompactoProps) => {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\D/g, '');
+    onChange(rawValue);
+  };
+
+  const parsed = parsePesoProgressivo(value);
+  const hasValue = parsed.valorRaw > 0;
+  const displayValue = isFocused ? value : (hasValue ? formatPesoParaInput(value) : '');
+
+  return (
+    <div className="flex flex-col items-center">
+      <Input
+        type="text"
+        inputMode="numeric"
+        placeholder="Peso"
+        value={displayValue}
+        onChange={handleChange}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        className="w-24 h-7 text-center text-sm"
+      />
+      {hasValue && !isFocused && (
+        <span 
+          className="text-[10px] text-primary font-medium truncate max-w-24 leading-tight" 
+          title={pesoProgressivoToWords(value)}
+        >
+          {pesoProgressivoToWords(value)}
+        </span>
+      )}
+    </div>
+  );
+};
 
 // ==================== INTERFACES ====================
 
@@ -139,7 +184,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
   };
 
   const totalItens = demanda.itensSelecionados.reduce((acc, item) => acc + item.quantidade, 0);
-  const pesoTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + (parseFloat(item.peso_g) || 0), 0);
+  const pesoTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + parsePesoProgressivo(item.peso_g).valorGramas, 0);
   const volumesTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + (parseInt(item.volumes) || 0), 0);
   
   // Verificar se campos obrigatórios estão preenchidos
@@ -247,14 +292,10 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                         min={1}
                       />
                       <span className="text-xs text-muted-foreground">un</span>
-                      <Input
-                        type="number"
-                        value={item.peso_g || ''}
-                        onChange={(e) => onUpdatePesoItem(demanda.loja_id, item.item_id, e.target.value)}
-                        className="w-20 h-7 text-center text-sm"
-                        placeholder="Peso"
+                      <PesoInputInlineCompacto
+                        value={item.peso_g}
+                        onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
                       />
-                      <span className="text-xs text-muted-foreground">g</span>
                       <Input
                         type="number"
                         value={item.volumes || ''}
@@ -771,7 +812,7 @@ const Romaneio = () => {
       toast.error('Nenhum item selecionado');
       return;
     }
-    const pesoTotalGramas = itens.reduce((acc, item) => acc + (parseFloat(item.peso_g) || 0), 0);
+    const pesoTotalGramas = itens.reduce((acc, item) => acc + (parsePesoProgressivo(item.peso_g).valorGramas), 0);
     const volumesTotal = itens.reduce((acc, item) => acc + (parseInt(item.volumes) || 0), 0);
     console.log(`[Romaneio] Enviando para loja ${lojaId} - Peso Total: ${pesoTotalGramas}g, Volumes: ${volumesTotal}`);
 
@@ -828,7 +869,7 @@ const Romaneio = () => {
         item_porcionado_id: item.item_id,
         item_nome: item.item_nome,
         quantidade: item.quantidade,
-        peso_total_kg: (parseFloat(item.peso_g) || 0) / 1000, // Converter g para kg
+        peso_total_kg: rawToKg(item.peso_g), // Converter peso raw para kg
         quantidade_volumes: parseInt(item.volumes) || 0,
         organization_id: organizationId
       }));
