@@ -88,6 +88,8 @@ interface ProducaoRegistro {
   unidades_estimadas_masseira?: number;
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
+  // Código único do lote para rastreabilidade
+  codigo_lote?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
