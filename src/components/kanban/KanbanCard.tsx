@@ -78,6 +78,18 @@ interface ProducaoRegistro {
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
+// Formatar código do lote adicionando data legível
+// Entrada: "LOTE-20260110-003"
+// Saída: "10/01 LOTE-20260110-003"
+const formatarCodigoLoteComData = (codigoLote: string): string => {
+  const match = codigoLote.match(/LOTE-(\d{4})(\d{2})(\d{2})-/);
+  if (match) {
+    const [, , mes, dia] = match;
+    return `${dia}/${mes} ${codigoLote}`;
+  }
+  return codigoLote;
+};
+
 interface KanbanCardProps {
   registro: ProducaoRegistro;
   columnId: StatusColumn;
@@ -178,10 +190,10 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
               <h4 className="font-semibold text-sm leading-tight">
                 {registro.item_nome}
               </h4>
-              {/* Código único do lote */}
+              {/* Código único do lote com data formatada */}
               {registro.codigo_lote && (
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded inline-block mt-1">
-                  📦 {registro.codigo_lote}
+                  📦 {formatarCodigoLoteComData(registro.codigo_lote)}
                 </span>
               )}
             </div>

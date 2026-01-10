@@ -332,11 +332,17 @@ const ResumoDaProducao = () => {
         hoje = dataServidor || new Date().toISOString().split('T')[0];
       }
       
-      // Buscar produções do dia atual OU produções não finalizadas de dias anteriores
+      // Calcular ontem para incluir produções finalizadas recentes
+      const ontemDate = new Date(hoje);
+      ontemDate.setDate(ontemDate.getDate() - 1);
+      const ontemStr = ontemDate.toISOString().split('T')[0];
+      
+      // Buscar produções do dia atual e ontem OU produções não finalizadas de dias anteriores
+      // Isso garante que produções finalizadas recentemente apareçam na coluna FINALIZADO
       const { data, error } = await supabase
         .from('producao_registros')
         .select('*')
-        .or(`data_referencia.eq.${hoje},status.neq.finalizado`)
+        .or(`data_referencia.gte.${ontemStr},status.neq.finalizado`)
         .order('data_inicio', { ascending: false });
 
       if (error) throw error;

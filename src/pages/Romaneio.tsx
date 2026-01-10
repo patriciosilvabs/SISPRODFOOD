@@ -22,6 +22,18 @@ import { VolumeInput } from '@/components/ui/volume-input';
 import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weightUtils';
 import { pesoProgressivoToWords } from '@/lib/numberToWords';
 
+// Formatar código do lote adicionando data legível
+// Entrada: "LOTE-20260110-003"
+// Saída: "10/01 LOTE-20260110-003"
+const formatarCodigoLoteComData = (codigoLote: string): string => {
+  const match = codigoLote.match(/LOTE-(\d{4})(\d{2})(\d{2})-/);
+  if (match) {
+    const [, , mes, dia] = match;
+    return `${dia}/${mes} ${codigoLote}`;
+  }
+  return codigoLote;
+};
+
 // ==================== COMPONENTE: INPUT PESO INLINE COMPACTO ====================
 
 interface PesoInputInlineCompactoProps {
@@ -253,7 +265,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                       <p className="font-medium truncate">{item.item_nome}</p>
                       {item.codigo_lote && (
                         <Badge variant="outline" className="text-xs font-mono mt-0.5">
-                          📦 {item.codigo_lote}
+                          📦 {formatarCodigoLoteComData(item.codigo_lote)}
                         </Badge>
                       )}
                       <div className="flex gap-2 text-xs text-muted-foreground">
@@ -296,7 +308,7 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                         <p className="font-medium truncate">{item.item_nome}</p>
                         {item.codigo_lote && (
                           <span className="text-xs font-mono text-muted-foreground">
-                            📦 {item.codigo_lote}
+                            📦 {formatarCodigoLoteComData(item.codigo_lote)}
                           </span>
                         )}
                       </div>
