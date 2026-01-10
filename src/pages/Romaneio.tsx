@@ -350,7 +350,7 @@ const Romaneio = () => {
   const { primaryLoja, userLojas } = useUserLoja();
   const { cpdLojaId } = useCPDLoja();
 
-  const isLojaOnly = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
+  const isRestrictedUser = !isAdmin() && !hasRole('Produção');
   const canManageProduction = isAdmin() || hasRole('Produção');
 
   // ==================== ESTADOS ====================
@@ -1366,9 +1366,9 @@ const Romaneio = () => {
             <CardDescription>Gestão de remessas de itens porcionados do CPD para as lojas</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue={isLojaOnly ? 'receber' : 'enviar'} className="space-y-4">
-              <TabsList className={`grid w-full ${isLojaOnly ? 'grid-cols-3' : 'grid-cols-4'}`}>
-                {!isLojaOnly && <TabsTrigger value="enviar">Enviar</TabsTrigger>}
+            <Tabs defaultValue={isRestrictedUser ? 'receber' : 'enviar'} className="space-y-4">
+              <TabsList className={`grid w-full ${isRestrictedUser ? 'grid-cols-3' : 'grid-cols-4'}`}>
+                {!isRestrictedUser && <TabsTrigger value="enviar">Enviar</TabsTrigger>}
                 <TabsTrigger value="receber">Receber</TabsTrigger>
                 <TabsTrigger value="historico">Histórico</TabsTrigger>
                 <TabsTrigger value="avulso">
@@ -1378,7 +1378,7 @@ const Romaneio = () => {
               </TabsList>
 
               {/* TAB: ENVIAR - SEÇÕES INDEPENDENTES POR LOJA */}
-              {!isLojaOnly && (
+              {!isRestrictedUser && (
                 <TabsContent value="enviar" className="space-y-4">
                   {/* Botão de Atualizar */}
                   <div className="flex justify-end">
