@@ -1968,6 +1968,7 @@ export type Database = {
       producao_registros: {
         Row: {
           bloqueado_por_traco_anterior: boolean | null
+          codigo_lote: string | null
           data_fim: string | null
           data_fim_porcionamento: string | null
           data_fim_preparo: string | null
@@ -2007,6 +2008,7 @@ export type Database = {
         }
         Insert: {
           bloqueado_por_traco_anterior?: boolean | null
+          codigo_lote?: string | null
           data_fim?: string | null
           data_fim_porcionamento?: string | null
           data_fim_preparo?: string | null
@@ -2046,6 +2048,7 @@ export type Database = {
         }
         Update: {
           bloqueado_por_traco_anterior?: boolean | null
+          codigo_lote?: string | null
           data_fim?: string | null
           data_fim_porcionamento?: string | null
           data_fim_preparo?: string | null
@@ -2995,6 +2998,10 @@ export type Database = {
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
+      }
+      gerar_codigo_lote: {
+        Args: { p_data_referencia: string; p_organization_id: string }
+        Returns: string
       }
       get_cpd_loja_id: { Args: { p_organization_id: string }; Returns: string }
       get_current_date: { Args: never; Returns: string }

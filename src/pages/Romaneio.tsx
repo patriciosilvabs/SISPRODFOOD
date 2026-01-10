@@ -81,6 +81,8 @@ interface ItemDemandaLoja {
   quantidade_estoque_cpd: number;
   quantidade_disponivel: number;
   quantidade_ja_enviada: number;
+  codigo_lote?: string;
+  producao_registro_id?: string;
 }
 
 interface ItemSelecionadoLoja {
@@ -89,6 +91,8 @@ interface ItemSelecionadoLoja {
   quantidade: number;
   peso_g: string;  // Peso em gramas por item
   volumes: string; // Quantidade de volumes por item
+  codigo_lote?: string;
+  producao_registro_id?: string;
 }
 
 interface DemandaPorLoja {
@@ -119,6 +123,8 @@ interface Romaneio {
     item_nome: string;
     quantidade: number;
     peso_total_kg: number;
+    codigo_lote?: string;
+    producao_registro_id?: string;
   }>;
 }
 
@@ -245,6 +251,11 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                   <div key={item.item_id} className="flex items-center justify-between p-2 bg-background border rounded text-sm hover:bg-muted/50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{item.item_nome}</p>
+                      {item.codigo_lote && (
+                        <Badge variant="outline" className="text-xs font-mono mt-0.5">
+                          📦 {item.codigo_lote}
+                        </Badge>
+                      )}
                       <div className="flex gap-2 text-xs text-muted-foreground">
                         <span className="text-primary font-medium">Disponível: {item.quantidade_disponivel} un</span>
                         {item.quantidade_ja_enviada > 0 && (
@@ -283,6 +294,11 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                     <div key={item.item_id} className="flex items-center gap-2 p-2 bg-background border rounded text-sm">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{item.item_nome}</p>
+                        {item.codigo_lote && (
+                          <span className="text-xs font-mono text-muted-foreground">
+                            📦 {item.codigo_lote}
+                          </span>
+                        )}
                       </div>
                       <Input
                         type="number"
@@ -552,7 +568,7 @@ const Romaneio = () => {
       // 2. Buscar produções finalizadas dos últimos 2 dias com detalhes_lojas não vazios
       const { data: producoesRaw, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco, data_referencia')
+        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco, data_referencia, codigo_lote')
         .eq('status', 'finalizado')
         .gte('data_referencia', ontemStr)
         .not('detalhes_lojas', 'is', null)
@@ -594,7 +610,7 @@ const Romaneio = () => {
 
       // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
       // E criar mapa de data_fim por item para filtrar romaneios
-      const demandaPorLojaItem: Record<string, Record<string, number>> = {};
+      const demandaPorLojaItem: Record<string, Record<string, { quantidade: number; codigo_lote?: string; producao_registro_id: string }>> = {};
       const dataFimPorItem: Record<string, string> = {}; // Mapa: item_id -> data_fim da última produção
       const itemsProcessados = new Set<string>();
       
@@ -619,7 +635,11 @@ const Romaneio = () => {
             if (!demandaPorLojaItem[d.loja_id]) {
               demandaPorLojaItem[d.loja_id] = {};
             }
-            demandaPorLojaItem[d.loja_id][prod.item_id] = d.quantidade;
+            demandaPorLojaItem[d.loja_id][prod.item_id] = {
+              quantidade: d.quantidade,
+              codigo_lote: prod.codigo_lote,
+              producao_registro_id: prod.id
+            };
           }
         });
       });
@@ -664,18 +684,19 @@ const Romaneio = () => {
         const itens: ItemDemandaLoja[] = [];
         const itensSelecionados: ItemSelecionadoLoja[] = [];
         
-        Object.entries(demandaItens).forEach(([itemId, quantidade]) => {
+        Object.entries(demandaItens).forEach(([itemId, itemData]) => {
           const estoque = estoqueMap[itemId];
           if (!estoque) {
             console.log(`[Romaneio] Item ${itemId} não encontrado no estoque CPD`);
             return;
           }
           
+          const quantidade = itemData.quantidade;
           const qtdJaEnviada = jaEnviado[itemId] || 0;
           const demandaPendente = Math.max(0, quantidade - qtdJaEnviada);
           const disponivel = Math.min(demandaPendente, estoque.quantidade);
           
-          console.log(`[Romaneio] ${loja.nome} - ${estoque.nome}: demanda=${quantidade}, jaEnviado=${qtdJaEnviada}, pendente=${demandaPendente}, disponivel=${disponivel}`);
+          console.log(`[Romaneio] ${loja.nome} - ${estoque.nome}: demanda=${quantidade}, jaEnviado=${qtdJaEnviada}, pendente=${demandaPendente}, disponivel=${disponivel}, codigo_lote=${itemData.codigo_lote}`);
           
           if (disponivel > 0) {
             const itemDemanda: ItemDemandaLoja = {
@@ -684,7 +705,9 @@ const Romaneio = () => {
               quantidade_demanda: quantidade,
               quantidade_estoque_cpd: estoque.quantidade,
               quantidade_disponivel: disponivel,
-              quantidade_ja_enviada: qtdJaEnviada
+              quantidade_ja_enviada: qtdJaEnviada,
+              codigo_lote: itemData.codigo_lote,
+              producao_registro_id: itemData.producao_registro_id
             };
             itens.push(itemDemanda);
             
@@ -694,7 +717,9 @@ const Romaneio = () => {
               item_nome: estoque.nome,
               quantidade: disponivel,
               peso_g: '',
-              volumes: ''
+              volumes: '',
+              codigo_lote: itemData.codigo_lote,
+              producao_registro_id: itemData.producao_registro_id
             });
           }
         });
@@ -738,7 +763,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, peso_total_envio_g, quantidade_volumes_envio, romaneio_itens (id, item_nome, quantidade, peso_total_kg)`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, romaneio_itens (id, item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote))`)
         .eq('status', 'enviado')
         .order('data_envio', { ascending: false });
 
@@ -748,7 +773,17 @@ const Romaneio = () => {
 
       const { data, error } = await query;
       if (error) throw error;
-      setRomaneiosEnviados(data || []);
+      
+      // Transformar dados para extrair codigo_lote do join
+      const romaneiosFormatados = (data || []).map(r => ({
+        ...r,
+        romaneio_itens: r.romaneio_itens?.map((item: any) => ({
+          ...item,
+          codigo_lote: item.producao_registros?.codigo_lote || null
+        })) || []
+      }));
+      
+      setRomaneiosEnviados(romaneiosFormatados);
     } catch (error) {
       console.error('Erro ao buscar romaneios enviados:', error);
     }
@@ -761,7 +796,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg)`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote))`)
         .order('data_criacao', { ascending: false });
 
       if (!isAdmin() && userLojasIds.length > 0) {
@@ -774,7 +809,17 @@ const Romaneio = () => {
 
       const { data, error } = await query;
       if (error) throw error;
-      setRomaneiosHistorico(data || []);
+      
+      // Transformar dados para extrair codigo_lote do join
+      const romaneiosFormatados = (data || []).map(r => ({
+        ...r,
+        romaneio_itens: r.romaneio_itens?.map((item: any) => ({
+          ...item,
+          codigo_lote: item.producao_registros?.codigo_lote || null
+        })) || []
+      }));
+      
+      setRomaneiosHistorico(romaneiosFormatados);
     } catch (error) {
       console.error('Erro ao buscar histórico:', error);
     }
@@ -891,7 +936,8 @@ const Romaneio = () => {
         quantidade: item.quantidade,
         peso_total_kg: rawToKg(item.peso_g), // Converter peso raw para kg
         quantidade_volumes: parseInt(item.volumes) || 0,
-        organization_id: organizationId
+        organization_id: organizationId,
+        producao_registro_id: item.producao_registro_id || null // Vincular ao lote de produção
       }));
 
       await supabase.from('romaneio_itens').insert(itensRomaneio);
@@ -965,7 +1011,9 @@ const Romaneio = () => {
           item_nome: item.item_nome,
           quantidade: item.quantidade_disponivel,
           peso_g: '',
-          volumes: ''
+          volumes: '',
+          codigo_lote: item.codigo_lote,
+          producao_registro_id: item.producao_registro_id
         }]
       };
     }));

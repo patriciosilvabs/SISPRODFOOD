@@ -72,6 +72,8 @@ interface ProducaoRegistro {
   unidades_estimadas_masseira?: number;
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
+  // Código único do lote para rastreabilidade
+  codigo_lote?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -172,9 +174,17 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
           {/* Header */}
           <div className="flex items-start gap-2">
             <Package className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-            <h4 className="font-semibold text-sm leading-tight flex-1">
-              {registro.item_nome}
-            </h4>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-semibold text-sm leading-tight">
+                {registro.item_nome}
+              </h4>
+              {/* Código único do lote */}
+              {registro.codigo_lote && (
+                <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded inline-block mt-1">
+                  📦 {registro.codigo_lote}
+                </span>
+              )}
+            </div>
             {/* Badge de sequência do lote */}
             {temSequenciaTraco && temLote && (
               <Badge variant="outline" className="text-xs shrink-0">
