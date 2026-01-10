@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Truck, Plus, Trash2, Send, CheckCircle, Clock, History, Package, ArrowRightLeft, Store, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Truck, Plus, Trash2, Send, CheckCircle, Clock, History, Package, ArrowRightLeft, Store, Loader2, RefreshCw, AlertCircle, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -105,6 +105,7 @@ interface ItemSelecionadoLoja {
   volumes: string; // Quantidade de volumes por item
   codigo_lote?: string;
   producao_registro_id?: string;
+  salvo: boolean;  // Indica se o item foi confirmado/salvo
 }
 
 interface DemandaPorLoja {
@@ -173,9 +174,10 @@ interface SecaoLojaRomaneioProps {
   onUpdateVolumesItem: (lojaId: string, itemId: string, volumes: string) => void;
   onRemoveItem: (lojaId: string, itemId: string) => void;
   onAddItem: (lojaId: string, item: ItemDemandaLoja) => void;
+  onSalvarItem: (lojaId: string, itemId: string) => void;
 }
 
-const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePesoItem, onUpdateVolumesItem, onRemoveItem, onAddItem }: SecaoLojaRomaneioProps) => {
+const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePesoItem, onUpdateVolumesItem, onRemoveItem, onAddItem, onSalvarItem }: SecaoLojaRomaneioProps) => {
   const itensNaoSelecionados = demanda.itens.filter(
     item => !demanda.itensSelecionados.find(sel => sel.item_id === item.item_id)
   );
@@ -183,6 +185,13 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
   const handleEnviar = () => {
     if (demanda.itensSelecionados.length === 0) {
       toast.error('Nenhum item para enviar');
+      return;
+    }
+    
+    // Validação: todos os itens devem estar salvos
+    const itensNaoSalvos = demanda.itensSelecionados.filter(item => !item.salvo);
+    if (itensNaoSalvos.length > 0) {
+      toast.error(`${itensNaoSalvos.length} item(ns) não foi(ram) salvo(s). Salve todos os itens antes de enviar.`);
       return;
     }
     
@@ -205,10 +214,13 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
   const pesoTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + parsePesoProgressivo(item.peso_g).valorGramas, 0);
   const volumesTotalCalculado = demanda.itensSelecionados.reduce((acc, item) => acc + (parseInt(item.volumes) || 0), 0);
   
-  // Verificar se campos obrigatórios estão preenchidos
+  // Verificar se campos obrigatórios estão preenchidos E todos salvos
   const todosCamposPreenchidos = demanda.itensSelecionados.every(item => 
     item.peso_g && item.peso_g !== '0' && item.volumes && item.volumes !== '0'
   );
+  const todosItensSalvos = demanda.itensSelecionados.every(item => item.salvo);
+  const todosItensProntos = todosCamposPreenchidos && todosItensSalvos;
+  const itensNaoSalvosCount = demanda.itensSelecionados.filter(item => !item.salvo).length;
 
   // Não renderizar se não há itens disponíveis nem selecionados
   if (demanda.itens.length === 0 && demanda.itensSelecionados.length === 0) {
@@ -229,10 +241,15 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                 {demanda.itensSelecionados.length} itens • {totalItens} un
               </Badge>
             )}
+            {itensNaoSalvosCount > 0 && (
+              <Badge variant="destructive" className="text-xs">
+                {itensNaoSalvosCount} não salvo(s)
+              </Badge>
+            )}
             <Button 
               size="sm" 
               onClick={handleEnviar} 
-              disabled={demanda.itensSelecionados.length === 0 || demanda.enviando || !todosCamposPreenchidos}
+              disabled={demanda.itensSelecionados.length === 0 || demanda.enviando || !todosItensProntos}
               className="gap-1"
             >
               {demanda.enviando ? (
@@ -303,47 +320,82 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                 ) : (
                   <>
                     <div className={`space-y-2 overflow-y-auto ${layoutExpandido ? 'max-h-96' : 'max-h-48'}`}>
-                      {demanda.itensSelecionados.map(item => (
-                        <div key={item.item_id} className={`flex items-center gap-3 bg-background border rounded ${layoutExpandido ? 'p-3' : 'p-2'}`}>
-                          <div className="flex-1 min-w-0">
-                            <p className={`font-medium truncate ${layoutExpandido ? 'text-base' : 'text-sm'}`}>{item.item_nome}</p>
-                            {item.codigo_lote && (
-                              <span className={`font-mono text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>
-                                📦 {formatarCodigoLoteComData(item.codigo_lote)}
-                              </span>
-                            )}
+                      {demanda.itensSelecionados.map(item => {
+                        const camposPreenchidos = item.peso_g && item.peso_g !== '0' && item.volumes && item.volumes !== '0';
+                        const precisaSalvar = !item.salvo && camposPreenchidos;
+                        
+                        return (
+                          <div key={item.item_id} className={`flex items-center gap-3 bg-background border rounded ${layoutExpandido ? 'p-3' : 'p-2'} ${item.salvo ? 'border-green-500/50 bg-green-50/50' : ''}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className={`font-medium truncate ${layoutExpandido ? 'text-base' : 'text-sm'}`}>{item.item_nome}</p>
+                                {item.salvo && (
+                                  <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                )}
+                              </div>
+                              {item.codigo_lote && (
+                                <span className={`font-mono text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>
+                                  📦 {formatarCodigoLoteComData(item.codigo_lote)}
+                                </span>
+                              )}
+                            </div>
+                            <Input
+                              type="number"
+                              value={item.quantidade || ''}
+                              onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
+                              className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-16 h-7 text-center text-sm"}
+                              min={1}
+                            />
+                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>un</span>
+                            <PesoInputInlineCompacto
+                              value={item.peso_g}
+                              onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
+                            />
+                            <Input
+                              type="number"
+                              value={item.volumes || ''}
+                              onChange={(e) => onUpdateVolumesItem(demanda.loja_id, item.item_id, e.target.value)}
+                              className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-14 h-7 text-center text-sm"}
+                              placeholder="Vol"
+                              min={1}
+                            />
+                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>vol</span>
+                            
+                            {/* Botão Salvar */}
+                            <Button
+                              size={layoutExpandido ? "sm" : "sm"}
+                              variant={item.salvo ? "ghost" : "default"}
+                              className={`${layoutExpandido ? "h-9 px-3" : "h-7 px-2"} ${
+                                item.salvo 
+                                  ? "text-green-600 hover:text-green-700 hover:bg-green-50" 
+                                  : precisaSalvar 
+                                    ? "bg-primary hover:bg-primary/90 text-primary-foreground animate-pulse"
+                                    : "bg-muted text-muted-foreground"
+                              }`}
+                              onClick={() => onSalvarItem(demanda.loja_id, item.item_id)}
+                              disabled={item.salvo || !camposPreenchidos}
+                            >
+                              {item.salvo ? (
+                                <Check className={layoutExpandido ? "w-4 h-4" : "w-3 h-3"} />
+                              ) : (
+                                <>
+                                  <Save className={layoutExpandido ? "w-4 h-4" : "w-3 h-3"} />
+                                  <span className={layoutExpandido ? "ml-1" : "sr-only"}>Salvar</span>
+                                </>
+                              )}
+                            </Button>
+                            
+                            <Button 
+                              size={layoutExpandido ? "default" : "sm"}
+                              variant="ghost" 
+                              className={layoutExpandido ? "h-10 w-10 p-0" : "h-7 w-7 p-0"}
+                              onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
+                            >
+                              <Trash2 className={`text-destructive ${layoutExpandido ? 'w-4 h-4' : 'w-3 h-3'}`} />
+                            </Button>
                           </div>
-                          <Input
-                            type="number"
-                            value={item.quantidade || ''}
-                            onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-                            className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-16 h-7 text-center text-sm"}
-                            min={1}
-                          />
-                          <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>un</span>
-                          <PesoInputInlineCompacto
-                            value={item.peso_g}
-                            onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
-                          />
-                          <Input
-                            type="number"
-                            value={item.volumes || ''}
-                            onChange={(e) => onUpdateVolumesItem(demanda.loja_id, item.item_id, e.target.value)}
-                            className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-14 h-7 text-center text-sm"}
-                            placeholder="Vol"
-                            min={1}
-                          />
-                          <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>vol</span>
-                          <Button 
-                            size={layoutExpandido ? "default" : "sm"}
-                            variant="ghost" 
-                            className={layoutExpandido ? "h-10 w-10 p-0" : "h-7 w-7 p-0"}
-                            onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
-                          >
-                            <Trash2 className={`text-destructive ${layoutExpandido ? 'w-4 h-4' : 'w-3 h-3'}`} />
-                          </Button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     
                     {/* Peso Total e Volumes calculados */}
@@ -734,7 +786,8 @@ const Romaneio = () => {
               peso_g: '',
               volumes: '',
               codigo_lote: itemData.codigo_lote,
-              producao_registro_id: itemData.producao_registro_id
+              producao_registro_id: itemData.producao_registro_id,
+              salvo: false
             });
           }
         });
@@ -999,7 +1052,7 @@ const Romaneio = () => {
       return {
         ...d,
         itensSelecionados: d.itensSelecionados.map(item =>
-          item.item_id === itemId ? { ...item, quantidade: Math.max(1, quantidade) } : item
+          item.item_id === itemId ? { ...item, quantidade: Math.max(1, quantidade), salvo: false } : item
         )
       };
     }));
@@ -1028,7 +1081,8 @@ const Romaneio = () => {
           peso_g: '',
           volumes: '',
           codigo_lote: item.codigo_lote,
-          producao_registro_id: item.producao_registro_id
+          producao_registro_id: item.producao_registro_id,
+          salvo: false
         }]
       };
     }));
@@ -1040,7 +1094,7 @@ const Romaneio = () => {
       return {
         ...d,
         itensSelecionados: d.itensSelecionados.map(item =>
-          item.item_id === itemId ? { ...item, volumes } : item
+          item.item_id === itemId ? { ...item, volumes, salvo: false } : item
         )
       };
     }));
@@ -1052,7 +1106,35 @@ const Romaneio = () => {
       return {
         ...d,
         itensSelecionados: d.itensSelecionados.map(item =>
-          item.item_id === itemId ? { ...item, peso_g: peso } : item
+          item.item_id === itemId ? { ...item, peso_g: peso, salvo: false } : item
+        )
+      };
+    }));
+  };
+
+  const handleSalvarItemLoja = (lojaId: string, itemId: string) => {
+    setDemandasPorLoja(prev => prev.map(d => {
+      if (d.loja_id !== lojaId) return d;
+      
+      const item = d.itensSelecionados.find(i => i.item_id === itemId);
+      if (!item) return d;
+      
+      // Validar campos obrigatórios antes de salvar
+      if (!item.peso_g || item.peso_g === '0') {
+        toast.error(`Informe o peso do item: ${item.item_nome}`);
+        return d;
+      }
+      if (!item.volumes || item.volumes === '0') {
+        toast.error(`Informe a quantidade de volumes: ${item.item_nome}`);
+        return d;
+      }
+      
+      toast.success(`${item.item_nome} salvo!`);
+      
+      return {
+        ...d,
+        itensSelecionados: d.itensSelecionados.map(i =>
+          i.item_id === itemId ? { ...i, salvo: true } : i
         )
       };
     }));
@@ -1528,6 +1610,7 @@ const Romaneio = () => {
                           onUpdateVolumesItem={handleUpdateVolumesItemLoja}
                           onRemoveItem={handleRemoveItemLoja}
                           onAddItem={handleAddItemLoja}
+                          onSalvarItem={handleSalvarItemLoja}
                         />
                       ))}
                       
