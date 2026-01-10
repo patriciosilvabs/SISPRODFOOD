@@ -7,13 +7,11 @@ export function useAlarmSound() {
   const [alarmUrl, setAlarmUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
-  const hasFetchedRef = useRef(false);
 
   const fetchAlarmUrl = useCallback(async () => {
-    if (!organizationId || hasFetchedRef.current) return;
+    if (!organizationId) return;
     
     try {
-      hasFetchedRef.current = true;
       const { data, error } = await supabase
         .from('configuracoes_sistema')
         .select('valor')
@@ -25,16 +23,44 @@ export function useAlarmSound() {
       setAlarmUrl(data?.valor || null);
     } catch (error) {
       console.error('Erro ao buscar som do alarme:', error);
-      hasFetchedRef.current = false;
     }
   }, [organizationId]);
 
+  // Busca inicial
   useEffect(() => {
     if (organizationId) {
-      hasFetchedRef.current = false;
       fetchAlarmUrl();
     }
   }, [organizationId, fetchAlarmUrl]);
+
+  // Listener Realtime para sincronizar alterações do som do alarme em todas as abas
+  useEffect(() => {
+    if (!organizationId) return;
+
+    const channel = supabase
+      .channel('alarm-sound-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'configuracoes_sistema',
+          filter: `chave=eq.alarm_sound_url`
+        },
+        (payload) => {
+          const newRecord = payload.new as { organization_id?: string; valor?: string };
+          if (newRecord && newRecord.organization_id === organizationId) {
+            console.log('Som do alarme atualizado via realtime:', newRecord.valor);
+            setAlarmUrl(newRecord.valor || null);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [organizationId]);
 
   const playAlarm = () => {
     // Se tem URL configurada, tocar o arquivo
