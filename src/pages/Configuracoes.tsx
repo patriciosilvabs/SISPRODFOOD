@@ -27,6 +27,55 @@ const Configuracoes = () => {
     loadCurrentSound();
   }, [organizationId]);
 
+  // Listener Realtime para sincronizar visualização do som entre abas
+  useEffect(() => {
+    if (!organizationId) return;
+
+    const channel = supabase
+      .channel('alarm-sound-config-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'configuracoes_sistema',
+          filter: `chave=eq.alarm_sound_url`
+        },
+        (payload) => {
+          const newRecord = payload.new as { organization_id?: string; valor?: string };
+          
+          // Verificar se é da mesma organização
+          if (newRecord && newRecord.organization_id === organizationId) {
+            console.log('Som do alarme atualizado via realtime na config:', newRecord.valor);
+            
+            if (newRecord.valor) {
+              setCurrentSoundUrl(newRecord.valor);
+              const urlParts = newRecord.valor.split('/');
+              const fileName = urlParts[urlParts.length - 1];
+              setSavedFileName(decodeURIComponent(fileName));
+            } else {
+              setCurrentSoundUrl(null);
+              setSavedFileName(null);
+            }
+          }
+          
+          // Tratar DELETE
+          if (payload.eventType === 'DELETE') {
+            const oldRecord = payload.old as { organization_id?: string };
+            if (oldRecord && oldRecord.organization_id === organizationId) {
+              setCurrentSoundUrl(null);
+              setSavedFileName(null);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [organizationId]);
+
   const loadCurrentSound = async () => {
     if (!organizationId) return;
     
