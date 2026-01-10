@@ -412,18 +412,32 @@ const Romaneio = () => {
         table: 'producao_registros'
       }, (payload) => {
         console.log('[Romaneio] Produção atualizada:', payload);
-        // Atualizar demandas quando produção é finalizada
+        // SEMPRE atualizar quando há qualquer mudança em produções
+        fetchDemandasTodasLojas();
+        
+        // Notificar quando produção é finalizada
         if (payload.new && (payload.new as any).status === 'finalizado') {
-          console.log('[Romaneio] Produção finalizada detectada, atualizando demandas...');
-          fetchDemandasTodasLojas();
+          const itemNome = (payload.new as any).item_nome || 'Item';
+          console.log('[Romaneio] Produção finalizada detectada:', itemNome);
+          toast.info(`📦 Produção finalizada: ${itemNome}`, {
+            description: 'Itens disponíveis para envio no romaneio.'
+          });
         }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'estoque_cpd'
+      }, (payload) => {
+        console.log('[Romaneio] Estoque CPD atualizado:', payload);
+        fetchDemandasTodasLojas();
       })
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'estoque_loja_itens'
       }, (payload) => {
-        console.log('[Romaneio] Estoque CPD atualizado:', payload);
+        console.log('[Romaneio] Estoque loja atualizado:', payload);
         fetchDemandasTodasLojas();
       })
       .on('postgres_changes', {
@@ -520,6 +534,12 @@ const Romaneio = () => {
       const serverDate = serverDateResult || new Date().toISOString().split('T')[0];
       console.log('[Romaneio] Data do servidor:', serverDate);
 
+      // Calcular ontem para incluir produções recentes
+      const ontem = new Date(serverDate);
+      ontem.setDate(ontem.getDate() - 1);
+      const ontemStr = ontem.toISOString().split('T')[0];
+      console.log('[Romaneio] Buscando produções desde:', ontemStr);
+
       // 1. Buscar estoque CPD (tabela dedicada estoque_cpd)
       const { data: estoqueCpd, error: estoqueError } = await supabase
         .from('estoque_cpd')
@@ -529,12 +549,12 @@ const Romaneio = () => {
       if (estoqueError) throw estoqueError;
       console.log('[Romaneio] Estoque CPD encontrado:', estoqueCpd?.length, 'itens');
 
-      // 2. Buscar APENAS produções finalizadas do dia atual com detalhes_lojas não vazios
+      // 2. Buscar produções finalizadas dos últimos 2 dias com detalhes_lojas não vazios
       const { data: producoesRaw, error: producoesError } = await supabase
         .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco')
+        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco, data_referencia')
         .eq('status', 'finalizado')
-        .eq('data_referencia', serverDate)
+        .gte('data_referencia', ontemStr)
         .not('detalhes_lojas', 'is', null)
         .order('data_fim', { ascending: false });
 
