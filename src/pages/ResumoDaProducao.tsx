@@ -250,7 +250,7 @@ const ResumoDaProducao = () => {
     loadProducaoRegistros();
 
     // Configurar realtime para atualizações automáticas com debounce
-    const channel = supabase
+    const producaoChannel = supabase
       .channel('producao-registros-changes')
       .on(
         'postgres_changes',
@@ -270,10 +270,33 @@ const ResumoDaProducao = () => {
       )
       .subscribe();
 
+    // Listener realtime para contagem_porcionados - quando lojas inserem contagens
+    const contagemChannel = supabase
+      .channel('contagem-porcionados-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contagem_porcionados'
+        },
+        () => {
+          if (!isMounted) return;
+          console.log('[ResumoDaProducao] Contagem atualizada - recarregando produção');
+          // Debounce de 1s para contagens (dá tempo do sistema recalcular)
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            if (isMounted) loadProducaoRegistros(true); // silent = true
+          }, 1000);
+        }
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
       if (reloadTimeout) clearTimeout(reloadTimeout);
-      channel.unsubscribe().then(() => supabase.removeChannel(channel));
+      producaoChannel.unsubscribe().then(() => supabase.removeChannel(producaoChannel));
+      contagemChannel.unsubscribe().then(() => supabase.removeChannel(contagemChannel));
     };
   }, [organizationId]);
 
