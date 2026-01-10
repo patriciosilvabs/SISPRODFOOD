@@ -2,7 +2,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone, Play, Trash2, Music } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -21,21 +21,35 @@ const Configuracoes = () => {
   const [alertasModalOpen, setAlertasModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentSoundUrl, setCurrentSoundUrl] = useState<string | null>(null);
+  const [savedFileName, setSavedFileName] = useState<string | null>(null);
 
   useEffect(() => {
     loadCurrentSound();
-  }, []);
+  }, [organizationId]);
 
   const loadCurrentSound = async () => {
+    if (!organizationId) return;
+    
     try {
       const { data, error } = await supabase
         .from('configuracoes_sistema')
         .select('valor')
         .eq('chave', 'alarm_sound_url')
+        .eq('organization_id', organizationId)
         .maybeSingle();
 
       if (error) throw error;
-      setCurrentSoundUrl(data?.valor || null);
+      
+      if (data?.valor) {
+        setCurrentSoundUrl(data.valor);
+        // Extrair nome do arquivo da URL
+        const urlParts = data.valor.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        setSavedFileName(decodeURIComponent(fileName));
+      } else {
+        setCurrentSoundUrl(null);
+        setSavedFileName(null);
+      }
     } catch (error) {
       console.error('Erro ao carregar som:', error);
     }
@@ -97,7 +111,11 @@ const Configuracoes = () => {
       if (configError) throw configError;
 
       setCurrentSoundUrl(publicUrl);
+      setSavedFileName(fileName);
       setSelectedFile(null);
+      // Reset o input de arquivo
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
       toast.success('Som do alarme salvo com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar som:', error);
@@ -134,6 +152,28 @@ const Configuracoes = () => {
       toast.error('Erro ao testar som');
     });
     toast.info('Tocando som configurado...');
+  };
+
+  const handleRemoveSound = async () => {
+    if (!organizationId) return;
+    
+    try {
+      // Remover do banco de dados
+      const { error } = await supabase
+        .from('configuracoes_sistema')
+        .delete()
+        .eq('chave', 'alarm_sound_url')
+        .eq('organization_id', organizationId);
+
+      if (error) throw error;
+      
+      setCurrentSoundUrl(null);
+      setSavedFileName(null);
+      toast.success('Som removido. O alarme usará o beep padrão.');
+    } catch (error) {
+      console.error('Erro ao remover som:', error);
+      toast.error('Erro ao remover som');
+    }
   };
 
   const configCards = [
@@ -265,9 +305,53 @@ const Configuracoes = () => {
                   </p>
                 </div>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* Seção: Som Atualmente Configurado */}
+                {currentSoundUrl && savedFileName && (
+                  <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="p-2 bg-green-100 dark:bg-green-900 rounded shrink-0">
+                          <Music className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                            Som configurado
+                          </p>
+                          <p className="text-xs text-green-600 dark:text-green-400 truncate" title={savedFileName}>
+                            {savedFileName}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={handleTestSound}
+                          className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-900"
+                          title="Testar som"
+                        >
+                          <Play className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          onClick={handleRemoveSound}
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
+                          title="Remover som"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seção: Enviar novo arquivo */}
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Enviar novo arquivo MP3:</label>
+                  <label className="text-sm font-medium mb-2 block">
+                    {currentSoundUrl ? 'Substituir por novo arquivo:' : 'Enviar arquivo MP3:'}
+                  </label>
                   <Input 
                     type="file" 
                     accept="audio/mp3,audio/mpeg"
@@ -275,12 +359,13 @@ const Configuracoes = () => {
                     className="cursor-pointer"
                   />
                   {selectedFile && (
-                    <p className="text-xs text-muted-foreground mt-1">{selectedFile.name}</p>
-                  )}
-                  {!selectedFile && (
-                    <p className="text-xs text-muted-foreground mt-1">Nenhum arquivo escolhido</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
+                      📎 {selectedFile.name}
+                    </p>
                   )}
                 </div>
+
+                {/* Botões */}
                 <div className="flex gap-2">
                   <Button 
                     onClick={handleSaveSound} 
@@ -289,15 +374,12 @@ const Configuracoes = () => {
                   >
                     {uploading ? 'Salvando...' : 'Salvar Som'}
                   </Button>
-                  <Button onClick={handleTestSound} variant="secondary" className="flex-1">
-                    Testar Som {currentSoundUrl ? 'Atual' : 'Padrão'}
-                  </Button>
+                  {!currentSoundUrl && (
+                    <Button onClick={handleTestSound} variant="secondary" className="flex-1">
+                      Testar Padrão
+                    </Button>
+                  )}
                 </div>
-                {currentSoundUrl && (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                    ✓ Som personalizado configurado
-                  </p>
-                )}
               </div>
             </CardContent>
           </Card>
