@@ -6,11 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, Package, RefreshCw, Settings } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, RefreshCw, Settings, Minus } from 'lucide-react';
 import { useCanDelete } from '@/hooks/useCanDelete';
 import { ConfigurarEstoqueMinimoInsumoModal } from '@/components/modals/ConfigurarEstoqueMinimoInsumoModal';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { numberToWords } from '@/lib/numberToWords';
@@ -56,14 +57,21 @@ interface Insumo {
 
 const Insumos = () => {
   const { organizationId } = useOrganization();
+  const { isAdmin } = useAuth();
   const { canDelete } = useCanDelete();
-  const { registrarMovimentacao, requerObservacao } = useMovimentacaoEstoque();
+  const { registrarMovimentacao } = useMovimentacaoEstoque();
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [estoqueModalOpen, setEstoqueModalOpen] = useState(false);
   const [editingInsumo, setEditingInsumo] = useState<Insumo | null>(null);
   const [observacaoAjuste, setObservacaoAjuste] = useState('');
+  
+  // Estados para operador
+  const [valoresRetirar, setValoresRetirar] = useState<Record<string, string>>({});
+  const [valoresAdicionar, setValoresAdicionar] = useState<Record<string, string>>({});
+  const [loadingItem, setLoadingItem] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     nome: '',
     quantidade_em_estoque: '0',
@@ -238,6 +246,67 @@ const Insumos = () => {
   // Verificar se houve mudança no estoque para exigir observação
   const estoqueMudou = editingInsumo && 
     parseFloat(formData.quantidade_em_estoque) !== editingInsumo.quantidade_em_estoque;
+    
+  // Funções para operador - Retirar estoque
+  const handleRetirar = async (insumo: Insumo) => {
+    const valor = parseFloat(valoresRetirar[insumo.id] || '0');
+    if (valor <= 0) {
+      toast.error('Informe uma quantidade válida para retirar');
+      return;
+    }
+    
+    if (valor > insumo.quantidade_em_estoque) {
+      toast.error('Quantidade a retirar maior que o estoque disponível');
+      return;
+    }
+    
+    setLoadingItem(`retirar-${insumo.id}`);
+    
+    const result = await registrarMovimentacao({
+      entidadeTipo: 'insumo',
+      entidadeId: insumo.id,
+      entidadeNome: insumo.nome,
+      tipoMovimentacao: 'consumo_producao',
+      quantidade: valor,
+      unidadeOrigem: 'Insumos',
+      observacao: `Retirada de ${valor} ${insumo.unidade_medida} para produção`,
+    });
+
+    if (result.success) {
+      setValoresRetirar(prev => ({ ...prev, [insumo.id]: '' }));
+      fetchInsumos();
+    }
+    
+    setLoadingItem(null);
+  };
+
+  // Funções para operador - Adicionar estoque
+  const handleAdicionar = async (insumo: Insumo) => {
+    const valor = parseFloat(valoresAdicionar[insumo.id] || '0');
+    if (valor <= 0) {
+      toast.error('Informe uma quantidade válida para adicionar');
+      return;
+    }
+    
+    setLoadingItem(`adicionar-${insumo.id}`);
+    
+    const result = await registrarMovimentacao({
+      entidadeTipo: 'insumo',
+      entidadeId: insumo.id,
+      entidadeNome: insumo.nome,
+      tipoMovimentacao: 'compra',
+      quantidade: valor,
+      unidadeOrigem: 'Insumos',
+      observacao: `Entrada de ${valor} ${insumo.unidade_medida}`,
+    });
+
+    if (result.success) {
+      setValoresAdicionar(prev => ({ ...prev, [insumo.id]: '' }));
+      fetchInsumos();
+    }
+    
+    setLoadingItem(null);
+  };
 
   if (loading) {
     return (
@@ -264,21 +333,24 @@ const Insumos = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setEstoqueModalOpen(true)}>
-              <Settings className="mr-2 h-4 w-4" />
-              Estoque Mínimo Semanal
-            </Button>
+            {isAdmin() && (
+              <Button variant="outline" onClick={() => setEstoqueModalOpen(true)}>
+                <Settings className="mr-2 h-4 w-4" />
+                Estoque Mínimo Semanal
+              </Button>
+            )}
             <Button size="sm" onClick={() => fetchInsumos()} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Atualizar
             </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Insumo
-              </Button>
-            </DialogTrigger>
+            {isAdmin() && (
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={resetForm}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Insumo
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
@@ -470,6 +542,7 @@ const Insumos = () => {
               </form>
             </DialogContent>
           </Dialog>
+            )}
           </div>
         </div>
 
@@ -481,96 +554,222 @@ const Insumos = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Estoque</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead>Estoque Mínimo</TableHead>
-                  <TableHead>Perda (%)</TableHead>
-                  <TableHead>Cobertura</TableHead>
-                  <TableHead>Lead Time</TableHead>
-                  <TableHead>Última Atualização</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {insumos.length === 0 ? (
+            {isAdmin() ? (
+              // ==================== TABELA ADMIN (COMPLETA) ====================
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
-                      Nenhum insumo cadastrado
-                    </TableCell>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Estoque</TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead>Estoque Mínimo</TableHead>
+                    <TableHead>Perda (%)</TableHead>
+                    <TableHead>Cobertura</TableHead>
+                    <TableHead>Lead Time</TableHead>
+                    <TableHead>Última Atualização</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ) : (
-                  insumos.map((insumo) => (
-                    <TableRow key={insumo.id}>
-                      <TableCell className="font-medium">{insumo.nome}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span
-                            className={
-                              insumo.quantidade_em_estoque < insumo.estoque_minimo
-                                ? 'text-warning font-semibold'
-                                : ''
-                            }
-                          >
-                            {insumo.quantidade_em_estoque.toFixed(2)}
-                          </span>
-                          {insumo.quantidade_em_estoque > 0 && (
-                            <span className="text-xs text-muted-foreground italic">
-                              {numberToWords(insumo.quantidade_em_estoque, insumo.unidade_medida)}
+                </TableHeader>
+                <TableBody>
+                  {insumos.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center text-muted-foreground">
+                        Nenhum insumo cadastrado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    insumos.map((insumo) => (
+                      <TableRow key={insumo.id}>
+                        <TableCell className="font-medium">{insumo.nome}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span
+                              className={
+                                insumo.quantidade_em_estoque < insumo.estoque_minimo
+                                  ? 'text-warning font-semibold'
+                                  : ''
+                              }
+                            >
+                              {insumo.quantidade_em_estoque.toFixed(2)}
                             </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{insumo.unidade_medida}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span>{insumo.estoque_minimo.toFixed(2)}</span>
-                          {insumo.estoque_minimo > 0 && (
-                            <span className="text-xs text-muted-foreground italic">
-                              {numberToWords(insumo.estoque_minimo, insumo.unidade_medida)}
+                            {insumo.quantidade_em_estoque > 0 && (
+                              <span className="text-xs text-muted-foreground italic">
+                                {numberToWords(insumo.quantidade_em_estoque, insumo.unidade_medida)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{insumo.unidade_medida}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span>{insumo.estoque_minimo.toFixed(2)}</span>
+                            {insumo.estoque_minimo > 0 && (
+                              <span className="text-xs text-muted-foreground italic">
+                                {numberToWords(insumo.estoque_minimo, insumo.unidade_medida)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{insumo.perda_percentual}%</TableCell>
+                        <TableCell>{insumo.dias_cobertura_desejado || 7} dias</TableCell>
+                        <TableCell>{insumo.lead_time_real_dias ? `${insumo.lead_time_real_dias} dias` : '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          {insumo.data_ultima_movimentacao ? (
+                            <span className="text-muted-foreground">
+                              {format(new Date(insumo.data_ultima_movimentacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                             </span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Sem movimentação</span>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{insumo.perda_percentual}%</TableCell>
-                      <TableCell>{insumo.dias_cobertura_desejado || 7} dias</TableCell>
-                      <TableCell>{insumo.lead_time_real_dias ? `${insumo.lead_time_real_dias} dias` : '-'}</TableCell>
-                      <TableCell className="text-sm">
-                        {insumo.data_ultima_movimentacao ? (
-                          <span className="text-muted-foreground">
-                            {format(new Date(insumo.data_ultima_movimentacao), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground italic">Sem movimentação</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(insumo)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        {canDelete && (
+                        </TableCell>
+                        <TableCell className="text-right space-x-2">
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDelete(insumo.id)}
-                            title="Excluir insumo"
+                            onClick={() => openEditDialog(insumo)}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Edit className="h-4 w-4" />
                           </Button>
-                        )}
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(insumo.id)}
+                              title="Excluir insumo"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            ) : (
+              // ==================== TABELA OPERADOR (SIMPLIFICADA) ====================
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[200px]">Nome</TableHead>
+                    <TableHead>Estoque</TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead className="text-center">Retirar</TableHead>
+                    <TableHead className="text-center">Adicionar</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {insumos.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        Nenhum insumo cadastrado
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    insumos.map((insumo) => (
+                      <TableRow key={insumo.id}>
+                        <TableCell className="font-medium text-primary">{insumo.nome}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span
+                              className={`font-semibold text-lg ${
+                                insumo.quantidade_em_estoque < insumo.estoque_minimo
+                                  ? 'text-warning'
+                                  : 'text-foreground'
+                              }`}
+                            >
+                              {insumo.quantidade_em_estoque.toFixed(2)}
+                            </span>
+                            {insumo.quantidade_em_estoque > 0 && (
+                              <span className="text-xs text-muted-foreground italic">
+                                {numberToWords(insumo.quantidade_em_estoque, insumo.unidade_medida)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="uppercase font-medium text-muted-foreground">
+                          {insumo.unidade_medida}
+                        </TableCell>
+                        
+                        {/* COLUNA RETIRAR */}
+                        <TableCell>
+                          <div className="flex flex-col gap-1 items-center">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={valoresRetirar[insumo.id] || ''}
+                                onChange={(e) => setValoresRetirar(prev => ({ ...prev, [insumo.id]: e.target.value }))}
+                                className="w-20 h-9 text-center bg-red-50 border-red-300 text-red-800 font-semibold focus:border-red-500 focus:ring-red-500 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700"
+                                placeholder="0"
+                              />
+                              <Button
+                                size="sm"
+                                onClick={() => handleRetirar(insumo)}
+                                disabled={loadingItem === `retirar-${insumo.id}` || !valoresRetirar[insumo.id] || parseFloat(valoresRetirar[insumo.id]) <= 0}
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 h-9"
+                              >
+                                {loadingItem === `retirar-${insumo.id}` ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Minus className="h-3 w-3 mr-1" />
+                                    SALVAR
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                            {valoresRetirar[insumo.id] && parseFloat(valoresRetirar[insumo.id]) > 0 && (
+                              <span className="text-xs text-red-600 dark:text-red-400 italic text-center">
+                                {numberToWords(parseFloat(valoresRetirar[insumo.id]), insumo.unidade_medida)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        
+                        {/* COLUNA ADICIONAR */}
+                        <TableCell>
+                          <div className="flex flex-col gap-1 items-center">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={valoresAdicionar[insumo.id] || ''}
+                                onChange={(e) => setValoresAdicionar(prev => ({ ...prev, [insumo.id]: e.target.value }))}
+                                className="w-20 h-9 text-center bg-blue-50 border-blue-300 text-blue-800 font-semibold focus:border-blue-500 focus:ring-blue-500 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700"
+                                placeholder="0"
+                              />
+                              <Button
+                                size="sm"
+                                onClick={() => handleAdicionar(insumo)}
+                                disabled={loadingItem === `adicionar-${insumo.id}` || !valoresAdicionar[insumo.id] || parseFloat(valoresAdicionar[insumo.id]) <= 0}
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 h-9"
+                              >
+                                {loadingItem === `adicionar-${insumo.id}` ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    SALVAR
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                            {valoresAdicionar[insumo.id] && parseFloat(valoresAdicionar[insumo.id]) > 0 && (
+                              <span className="text-xs text-blue-600 dark:text-blue-400 italic text-center">
+                                {numberToWords(parseFloat(valoresAdicionar[insumo.id]), insumo.unidade_medida)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
