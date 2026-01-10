@@ -464,9 +464,14 @@ const Romaneio = () => {
   const [observacaoRecebimento, setObservacaoRecebimento] = useState<{ [romaneioId: string]: string }>({});
   const [loadingRecebimento, setLoadingRecebimento] = useState(false);
   
-  // Estados para peso e volumes no recebimento
-  const [pesoRecebido, setPesoRecebido] = useState<{ [romaneioId: string]: string }>({});
-  const [volumesRecebido, setVolumesRecebido] = useState<{ [romaneioId: string]: string }>({});
+  // Estados para peso e volumes no recebimento (POR ITEM - igual ao envio)
+  interface ItemRecebimentoState {
+    quantidade_recebida: number;
+    peso_g: string;
+    volumes: string;
+    salvo: boolean;
+  }
+  const [recebimentosPorItem, setRecebimentosPorItem] = useState<{ [itemId: string]: ItemRecebimentoState }>({});
 
   // ==================== EFFECTS ====================
 
@@ -1140,15 +1145,85 @@ const Romaneio = () => {
     }));
   };
 
+  // ==================== HANDLERS: RECEBIMENTO POR ITEM ====================
+
+  const handleUpdateQuantidadeRecebimento = (itemId: string, quantidade: number) => {
+    setRecebimentosPorItem(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], quantidade_recebida: Math.max(0, quantidade), salvo: false }
+    }));
+  };
+
+  const handleUpdatePesoRecebimento = (itemId: string, peso: string) => {
+    setRecebimentosPorItem(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], peso_g: peso, salvo: false }
+    }));
+  };
+
+  const handleUpdateVolumesRecebimento = (itemId: string, volumes: string) => {
+    setRecebimentosPorItem(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], volumes: volumes, salvo: false }
+    }));
+  };
+
+  const handleSalvarItemRecebimento = (itemId: string, itemNome: string) => {
+    const item = recebimentosPorItem[itemId];
+    if (!item) return;
+    
+    if (!item.peso_g || item.peso_g === '0') {
+      toast.error(`Informe o peso de: ${itemNome}`);
+      return;
+    }
+    if (!item.volumes || item.volumes === '0') {
+      toast.error(`Informe os volumes de: ${itemNome}`);
+      return;
+    }
+    
+    setRecebimentosPorItem(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], salvo: true }
+    }));
+    toast.success(`"${itemNome}" salvo!`);
+  };
+
+  // Helper: Calcular totais de recebimento a partir dos itens
+  const calcularTotaisRecebimento = (romaneio: Romaneio) => {
+    const itensIds = romaneio.romaneio_itens.map((item, idx) => item.id || `${romaneio.id}-${idx}`);
+    let pesoTotalG = 0;
+    let volumesTotal = 0;
+    
+    for (const itemId of itensIds) {
+      const item = recebimentosPorItem[itemId];
+      if (item) {
+        const parsed = parsePesoProgressivo(item.peso_g || '0');
+        pesoTotalG += parsed.valorGramas;
+        volumesTotal += parseInt(item.volumes) || 0;
+      }
+    }
+    
+    return { pesoTotalG, volumesTotal };
+  };
+
+  // Helper: Verificar se todos os itens do romaneio estão salvos
+  const verificarTodosItensSalvos = (romaneio: Romaneio) => {
+    const itensIds = romaneio.romaneio_itens.map((item, idx) => item.id || `${romaneio.id}-${idx}`);
+    const todosItensSalvos = itensIds.every(id => recebimentosPorItem[id]?.salvo);
+    const itensNaoSalvosCount = itensIds.filter(id => !recebimentosPorItem[id]?.salvo).length;
+    return { todosItensSalvos, itensNaoSalvosCount };
+  };
+
   // ==================== HELPERS: DIVERGÊNCIA ====================
 
-  // Cálculo de divergência em tempo real
+  // Cálculo de divergência em tempo real (usando totais calculados dos itens)
   // REGRA: Só calcula divergência se houver peso enviado registrado (não NULL)
   const calcularDivergencia = (romaneioId: string, romaneio: Romaneio) => {
     const pesoEnviado = romaneio.peso_total_envio_g ?? null;
     const volumesEnviados = romaneio.quantidade_volumes_envio ?? null;
-    const pesoInformado = parseInt(pesoRecebido[romaneioId]) || 0;
-    const volumesInformados = parseInt(volumesRecebido[romaneioId]) || 0;
+    const totais = calcularTotaisRecebimento(romaneio);
+    const pesoInformado = totais.pesoTotalG;
+    const volumesInformados = totais.volumesTotal;
     
     // Se não há dados de envio, não é possível calcular divergência
     const dadosEnvioCompletos = pesoEnviado !== null && pesoEnviado > 0;
@@ -1218,19 +1293,27 @@ const Romaneio = () => {
   // ==================== HANDLERS: RECEBIMENTO ====================
 
   const handleConfirmarRecebimento = async (romaneioId: string) => {
-    // Validar campos obrigatórios de peso e volumes
-    if (!pesoRecebido[romaneioId] || pesoRecebido[romaneioId] === '0') {
-      toast.error('Informe o Peso Total Recebido');
-      return;
-    }
-    if (!volumesRecebido[romaneioId] || volumesRecebido[romaneioId] === '0') {
-      toast.error('Informe a Quantidade de Volumes Recebida');
-      return;
-    }
-    
     const romaneio = romaneiosEnviados.find(r => r.id === romaneioId);
     if (!romaneio) {
       toast.error('Romaneio não encontrado');
+      return;
+    }
+    
+    // Validar que todos os itens foram salvos
+    const { todosItensSalvos, itensNaoSalvosCount } = verificarTodosItensSalvos(romaneio);
+    if (!todosItensSalvos) {
+      toast.error(`Salve todos os itens antes de confirmar (${itensNaoSalvosCount} pendente(s))`);
+      return;
+    }
+    
+    // Calcular totais a partir dos itens
+    const totais = calcularTotaisRecebimento(romaneio);
+    if (totais.pesoTotalG === 0) {
+      toast.error('Nenhum peso informado nos itens');
+      return;
+    }
+    if (totais.volumesTotal === 0) {
+      toast.error('Nenhum volume informado nos itens');
       return;
     }
 
@@ -1253,27 +1336,21 @@ const Romaneio = () => {
 
       const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
 
-      const { data: itensData, error: itensError } = await supabase
-        .from('romaneio_itens')
-        .select('id, item_nome')
-        .eq('romaneio_id', romaneioId);
-
-      if (itensError) throw itensError;
-
-      const itensParaAtualizar = itensData?.map(item => {
-        const recebimento = recebimentos[item.id];
-        if (!recebimento || recebimento.quantidade_recebida === undefined) {
-          throw new Error(`Informe a quantidade recebida de ${item.item_nome}`);
+      // Atualizar cada item com os dados de recebimento
+      for (const item of romaneio.romaneio_itens) {
+        const itemId = item.id || `${romaneio.id}-${romaneio.romaneio_itens.indexOf(item)}`;
+        const recItem = recebimentosPorItem[itemId];
+        if (recItem && item.id) {
+          const pesoKg = parsePesoProgressivo(recItem.peso_g || '0').valorKg;
+          await supabase.from('romaneio_itens').update({ 
+            quantidade_recebida: recItem.quantidade_recebida, 
+            peso_recebido_kg: pesoKg
+          }).eq('id', item.id);
         }
-        return { id: item.id, quantidade_recebida: recebimento.quantidade_recebida, peso_recebido_kg: recebimento.peso_recebido_kg || null };
-      });
-
-      for (const item of itensParaAtualizar || []) {
-        await supabase.from('romaneio_itens').update({ quantidade_recebida: item.quantidade_recebida, peso_recebido_kg: item.peso_recebido_kg }).eq('id', item.id);
       }
 
-      const pesoRecebidoNum = parseInt(pesoRecebido[romaneioId]) || 0;
-      const volumesRecebidoNum = parseInt(volumesRecebido[romaneioId]) || 0;
+      const pesoRecebidoNum = totais.pesoTotalG;
+      const volumesRecebidoNum = totais.volumesTotal;
       const divergenciaCalculada = pesoRecebidoNum - (romaneio.peso_total_envio_g || 0);
 
       await supabase.from('romaneios').update({
@@ -1687,123 +1764,213 @@ const Romaneio = () => {
                               
                               {romaneio.romaneio_itens.map((item, idx) => {
                                 const itemId = item.id || `${romaneio.id}-${idx}`;
+                                const recItem = recebimentosPorItem[itemId] || { 
+                                  quantidade_recebida: item.quantidade, 
+                                  peso_g: '', 
+                                  volumes: '', 
+                                  salvo: false 
+                                };
+                                const camposPreenchidos = recItem.peso_g && recItem.peso_g !== '0' && recItem.volumes && recItem.volumes !== '0';
+                                const precisaSalvar = !recItem.salvo && camposPreenchidos;
+                                
+                                // Inicializar item se não existir
+                                if (!recebimentosPorItem[itemId]) {
+                                  setRecebimentosPorItem(prev => ({
+                                    ...prev,
+                                    [itemId]: { 
+                                      quantidade_recebida: item.quantidade, 
+                                      peso_g: '', 
+                                      volumes: '', 
+                                      salvo: false 
+                                    }
+                                  }));
+                                }
+                                
                                 return (
-                                  <div key={itemId} className="flex items-center gap-2 p-2 border rounded">
-                                    <div className="flex-1">
-                                      <p className="font-medium text-sm">{item.item_nome}</p>
-                                      <p className="text-xs text-muted-foreground">Enviado: {item.quantidade} un</p>
+                                  <div key={itemId} className={`flex flex-col gap-2 p-3 border rounded ${recItem.salvo ? 'border-green-500/50 bg-green-50/50' : ''}`}>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-medium text-sm truncate">{item.item_nome}</p>
+                                          {recItem.salvo && (
+                                            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">Enviado: {item.quantidade} un</p>
+                                        {item.codigo_lote && (
+                                          <span className="text-xs font-mono text-muted-foreground">
+                                            📦 {formatarCodigoLoteComData(item.codigo_lote)}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <Input
-                                      type="number"
-                                      value={recebimentos[itemId]?.quantidade_recebida ?? ''}
-                                      onChange={(e) => setRecebimentos(prev => ({
-                                        ...prev,
-                                        [itemId]: { ...prev[itemId], quantidade_recebida: parseInt(e.target.value) || 0 }
-                                      }))}
-                                      className="w-20 h-8"
-                                      placeholder="Qtd"
-                                    />
+                                    
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {/* Quantidade Recebida */}
+                                      <div className="flex items-center gap-1">
+                                        <Input
+                                          type="number"
+                                          value={recItem.quantidade_recebida || ''}
+                                          onChange={(e) => handleUpdateQuantidadeRecebimento(itemId, parseInt(e.target.value) || 0)}
+                                          className="w-16 h-8 text-center text-sm"
+                                          min={0}
+                                        />
+                                        <span className="text-xs text-muted-foreground">un</span>
+                                      </div>
+                                      
+                                      {/* Peso */}
+                                      <PesoInputInlineCompacto
+                                        value={recItem.peso_g}
+                                        onChange={(v) => handleUpdatePesoRecebimento(itemId, v)}
+                                      />
+                                      
+                                      {/* Volumes */}
+                                      <div className="flex items-center gap-1">
+                                        <Input
+                                          type="number"
+                                          value={recItem.volumes || ''}
+                                          onChange={(e) => handleUpdateVolumesRecebimento(itemId, e.target.value)}
+                                          placeholder="Vol"
+                                          className="w-14 h-8 text-center text-sm"
+                                          min={1}
+                                        />
+                                        <span className="text-xs text-muted-foreground">vol</span>
+                                      </div>
+                                      
+                                      {/* Botão Salvar */}
+                                      <Button
+                                        size="sm"
+                                        variant={recItem.salvo ? "ghost" : "default"}
+                                        className={`h-8 px-3 ${
+                                          recItem.salvo 
+                                            ? "text-green-600 hover:text-green-700 hover:bg-green-50" 
+                                            : precisaSalvar 
+                                              ? "bg-primary hover:bg-primary/90 text-primary-foreground animate-pulse"
+                                              : "bg-muted text-muted-foreground"
+                                        }`}
+                                        onClick={() => handleSalvarItemRecebimento(itemId, item.item_nome)}
+                                        disabled={recItem.salvo || !camposPreenchidos}
+                                      >
+                                        {recItem.salvo ? (
+                                          <Check className="w-4 h-4" />
+                                        ) : (
+                                          <>
+                                            <Save className="w-4 h-4" />
+                                            <span className="ml-1">Salvar</span>
+                                          </>
+                                        )}
+                                      </Button>
+                                    </div>
                                   </div>
                                 );
                               })}
                               
-                              {/* Campos obrigatórios de Peso e Volumes Recebidos */}
-                              <Separator />
-                              <div className="grid grid-cols-2 gap-3">
-                                <WeightInput
-                                  value={pesoRecebido[romaneio.id] || ''}
-                                  onChange={(v) => setPesoRecebido(prev => ({...prev, [romaneio.id]: v}))}
-                                  label="Peso Recebido"
-                                  required
-                                  compact
-                                  showLabel
-                                  placeholder="Ex: 5500"
-                                />
-                                <VolumeInput
-                                  value={volumesRecebido[romaneio.id] || ''}
-                                  onChange={(v) => setVolumesRecebido(prev => ({...prev, [romaneio.id]: v}))}
-                                  label="Volumes Recebidos"
-                                  required
-                                  compact
-                                  showLabel
-                                  placeholder="Ex: 3"
-                                />
-                              </div>
-                              
-                              {/* Indicador de Divergência em Tempo Real */}
+                              {/* Totais Calculados Automaticamente */}
                               {(() => {
-                                const div = calcularDivergencia(romaneio.id, romaneio);
-                                if (!pesoRecebido[romaneio.id] && !volumesRecebido[romaneio.id]) return null;
-                                
-                                // Se dados de envio estão incompletos (romaneio antigo), não calcular divergência
-                                if (div.dadosEnvioIncompletos) {
-                                  return (
-                                    <div className="flex items-center gap-2 p-3 bg-muted/50 border border-dashed rounded-lg text-muted-foreground text-sm">
-                                      <span className="text-lg">ℹ️</span>
-                                      <span>Romaneio criado antes do registro de peso/volumes - divergência não disponível</span>
-                                    </div>
-                                  );
-                                }
-                                
-                                const status = getStatusDivergencia(div.diferencaPeso, div.diferencaVolumes);
-                                const percentual = calcularPercentualDivergencia(div.pesoEnviado, div.pesoInformado);
-                                const divergenciaCritica = percentual > 2;
-                                
-                                if (status.tipo === 'ok') {
-                                  return (
-                                    <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-700 dark:text-blue-400 text-sm">
-                                      <span className="text-lg">{status.icone}</span>
-                                      <span className="font-medium">Sem divergência (Conferência perfeita)</span>
-                                    </div>
-                                  );
-                                }
-                                
-                                const bgClass = status.tipo === 'excedente' 
-                                  ? 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400' 
-                                  : 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400';
+                                const totais = calcularTotaisRecebimento(romaneio);
+                                const { todosItensSalvos, itensNaoSalvosCount } = verificarTodosItensSalvos(romaneio);
                                 
                                 return (
-                                  <div className={`p-3 border rounded-lg text-sm space-y-1 ${bgClass}`}>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-lg">{status.icone}</span>
-                                      <div>
-                                        <span className="font-medium">Divergência: </span>
-                                        {div.temDivergenciaPeso && <span>{formatarPesoDivergencia(div.diferencaPeso)}</span>}
-                                        {div.temDivergenciaPeso && div.temDivergenciaVolumes && <span> | </span>}
-                                        {div.temDivergenciaVolumes && <span>Volumes: {div.diferencaVolumes > 0 ? '+' : ''}{div.diferencaVolumes}</span>}
-                                        <span className="ml-2 font-medium">({status.descricao})</span>
+                                  <>
+                                    <Separator />
+                                    <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
+                                      <div className="space-y-1">
+                                        <p className="text-xs font-medium text-muted-foreground">Peso Total Recebido</p>
+                                        <p className="text-lg font-semibold">
+                                          {totais.pesoTotalG > 0 
+                                            ? totais.pesoTotalG >= 1000 
+                                              ? `${(totais.pesoTotalG / 1000).toFixed(2).replace('.', ',')} kg`
+                                              : `${totais.pesoTotalG} g`
+                                            : '—'}
+                                        </p>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-xs font-medium text-muted-foreground">Total Volumes</p>
+                                        <p className="text-lg font-semibold">
+                                          {totais.volumesTotal > 0 ? totais.volumesTotal : '—'}
+                                        </p>
                                       </div>
                                     </div>
-                                    {divergenciaCritica && (
-                                      <p className="text-xs font-medium flex items-center gap-1">
-                                        <AlertCircle className="w-3 h-3" />
-                                        Divergência &gt;2% - Justificativa obrigatória
-                                      </p>
-                                    )}
-                                  </div>
+                              
+                                    {/* Indicador de Divergência em Tempo Real */}
+                                    {(() => {
+                                      const div = calcularDivergencia(romaneio.id, romaneio);
+                                      if (totais.pesoTotalG === 0 && totais.volumesTotal === 0) return null;
+                                      
+                                      // Se dados de envio estão incompletos (romaneio antigo), não calcular divergência
+                                      if (div.dadosEnvioIncompletos) {
+                                        return (
+                                          <div className="flex items-center gap-2 p-3 bg-muted/50 border border-dashed rounded-lg text-muted-foreground text-sm">
+                                            <span className="text-lg">ℹ️</span>
+                                            <span>Romaneio criado antes do registro de peso/volumes - divergência não disponível</span>
+                                          </div>
+                                        );
+                                      }
+                                      
+                                      const status = getStatusDivergencia(div.diferencaPeso, div.diferencaVolumes);
+                                      const percentual = calcularPercentualDivergencia(div.pesoEnviado, div.pesoInformado);
+                                      const divergenciaCritica = percentual > 2;
+                                      
+                                      if (status.tipo === 'ok') {
+                                        return (
+                                          <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-700 dark:text-blue-400 text-sm">
+                                            <span className="text-lg">{status.icone}</span>
+                                            <span className="font-medium">Sem divergência (Conferência perfeita)</span>
+                                          </div>
+                                        );
+                                      }
+                                      
+                                      const bgClass = status.tipo === 'excedente' 
+                                        ? 'bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400' 
+                                        : 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400';
+                                      
+                                      return (
+                                        <div className={`p-3 border rounded-lg text-sm space-y-1 ${bgClass}`}>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-lg">{status.icone}</span>
+                                            <div>
+                                              <span className="font-medium">Divergência: </span>
+                                              {div.temDivergenciaPeso && <span>{formatarPesoDivergencia(div.diferencaPeso)}</span>}
+                                              {div.temDivergenciaPeso && div.temDivergenciaVolumes && <span> | </span>}
+                                              {div.temDivergenciaVolumes && <span>Volumes: {div.diferencaVolumes > 0 ? '+' : ''}{div.diferencaVolumes}</span>}
+                                              <span className="ml-2 font-medium">({status.descricao})</span>
+                                            </div>
+                                          </div>
+                                          {divergenciaCritica && (
+                                            <p className="text-xs font-medium flex items-center gap-1">
+                                              <AlertCircle className="w-3 h-3" />
+                                              Divergência &gt;2% - Justificativa obrigatória
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                    
+                                    <Textarea
+                                      placeholder="Observação (opcional)"
+                                      value={observacaoRecebimento[romaneio.id] || ''}
+                                      onChange={(e) => setObservacaoRecebimento(prev => ({ ...prev, [romaneio.id]: e.target.value }))}
+                                      className="h-16"
+                                    />
+                                    
+                                    <div className="flex items-center gap-2">
+                                      {itensNaoSalvosCount > 0 && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          {itensNaoSalvosCount} não salvo(s)
+                                        </Badge>
+                                      )}
+                                      <Button 
+                                        onClick={() => handleConfirmarRecebimento(romaneio.id)} 
+                                        disabled={loadingRecebimento || !todosItensSalvos}
+                                        className="flex-1"
+                                      >
+                                        <CheckCircle className="w-4 h-4 mr-1" />
+                                        Confirmar Recebimento
+                                      </Button>
+                                    </div>
+                                  </>
                                 );
                               })()}
-                              
-                              <Textarea
-                                placeholder="Observação (opcional)"
-                                value={observacaoRecebimento[romaneio.id] || ''}
-                                onChange={(e) => setObservacaoRecebimento(prev => ({ ...prev, [romaneio.id]: e.target.value }))}
-                                className="h-16"
-                              />
-                              <Button 
-                                onClick={() => handleConfirmarRecebimento(romaneio.id)} 
-                                disabled={
-                                  loadingRecebimento || 
-                                  !pesoRecebido[romaneio.id] || 
-                                  pesoRecebido[romaneio.id] === '0' ||
-                                  !volumesRecebido[romaneio.id] || 
-                                  volumesRecebido[romaneio.id] === '0'
-                                } 
-                                className="w-full"
-                              >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Confirmar Recebimento
-                              </Button>
                             </CardContent>
                           </Card>
                         ))}
