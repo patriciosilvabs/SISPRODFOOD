@@ -330,10 +330,11 @@ const ResumoDaProducao = () => {
         hoje = dataServidor || new Date().toISOString().split('T')[0];
       }
       
+      // Buscar produções do dia atual OU produções não finalizadas de dias anteriores
       const { data, error } = await supabase
         .from('producao_registros')
         .select('*')
-        .eq('data_referencia', hoje)
+        .or(`data_referencia.eq.${hoje},status.neq.finalizado`)
         .order('data_inicio', { ascending: false });
 
       if (error) throw error;
