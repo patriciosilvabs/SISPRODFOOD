@@ -246,124 +246,127 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Itens Disponíveis (para adicionar) */}
-          <div className="border rounded-lg p-3 bg-muted/30">
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
-              <Package className="w-3 h-3" />
-              Itens Disponíveis
-            </h4>
-            {itensNaoSelecionados.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">
-                Todos os itens já foram adicionados
-              </p>
-            ) : (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {itensNaoSelecionados.map(item => (
-                  <div key={item.item_id} className="flex items-center justify-between p-2 bg-background border rounded text-sm hover:bg-muted/50 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{item.item_nome}</p>
-                      {item.codigo_lote && (
-                        <Badge variant="outline" className="text-xs font-mono mt-0.5">
-                          📦 {formatarCodigoLoteComData(item.codigo_lote)}
-                        </Badge>
-                      )}
-                      <div className="flex gap-2 text-xs text-muted-foreground">
-                        <span className="text-primary font-medium">Disponível: {item.quantidade_disponivel} un</span>
-                        {item.quantidade_ja_enviada > 0 && (
-                          <span className="text-orange-600">• Já enviado: {item.quantidade_ja_enviada}</span>
-                        )}
+        {/* Layout adaptativo: esconde "Itens Disponíveis" quando vazio e expande "Pronto para Envio" */}
+        {(() => {
+          const layoutExpandido = itensNaoSelecionados.length === 0;
+          
+          return (
+            <div className={layoutExpandido ? "grid grid-cols-1 gap-4" : "grid md:grid-cols-2 gap-4"}>
+              {/* Itens Disponíveis (para adicionar) - ESCONDIDO quando vazio */}
+              {!layoutExpandido && (
+                <div className="border rounded-lg p-3 bg-muted/30">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                    <Package className="w-3 h-3" />
+                    Itens Disponíveis
+                  </h4>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {itensNaoSelecionados.map(item => (
+                      <div key={item.item_id} className="flex items-center justify-between p-2 bg-background border rounded text-sm hover:bg-muted/50 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{item.item_nome}</p>
+                          {item.codigo_lote && (
+                            <Badge variant="outline" className="text-xs font-mono mt-0.5">
+                              📦 {formatarCodigoLoteComData(item.codigo_lote)}
+                            </Badge>
+                          )}
+                          <div className="flex gap-2 text-xs text-muted-foreground">
+                            <span className="text-primary font-medium">Disponível: {item.quantidade_disponivel} un</span>
+                            {item.quantidade_ja_enviada > 0 && (
+                              <span className="text-orange-600">• Já enviado: {item.quantidade_ja_enviada}</span>
+                            )}
+                          </div>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-7 w-7 p-0"
+                          onClick={() => onAddItem(demanda.loja_id, item)}
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
                       </div>
-                    </div>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="h-7 w-7 p-0"
-                      onClick={() => onAddItem(demanda.loja_id, item)}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </Button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
 
-          {/* Itens Selecionados (prontos para envio) */}
-          <div className="border rounded-lg p-3 border-primary/30 bg-primary/5">
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
-              <CheckCircle className="w-3 h-3 text-primary" />
-              Pronto para Envio ({demanda.itensSelecionados.length})
-            </h4>
-            {demanda.itensSelecionados.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">
-                Adicione itens da lista ao lado
-              </p>
-            ) : (
-              <>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {demanda.itensSelecionados.map(item => (
-                    <div key={item.item_id} className="flex items-center gap-2 p-2 bg-background border rounded text-sm">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{item.item_nome}</p>
-                        {item.codigo_lote && (
-                          <span className="text-xs font-mono text-muted-foreground">
-                            📦 {formatarCodigoLoteComData(item.codigo_lote)}
-                          </span>
-                        )}
-                      </div>
-                      <Input
-                        type="number"
-                        value={item.quantidade || ''}
-                        onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-                        className="w-16 h-7 text-center text-sm"
-                        min={1}
-                      />
-                      <span className="text-xs text-muted-foreground">un</span>
-                      <PesoInputInlineCompacto
-                        value={item.peso_g}
-                        onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
-                      />
-                      <Input
-                        type="number"
-                        value={item.volumes || ''}
-                        onChange={(e) => onUpdateVolumesItem(demanda.loja_id, item.item_id, e.target.value)}
-                        className="w-14 h-7 text-center text-sm"
-                        placeholder="Vol"
-                        min={1}
-                      />
-                      <span className="text-xs text-muted-foreground">vol</span>
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
-                        className="h-7 w-7 p-0"
-                        onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
-                      >
-                        <Trash2 className="w-3 h-3 text-destructive" />
-                      </Button>
+              {/* Itens Selecionados (prontos para envio) - EXPANDIDO quando sozinho */}
+              <div className={`border rounded-lg ${layoutExpandido ? 'p-4' : 'p-3'} border-primary/30 bg-primary/5`}>
+                <h4 className={`font-medium mb-2 flex items-center gap-1 ${layoutExpandido ? 'text-base' : 'text-sm'}`}>
+                  <CheckCircle className={`text-primary ${layoutExpandido ? 'w-4 h-4' : 'w-3 h-3'}`} />
+                  Pronto para Envio ({demanda.itensSelecionados.length})
+                </h4>
+                {demanda.itensSelecionados.length === 0 ? (
+                  <p className={`text-muted-foreground text-center py-3 ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>
+                    Adicione itens da lista ao lado
+                  </p>
+                ) : (
+                  <>
+                    <div className={`space-y-2 overflow-y-auto ${layoutExpandido ? 'max-h-96' : 'max-h-48'}`}>
+                      {demanda.itensSelecionados.map(item => (
+                        <div key={item.item_id} className={`flex items-center gap-3 bg-background border rounded ${layoutExpandido ? 'p-3' : 'p-2'}`}>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-medium truncate ${layoutExpandido ? 'text-base' : 'text-sm'}`}>{item.item_nome}</p>
+                            {item.codigo_lote && (
+                              <span className={`font-mono text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>
+                                📦 {formatarCodigoLoteComData(item.codigo_lote)}
+                              </span>
+                            )}
+                          </div>
+                          <Input
+                            type="number"
+                            value={item.quantidade || ''}
+                            onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
+                            className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-16 h-7 text-center text-sm"}
+                            min={1}
+                          />
+                          <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>un</span>
+                          <PesoInputInlineCompacto
+                            value={item.peso_g}
+                            onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
+                          />
+                          <Input
+                            type="number"
+                            value={item.volumes || ''}
+                            onChange={(e) => onUpdateVolumesItem(demanda.loja_id, item.item_id, e.target.value)}
+                            className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-14 h-7 text-center text-sm"}
+                            placeholder="Vol"
+                            min={1}
+                          />
+                          <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>vol</span>
+                          <Button 
+                            size={layoutExpandido ? "default" : "sm"}
+                            variant="ghost" 
+                            className={layoutExpandido ? "h-10 w-10 p-0" : "h-7 w-7 p-0"}
+                            onClick={() => onRemoveItem(demanda.loja_id, item.item_id)}
+                          >
+                            <Trash2 className={`text-destructive ${layoutExpandido ? 'w-4 h-4' : 'w-3 h-3'}`} />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                
-                {/* Peso Total e Volumes calculados */}
-                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Peso Total</p>
-                    <p className="text-sm font-semibold">
-                      {pesoTotalCalculado > 0 ? `${(pesoTotalCalculado / 1000).toFixed(2)} kg` : '—'}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Total Volumes</p>
-                    <p className="text-sm font-semibold">
-                      {volumesTotalCalculado > 0 ? volumesTotalCalculado : '—'}
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                    
+                    {/* Peso Total e Volumes calculados */}
+                    <div className={`grid grid-cols-2 gap-3 border-t ${layoutExpandido ? 'mt-4 pt-4' : 'mt-3 pt-3'}`}>
+                      <div className="space-y-1">
+                        <p className={`font-medium text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>Peso Total</p>
+                        <p className={`font-semibold ${layoutExpandido ? 'text-lg' : 'text-sm'}`}>
+                          {pesoTotalCalculado > 0 ? `${(pesoTotalCalculado / 1000).toFixed(2)} kg` : '—'}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className={`font-medium text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>Total Volumes</p>
+                        <p className={`font-semibold ${layoutExpandido ? 'text-lg' : 'text-sm'}`}>
+                          {volumesTotalCalculado > 0 ? volumesTotalCalculado : '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
