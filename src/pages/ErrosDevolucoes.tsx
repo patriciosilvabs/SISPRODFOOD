@@ -44,8 +44,8 @@ const ErrosDevolucoes = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  // Verificar se usuário é apenas Loja (sem Admin ou Produção)
-  const isLojaUser = hasRole('Loja') && !isAdmin() && !hasRole('Produção');
+  // Verificar se usuário é restrito (não-admin e não-produção) - inclui funcionários de Loja e CPD
+  const isRestrictedUser = !isAdmin() && !hasRole('Produção');
 
   useEffect(() => {
     if (user) {
@@ -75,8 +75,8 @@ const ErrosDevolucoes = () => {
     try {
       let lojasData: Loja[] = [];
 
-      if (isLojaUser && user) {
-        // Usuário Loja: buscar apenas lojas vinculadas via lojas_acesso
+      if (isRestrictedUser && user) {
+        // Usuário restrito (Loja ou CPD): buscar apenas lojas vinculadas via lojas_acesso
         const { data: lojasAcesso, error: acessoError } = await supabase
           .from('lojas_acesso')
           .select('loja_id')
