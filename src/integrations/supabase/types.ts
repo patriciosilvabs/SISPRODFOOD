@@ -497,6 +497,54 @@ export type Database = {
           },
         ]
       }
+      demanda_congelada: {
+        Row: {
+          congelado_em: string | null
+          created_at: string | null
+          demanda_total: number
+          detalhes_lojas: Json | null
+          dia_producao: string
+          id: string
+          item_porcionado_id: string
+          organization_id: string
+        }
+        Insert: {
+          congelado_em?: string | null
+          created_at?: string | null
+          demanda_total: number
+          detalhes_lojas?: Json | null
+          dia_producao: string
+          id?: string
+          item_porcionado_id: string
+          organization_id: string
+        }
+        Update: {
+          congelado_em?: string | null
+          created_at?: string | null
+          demanda_total?: number
+          detalhes_lojas?: Json | null
+          dia_producao?: string
+          id?: string
+          item_porcionado_id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demanda_congelada_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demanda_congelada_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       erros_devolucoes: {
         Row: {
           created_at: string
@@ -3067,6 +3115,10 @@ export type Database = {
         Returns: string
       }
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
+      congelar_demanda_cutoff: {
+        Args: { p_dia_producao?: string; p_organization_id: string }
+        Returns: Json
+      }
       criar_ou_atualizar_producao_registro:
         | {
             Args: {
