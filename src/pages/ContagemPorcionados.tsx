@@ -98,6 +98,7 @@ const ContagemPorcionados = () => {
     domingo: 200,
   });
   const [estoquesIdeaisMap, setEstoquesIdeaisMap] = useState<Record<string, EstoqueIdeal>>({});
+  const [diasOperacionaisPorLoja, setDiasOperacionaisPorLoja] = useState<Record<string, string>>({});
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     lojaId: string;
@@ -181,11 +182,18 @@ const ContagemPorcionados = () => {
           .order('updated_at', { ascending: false });
         
         if (error) throw error;
-        return { lojaId: loja.id, contagens: contagens || [] };
+        return { lojaId: loja.id, diaOperacional: diaOperacionalLoja, contagens: contagens || [] };
       });
       
       const contagensResults = await Promise.all(contagensPromises);
       const contagensData = contagensResults.flatMap(r => r.contagens);
+      
+      // Armazenar dias operacionais por loja
+      const diasOpMap: Record<string, string> = {};
+      contagensResults.forEach(r => {
+        diasOpMap[r.lojaId] = r.diaOperacional;
+      });
+      setDiasOperacionaisPorLoja(diasOpMap);
 
       // Carregar estoques ideais semanais
       const { data: estoquesData, error: estoquesError } = await supabase
@@ -382,7 +390,8 @@ const ContagemPorcionados = () => {
         const estoqueKey = `${lojaId}-${itemId}`;
         const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
         if (estoqueSemanal) {
-          const tomorrowDay = getTomorrowDayKey();
+          // USAR DIA OPERACIONAL DA LOJA em vez de new Date()
+          const tomorrowDay = getTomorrowDayKey(diaOperacional);
           idealAmanha = estoqueSemanal[tomorrowDay] || 0;
         }
       }
@@ -462,8 +471,12 @@ const ContagemPorcionados = () => {
   };
 
   // Obter o dia da semana de amanhã em português
-  const getTomorrowDayKey = (): keyof EstoqueIdeal => {
-    const tomorrow = new Date();
+  // Aceita uma data base opcional (formato YYYY-MM-DD) para calcular o dia de amanhã
+  const getTomorrowDayKey = (baseDate?: string): keyof EstoqueIdeal => {
+    // Se baseDate for fornecido (dia operacional da loja), usar como base
+    // Caso contrário, usar data atual do navegador
+    const base = baseDate ? new Date(baseDate + 'T12:00:00') : new Date();
+    const tomorrow = new Date(base);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dayIndex = tomorrow.getDay(); // 0 = Domingo, 1 = Segunda, etc.
     
@@ -488,7 +501,9 @@ const ContagemPorcionados = () => {
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
       
       if (estoqueSemanal) {
-        const tomorrowDay = getTomorrowDayKey();
+        // USAR DIA OPERACIONAL DA LOJA em vez de new Date()
+        const diaOperacional = diasOperacionaisPorLoja[lojaId];
+        const tomorrowDay = getTomorrowDayKey(diaOperacional);
         const idealValue = estoqueSemanal[tomorrowDay];
         // Se o valor do estoque ideal é válido (> 0), use-o
         if (idealValue > 0) {
