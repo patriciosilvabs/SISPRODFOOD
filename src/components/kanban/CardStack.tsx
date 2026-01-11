@@ -127,17 +127,17 @@ export function CardStack({
 
   return (
     <div className="flex flex-col">
-      {/* Indicador de progresso */}
+      {/* Indicador de progresso da pilha */}
       <StackProgress 
         total={registros.length} 
         atual={0} 
       />
       
-      {/* Container da pilha */}
+      {/* Container da pilha com posicionamento absoluto */}
       <div 
         className="relative"
         style={{ 
-          height: `${Math.min(450, 350 + (Math.min(registros.length - 1, 2) * 12))}px`,
+          height: `${Math.min(420, 320 + (Math.min(registros.length - 1, 2) * 12))}px`,
           perspective: '1000px'
         }}
       >
@@ -149,7 +149,8 @@ export function CardStack({
               key={registro.id}
               className={cn(
                 "absolute top-0 left-0 right-0 transition-all duration-300 ease-in-out",
-                cardStyle
+                cardStyle,
+                isTransitioning && index === 0 && "animate-stack-slide-out"
               )}
             >
               <KanbanCard
@@ -164,13 +165,6 @@ export function CardStack({
           );
         })}
       </div>
-      
-      {/* Indicador de cards restantes */}
-      {registros.length > 1 && (
-        <div className="mt-2 text-center text-xs text-muted-foreground">
-          {registros.length - 1} {registros.length - 1 === 1 ? 'lote aguardando' : 'lotes aguardando'}
-        </div>
-      )}
     </div>
   );
 }
