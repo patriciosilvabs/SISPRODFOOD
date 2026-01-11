@@ -521,7 +521,7 @@ const ContagemPorcionados = () => {
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
-        a_produzir: aProduzir,
+        // a_produzir é uma coluna GENERATED - calculada automaticamente pelo banco
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
         organization_id: organizationId,
