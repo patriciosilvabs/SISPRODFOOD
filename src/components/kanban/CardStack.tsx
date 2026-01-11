@@ -96,22 +96,6 @@ export function CardStack({
     }
   }, [isTransitioning]);
 
-  const getCardStyle = (index: number): string => {
-    if (index === 0) {
-      return "z-30 scale-100 translate-y-0 opacity-100";
-    }
-    
-    if (index === 1) {
-      return "z-20 scale-[0.95] translate-y-3 opacity-70 pointer-events-none";
-    }
-    
-    if (index === 2) {
-      return "z-10 scale-[0.90] translate-y-6 opacity-40 pointer-events-none";
-    }
-    
-    return "hidden";
-  };
-
   const handleCardAction = (registro: ProducaoRegistro) => {
     setIsTransitioning(true);
     onAction(registro);
@@ -125,45 +109,80 @@ export function CardStack({
     );
   }
 
+  // Primeiro registro é o ativo, os demais aguardam
+  const registroAtivo = registros[0];
+  const registrosAguardando = registros.slice(1);
+  const maxIndicadoresVisiveis = 4;
+  const indicadoresVisiveis = registrosAguardando.slice(0, maxIndicadoresVisiveis);
+  const lotesRestantes = registrosAguardando.length - maxIndicadoresVisiveis;
+
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-2">
       {/* Indicador de progresso da pilha */}
       <StackProgress 
         total={registros.length} 
         atual={0} 
       />
       
-      {/* Container da pilha com posicionamento absoluto */}
-      <div 
-        className="relative"
-        style={{ 
-          height: `${Math.min(420, 320 + (Math.min(registros.length - 1, 2) * 12))}px`,
-          perspective: '1000px'
-        }}
-      >
-        {registros.slice(0, 3).map((registro, index) => {
-          const cardStyle = getCardStyle(index);
-          
-          return (
-            <div
-              key={registro.id}
-              className={cn(
-                "absolute top-0 left-0 right-0 transition-all duration-300 ease-in-out",
-                cardStyle,
-                isTransitioning && index === 0 && "animate-stack-slide-out"
-              )}
-            >
-              <KanbanCard
-                registro={registro}
-                columnId={columnId}
-                onAction={() => handleCardAction(registro)}
-                onTimerFinished={onTimerFinished}
-                onCancelarPreparo={() => onCancelarPreparo?.(registro)}
-                onRegistrarPerda={() => onRegistrarPerda?.(registro)}
-              />
+      {/* Container horizontal: Card ativo + Indicadores */}
+      <div className="flex items-stretch gap-3">
+        {/* Card ativo (Lote atual) - ocupa a maior parte */}
+        <div 
+          className={cn(
+            "flex-1 min-w-0 transition-all duration-300 ease-in-out",
+            isTransitioning && "animate-fade-in"
+          )}
+        >
+          <KanbanCard
+            registro={registroAtivo}
+            columnId={columnId}
+            onAction={() => handleCardAction(registroAtivo)}
+            onTimerFinished={onTimerFinished}
+            onCancelarPreparo={() => onCancelarPreparo?.(registroAtivo)}
+            onRegistrarPerda={() => onRegistrarPerda?.(registroAtivo)}
+          />
+        </div>
+        
+        {/* Indicadores dos próximos lotes (pontinha visual) */}
+        {registrosAguardando.length > 0 && (
+          <div className="flex flex-col gap-1.5 justify-center py-2">
+            {/* Badge com total de lotes aguardando */}
+            <div className="text-[10px] text-muted-foreground text-center font-medium mb-1">
+              Aguardando
             </div>
-          );
-        })}
+            
+            {indicadoresVisiveis.map((reg, idx) => (
+              <div 
+                key={reg.id}
+                className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center",
+                  "text-sm font-semibold transition-all duration-200",
+                  "border-2 border-dashed",
+                  idx === 0 
+                    ? "bg-muted/80 border-muted-foreground/30 text-muted-foreground" 
+                    : "bg-muted/40 border-muted-foreground/15 text-muted-foreground/60"
+                )}
+                style={{ 
+                  opacity: 1 - (idx * 0.15),
+                  transform: `scale(${1 - (idx * 0.03)})`
+                }}
+                title={`Lote ${reg.sequencia_traco}/${reg.total_tracos_lote || registros.length} - Aguardando lote anterior`}
+              >
+                {reg.sequencia_traco}
+              </div>
+            ))}
+            
+            {/* Indicador de lotes extras */}
+            {lotesRestantes > 0 && (
+              <div 
+                className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted/20 border-2 border-dashed border-muted-foreground/10 text-xs text-muted-foreground/50"
+                title={`Mais ${lotesRestantes} lote(s) aguardando`}
+              >
+                +{lotesRestantes}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
