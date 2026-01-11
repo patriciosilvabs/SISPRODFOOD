@@ -349,6 +349,98 @@ export type Database = {
           },
         ]
       }
+      contagem_porcionados_audit: {
+        Row: {
+          contagem_id: string | null
+          created_at: string | null
+          dados_enviados: Json | null
+          dados_verificados: Json | null
+          dia_operacional: string
+          id: string
+          item_porcionado_id: string
+          loja_id: string
+          mensagem_erro: string | null
+          operacao: string
+          organization_id: string | null
+          status: string
+          tentativas: number | null
+          usuario_id: string
+          usuario_nome: string
+          valor_a_produzir: number | null
+          valor_ideal_enviado: number | null
+          valor_sobra_enviado: number | null
+        }
+        Insert: {
+          contagem_id?: string | null
+          created_at?: string | null
+          dados_enviados?: Json | null
+          dados_verificados?: Json | null
+          dia_operacional: string
+          id?: string
+          item_porcionado_id: string
+          loja_id: string
+          mensagem_erro?: string | null
+          operacao: string
+          organization_id?: string | null
+          status: string
+          tentativas?: number | null
+          usuario_id: string
+          usuario_nome: string
+          valor_a_produzir?: number | null
+          valor_ideal_enviado?: number | null
+          valor_sobra_enviado?: number | null
+        }
+        Update: {
+          contagem_id?: string | null
+          created_at?: string | null
+          dados_enviados?: Json | null
+          dados_verificados?: Json | null
+          dia_operacional?: string
+          id?: string
+          item_porcionado_id?: string
+          loja_id?: string
+          mensagem_erro?: string | null
+          operacao?: string
+          organization_id?: string | null
+          status?: string
+          tentativas?: number | null
+          usuario_id?: string
+          usuario_nome?: string
+          valor_a_produzir?: number | null
+          valor_ideal_enviado?: number | null
+          valor_sobra_enviado?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contagem_porcionados_audit_contagem_id_fkey"
+            columns: ["contagem_id"]
+            isOneToOne: false
+            referencedRelation: "contagem_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contagem_porcionados_audit_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contagem_porcionados_audit_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contagem_porcionados_audit_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       convites_pendentes: {
         Row: {
           accepted_at: string | null

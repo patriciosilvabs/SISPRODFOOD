@@ -347,79 +347,225 @@ const ContagemPorcionados = () => {
     await executeSave(lojaId, itemId);
   };
 
+  // Sistema de retry com backoff exponencial
+  const saveWithRetry = async (
+    dataToSave: any, 
+    maxRetries = 3
+  ): Promise<{ success: boolean; error?: string }> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const { error } = await supabase
+          .from('contagem_porcionados')
+          .upsert(dataToSave, {
+            onConflict: 'loja_id,item_porcionado_id,dia_operacional',
+          });
+
+        if (!error) return { success: true };
+        
+        // Se erro de rede ou timeout, tentar novamente
+        if (attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt - 1) * 1000;
+          toast.warning(`Tentativa ${attempt} falhou. Aguardando ${waitTime/1000}s para nova tentativa...`);
+          await new Promise(r => setTimeout(r, waitTime));
+        } else {
+          return { success: false, error: error.message };
+        }
+      } catch (e: any) {
+        if (attempt === maxRetries) {
+          return { success: false, error: e.message || 'Erro desconhecido' };
+        }
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
+      }
+    }
+    return { success: false, error: 'Falha após todas as tentativas' };
+  };
+
+  // Função de log de auditoria
+  const logAudit = async (
+    lojaId: string,
+    itemId: string,
+    diaOperacional: string,
+    sobraEnviada: number,
+    idealEnviado: number,
+    aProduzir: number,
+    status: 'SUCESSO' | 'ERRO' | 'VERIFICADO',
+    contagemId?: string,
+    mensagemErro?: string,
+    dadosEnviados?: any,
+    dadosVerificados?: any
+  ) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user!.id)
+        .single();
+        
+      await supabase.from('contagem_porcionados_audit').insert({
+        contagem_id: contagemId || null,
+        loja_id: lojaId,
+        item_porcionado_id: itemId,
+        dia_operacional: diaOperacional,
+        valor_sobra_enviado: sobraEnviada,
+        valor_ideal_enviado: idealEnviado,
+        valor_a_produzir: aProduzir,
+        usuario_id: user!.id,
+        usuario_nome: profile?.nome || user!.email || 'Desconhecido',
+        organization_id: organizationId,
+        operacao: contagemId ? 'UPDATE' : 'INSERT',
+        status,
+        mensagem_erro: mensagemErro || null,
+        dados_enviados: dadosEnviados || null,
+        dados_verificados: dadosVerificados || null,
+      });
+    } catch (e) {
+      console.error('Erro ao registrar auditoria (não crítico):', e);
+    }
+  };
+
   const executeSave = async (lojaId: string, itemId: string) => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
+    const toastId = `save-${key}`;
     
     // Marcar como salvando
     setSavingKeys(prev => new Set([...prev, key]));
+    
+    // Mostrar indicador de progresso
+    toast.loading('Salvando contagem...', { id: toastId });
 
-    if (!user) return;
+    // ========== VALIDAÇÃO 1: Usuário autenticado ==========
+    if (!user) {
+      toast.error('Sessão expirada. Por favor, faça login novamente.', { id: toastId });
+      setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+      return;
+    }
+
+    // ========== VALIDAÇÃO 2: Organization ID ==========
+    if (!organizationId) {
+      toast.error('Erro de configuração. Organização não identificada.', { id: toastId });
+      setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+      return;
+    }
+
+    // ========== VALIDAÇÃO 3: Valor de sobra válido ==========
+    const finalSobra = parseInt(values?.final_sobra);
+    if (isNaN(finalSobra) || finalSobra < 0) {
+      toast.error('Valor de Sobra inválido. Insira um número válido (≥ 0).', { id: toastId });
+      setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+      return;
+    }
+
+    let diaOperacional: string = '';
+    let idealAmanha = 0;
+    let aProduzir = 0;
+    let dataToSave: any = null;
 
     try {
-      const { data: profile } = await supabase
+      // Buscar perfil do usuário
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('nome')
         .eq('id', user.id)
         .single();
 
+      if (profileError) {
+        console.error('Erro ao buscar perfil:', profileError);
+      }
+
       // Buscar informações do item
-      const { data: itemData } = await supabase
+      const { data: itemData, error: itemError } = await supabase
         .from('itens_porcionados')
         .select('nome, peso_unitario_g, unidade_medida, equivalencia_traco, consumo_por_traco_g, usa_traco_massa')
         .eq('id', itemId)
         .single();
 
-      // CALCULAR DIA OPERACIONAL DA LOJA (usando função do banco)
-      const { data: diaOperacional, error: diaOpError } = await supabase
-        .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
-      
-      if (diaOpError) {
-        console.error('Erro ao calcular dia operacional:', diaOpError);
-        throw diaOpError;
+      if (itemError || !itemData) {
+        toast.error('Item não encontrado. Recarregue a página.', { id: toastId });
+        await logAudit(lojaId, itemId, '', finalSobra, 0, 0, 'ERRO', undefined, 'Item não encontrado');
+        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+        return;
       }
 
-      const finalSobra = parseInt(values?.final_sobra) || 0;
+      // CALCULAR DIA OPERACIONAL DA LOJA
+      const { data: diaOpData, error: diaOpError } = await supabase
+        .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
       
-      // Se o usuário não editou ideal_amanha, buscar dos estoques ideais semanais
-      let idealAmanha = 0;
+      if (diaOpError || !diaOpData) {
+        toast.error('Erro ao calcular dia operacional. Tente novamente.', { id: toastId });
+        await logAudit(lojaId, itemId, '', finalSobra, 0, 0, 'ERRO', undefined, 'Falha ao calcular dia operacional');
+        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+        return;
+      }
+      
+      diaOperacional = diaOpData;
+
+      // Calcular ideal
       if (values?.ideal_amanha !== undefined) {
         idealAmanha = parseInt(values.ideal_amanha) || 0;
       } else {
-        // Buscar do mapa de estoques ideais
         const estoqueKey = `${lojaId}-${itemId}`;
         const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
         if (estoqueSemanal) {
-          // USAR DIA OPERACIONAL ATUAL DA LOJA (não amanhã!)
           const currentDay = getCurrentDayKey(diaOperacional);
           idealAmanha = estoqueSemanal[currentDay] || 0;
         }
       }
       
-      const aProduzir = Math.max(0, idealAmanha - finalSobra);
+      aProduzir = Math.max(0, idealAmanha - finalSobra);
 
-      const dataToSave = {
+      dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
         dia_operacional: diaOperacional,
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
+        a_produzir: aProduzir,
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
         organization_id: organizationId,
       };
 
-      // UPSERT usa nova constraint com dia_operacional
-      const { error } = await supabase
+      // ========== SALVAMENTO COM RETRY ==========
+      const saveResult = await saveWithRetry(dataToSave);
+
+      if (!saveResult.success) {
+        toast.error(`Falha ao salvar: ${saveResult.error}`, { id: toastId, duration: 8000 });
+        await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'ERRO', undefined, saveResult.error, dataToSave);
+        // NÃO limpar valores editados em caso de erro - preservar dados do usuário
+        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+        return;
+      }
+
+      // ========== VERIFICAÇÃO CRÍTICA: Confirmar dados salvos ==========
+      const { data: savedData, error: verifyError } = await supabase
         .from('contagem_porcionados')
-        .upsert(dataToSave, {
-          onConflict: 'loja_id,item_porcionado_id,dia_operacional',
-        });
+        .select('id, final_sobra, ideal_amanha, a_produzir, updated_at')
+        .eq('loja_id', lojaId)
+        .eq('item_porcionado_id', itemId)
+        .eq('dia_operacional', diaOperacional)
+        .single();
 
-      if (error) throw error;
+      if (verifyError || !savedData) {
+        toast.error('CRÍTICO: Salvamento não confirmado no banco de dados! Contate o suporte.', { id: toastId, duration: 15000 });
+        await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'ERRO', undefined, 'Verificação falhou: dado não encontrado após upsert', dataToSave);
+        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+        return;
+      }
 
-      // Chamar função SECURITY DEFINER para criar/atualizar registro de produção
+      // Verificar se os valores salvos correspondem aos enviados
+      if (savedData.final_sobra !== finalSobra) {
+        toast.error(`INCONSISTÊNCIA: Sobra enviada (${finalSobra}) ≠ salva (${savedData.final_sobra}). Contate o suporte.`, { id: toastId, duration: 15000 });
+        await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'ERRO', savedData.id, `Inconsistência: enviado=${finalSobra}, salvo=${savedData.final_sobra}`, dataToSave, savedData);
+        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+        return;
+      }
+
+      // ========== SUCESSO VERIFICADO ==========
+      await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'VERIFICADO', savedData.id, undefined, dataToSave, savedData);
+
+      // Chamar função para criar/atualizar registro de produção
       const { data: rpcResult, error: rpcError } = await supabase
         .rpc('criar_ou_atualizar_producao_registro', {
           p_item_id: itemId,
@@ -431,25 +577,26 @@ const ContagemPorcionados = () => {
 
       if (rpcError) {
         console.error('Erro ao criar registro de produção:', rpcError);
+        // Não falhar a operação principal por causa disto
+        toast.warning('Contagem salva, mas houve um problema ao atualizar produção.', { id: toastId, duration: 5000 });
       } else {
-        console.log('Resultado da criação de produção:', rpcResult);
+        toast.success(`Contagem salva e verificada! Sobra: ${finalSobra} | Ideal: ${idealAmanha} | A Produzir: ${aProduzir}`, { 
+          id: toastId,
+          duration: 5000 
+        });
       }
 
-      toast.success('Contagem salva com sucesso');
-      
       // Atualizar valores originais após salvar
-      const savedFinalSobra = parseInt(values?.final_sobra) || 0;
-      const savedIdealAmanha = parseInt(values?.ideal_amanha) || 0;
       setOriginalValues(prev => ({
         ...prev,
         [key]: {
-          final_sobra: savedFinalSobra,
+          final_sobra: finalSobra,
           peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
-          ideal_amanha: savedIdealAmanha,
+          ideal_amanha: idealAmanha,
         }
       }));
       
-      // Limpar valores editados
+      // Limpar valores editados APENAS após sucesso
       setEditingValues(prev => {
         const newValues = { ...prev };
         delete newValues[key];
@@ -457,9 +604,25 @@ const ContagemPorcionados = () => {
       });
       
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar contagem');
+      
+      // Mensagens específicas baseadas no tipo de erro
+      let errorMsg = 'Erro desconhecido ao salvar';
+      if (error.message?.includes('network') || error.message?.includes('fetch')) {
+        errorMsg = 'Erro de conexão. Verifique sua internet e tente novamente.';
+      } else if (error.message?.includes('permission') || error.message?.includes('policy') || error.message?.includes('403')) {
+        errorMsg = 'Sem permissão para salvar. Contate o administrador.';
+      } else if (error.message?.includes('CRÍTICO')) {
+        errorMsg = error.message;
+      } else if (error.message) {
+        errorMsg = `Erro: ${error.message}`;
+      }
+      
+      toast.error(errorMsg, { id: toastId, duration: 8000 });
+      await logAudit(lojaId, itemId, diaOperacional || '', finalSobra, idealAmanha, aProduzir, 'ERRO', undefined, errorMsg, dataToSave);
+      
+      // NÃO limpar valores editados em caso de erro - preservar dados do usuário
     } finally {
       // Remover do estado de salvando
       setSavingKeys(prev => {
