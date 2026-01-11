@@ -322,7 +322,7 @@ const Lojas = () => {
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      Horário limite para virada do dia operacional (padrão: 03:00)
+                      Contagens registradas até {formData.cutoff_operacional || '03:00'} serão consideradas para a produção do dia seguinte.
                     </p>
                   </div>
                 </div>
