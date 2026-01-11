@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
-import { CardStack } from '@/components/kanban/CardStack';
+import { ProductGroupedStacks } from '@/components/kanban/ProductGroupedStacks';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
@@ -1232,7 +1232,7 @@ const ResumoDaProducao = () => {
                 <CardContent className="space-y-3 min-h-[500px]">
                   {/* Coluna A PRODUZIR usa Stack, demais usam lista tradicional */}
                   {columnId === 'a_produzir' ? (
-                    <CardStack
+                    <ProductGroupedStacks
                       registros={columns.a_produzir}
                       columnId="a_produzir"
                       onAction={(registro) => handleCardAction(registro, 'a_produzir')}
