@@ -105,13 +105,18 @@ export function ProductGroupedStacks({
       groups.get(key)!.push(registro);
     });
     
-    // Converter para array e ordenar: pilhas maiores primeiro
+    // Converter para array e ordenar
     return Array.from(groups.entries())
       .map(([itemId, regs]) => ({
         itemId,
         itemNome: regs[0].item_nome,
-        registros: regs,
-        isStack: regs.length > 1, // Pilha se tem mais de 1 lote
+        // Ordenar registros por sequencia_traco (1/8, 2/8, 3/8...)
+        registros: regs.sort((a, b) => {
+          const seqA = a.sequencia_traco ?? 0;
+          const seqB = b.sequencia_traco ?? 0;
+          return seqA - seqB;
+        }),
+        isStack: regs.length > 1,
       }))
       .sort((a, b) => b.registros.length - a.registros.length);
   }, [registros]);
