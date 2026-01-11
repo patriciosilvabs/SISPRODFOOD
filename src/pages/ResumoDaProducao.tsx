@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
+import { CardStack } from '@/components/kanban/CardStack';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
@@ -1229,22 +1230,36 @@ const ResumoDaProducao = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 min-h-[500px]">
-                  {columns[columnId].map((registro) => (
-                    <KanbanCard
-                      key={registro.id}
-                      registro={registro}
-                      columnId={columnId}
-                      onAction={() => handleCardAction(registro, columnId)}
+                  {/* Coluna A PRODUZIR usa Stack, demais usam lista tradicional */}
+                  {columnId === 'a_produzir' ? (
+                    <CardStack
+                      registros={columns.a_produzir}
+                      columnId="a_produzir"
+                      onAction={(registro) => handleCardAction(registro, 'a_produzir')}
                       onTimerFinished={handleTimerFinished}
-                      onCancelarPreparo={() => handleOpenCancelarModal(registro)}
-                      onRegistrarPerda={() => handleOpenPerdaModal(registro)}
+                      onCancelarPreparo={handleOpenCancelarModal}
+                      onRegistrarPerda={handleOpenPerdaModal}
                     />
-                  ))}
-                  
-                  {columns[columnId].length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground text-sm">
-                      Nenhum item nesta coluna
-                    </div>
+                  ) : (
+                    <>
+                      {columns[columnId].map((registro) => (
+                        <KanbanCard
+                          key={registro.id}
+                          registro={registro}
+                          columnId={columnId}
+                          onAction={() => handleCardAction(registro, columnId)}
+                          onTimerFinished={handleTimerFinished}
+                          onCancelarPreparo={() => handleOpenCancelarModal(registro)}
+                          onRegistrarPerda={() => handleOpenPerdaModal(registro)}
+                        />
+                      ))}
+                      
+                      {columns[columnId].length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          Nenhum item nesta coluna
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
