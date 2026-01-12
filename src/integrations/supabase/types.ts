@@ -291,6 +291,7 @@ export type Database = {
           loja_id: string
           organization_id: string | null
           peso_total_g: number | null
+          preenchido_na_sessao: boolean | null
           updated_at: string
           usuario_id: string
           usuario_nome: string
@@ -306,6 +307,7 @@ export type Database = {
           loja_id: string
           organization_id?: string | null
           peso_total_g?: number | null
+          preenchido_na_sessao?: boolean | null
           updated_at?: string
           usuario_id: string
           usuario_nome: string
@@ -321,6 +323,7 @@ export type Database = {
           loja_id?: string
           organization_id?: string | null
           peso_total_g?: number | null
+          preenchido_na_sessao?: boolean | null
           updated_at?: string
           usuario_id?: string
           usuario_nome?: string
@@ -2835,6 +2838,86 @@ export type Database = {
           },
         ]
       }
+      sessoes_contagem: {
+        Row: {
+          created_at: string | null
+          dia_operacional: string
+          encerrado_em: string | null
+          encerrado_por_id: string | null
+          encerrado_por_nome: string | null
+          id: string
+          iniciado_apos_cutoff: boolean | null
+          iniciado_em: string | null
+          iniciado_por_id: string | null
+          iniciado_por_nome: string | null
+          loja_id: string
+          organization_id: string
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          dia_operacional: string
+          encerrado_em?: string | null
+          encerrado_por_id?: string | null
+          encerrado_por_nome?: string | null
+          id?: string
+          iniciado_apos_cutoff?: boolean | null
+          iniciado_em?: string | null
+          iniciado_por_id?: string | null
+          iniciado_por_nome?: string | null
+          loja_id: string
+          organization_id: string
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          dia_operacional?: string
+          encerrado_em?: string | null
+          encerrado_por_id?: string | null
+          encerrado_por_nome?: string | null
+          id?: string
+          iniciado_apos_cutoff?: boolean | null
+          iniciado_em?: string | null
+          iniciado_por_id?: string | null
+          iniciado_por_nome?: string | null
+          loja_id?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessoes_contagem_encerrado_por_id_fkey"
+            columns: ["encerrado_por_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessoes_contagem_iniciado_por_id_fkey"
+            columns: ["iniciado_por_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessoes_contagem_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessoes_contagem_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       solicitacoes_reposicao: {
         Row: {
           created_at: string | null
@@ -3191,6 +3274,7 @@ export type Database = {
         }
         Returns: Json
       }
+      verificar_cutoff_loja: { Args: { p_loja_id: string }; Returns: Json }
     }
     Enums: {
       app_role: "Admin" | "Produção" | "Loja" | "SuperAdmin"

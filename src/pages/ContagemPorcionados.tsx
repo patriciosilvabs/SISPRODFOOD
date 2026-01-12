@@ -6,7 +6,10 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw, AlertTriangle, Plus, Minus, Eye, EyeOff } from 'lucide-react';
+import { 
+  Settings, ChevronDown, ChevronUp, Loader2, RefreshCw, AlertTriangle, 
+  Plus, Minus, Eye, EyeOff, PlayCircle, CheckCircle, Clock, AlertCircle 
+} from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,10 +23,7 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { numberToWords } from '@/lib/numberToWords';
 import { WeightInputInline } from '@/components/ui/weight-input';
-import { parsePesoProgressivo } from '@/lib/weightUtils';
-import { SaveButton } from '@/components/ui/save-button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -37,6 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useSessaoContagem } from '@/hooks/useSessaoContagem';
 
 interface Loja {
   id: string;
@@ -118,9 +119,27 @@ const ContagemPorcionados = () => {
   const [savingDialog, setSavingDialog] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
+  const [lojaAtualId, setLojaAtualId] = useState<string | null>(null);
   
   // Ref para rastrear a operação atual e evitar race conditions
   const currentOperationId = useRef<string | null>(null);
+
+  // Hook de sessão de contagem
+  const {
+    sessoes,
+    loadSessoes,
+    iniciarSessao,
+    encerrarSessao,
+    marcarCampoTocado,
+    isCampoTocado,
+    todosItensPreenchidos,
+    contarItensPendentes,
+    limparCamposTocados,
+  } = useSessaoContagem({
+    organizationId,
+    userId: user?.id,
+    diasOperacionaisPorLoja,
+  });
 
   // Verificar se usuário é restrito (não-admin e não-produção) - inclui funcionários de Loja e CPD
   const isRestrictedUser = !isAdmin() && !hasRole('Produção');
@@ -130,6 +149,13 @@ const ContagemPorcionados = () => {
       loadData();
     }
   }, [user]);
+
+  // Carregar sessões quando lojas e dias operacionais estiverem prontos
+  useEffect(() => {
+    if (lojas.length > 0 && Object.keys(diasOperacionaisPorLoja).length > 0) {
+      loadSessoes(lojas.map(l => l.id));
+    }
+  }, [lojas, diasOperacionaisPorLoja, loadSessoes]);
 
   const loadData = async () => {
     try {
@@ -178,7 +204,6 @@ const ContagemPorcionados = () => {
       if (itensError) throw itensError;
 
       // Carregar contagens do dia operacional atual de cada loja
-      // Buscar todas contagens recentes e filtrar por dia operacional específico de cada loja
       const contagensPromises = lojasData.map(async (loja) => {
         // Calcular dia operacional específico da loja
         const { data: diaOp } = await supabase
@@ -259,7 +284,6 @@ const ContagemPorcionados = () => {
       });
 
       // Inicializar originalValues para TODOS os pares loja-item
-      // (mesmo os que não têm contagem prévia, para detectar mudanças corretamente)
       (lojasData || []).forEach(loja => {
         (itensData || []).forEach(item => {
           const key = `${loja.id}-${item.id}`;
@@ -278,6 +302,11 @@ const ContagemPorcionados = () => {
       
       // Abrir todas as lojas por padrão
       setOpenLojas(new Set(lojasData?.map(l => l.id) || []));
+
+      // Definir primeira loja como atual
+      if (lojasData.length > 0) {
+        setLojaAtualId(lojasData[0].id);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast.error('Erro ao carregar dados');
@@ -287,6 +316,7 @@ const ContagemPorcionados = () => {
   };
 
   const toggleLoja = (lojaId: string) => {
+    setLojaAtualId(lojaId);
     setOpenLojas(prev => {
       const newSet = new Set(prev);
       if (newSet.has(lojaId)) {
@@ -300,6 +330,10 @@ const ContagemPorcionados = () => {
 
   const handleValueChange = (lojaId: string, itemId: string, field: string, value: string) => {
     const key = `${lojaId}-${itemId}`;
+    
+    // Marcar campo como tocado na sessão
+    marcarCampoTocado(lojaId, itemId, field);
+    
     setEditingValues(prev => ({
       ...prev,
       [key]: {
@@ -315,9 +349,8 @@ const ContagemPorcionados = () => {
     const current = editingValues[key];
     const original = originalValues[key];
     
-    if (!current) return false; // Nenhuma edição ainda
+    if (!current) return false;
     
-    // Comparar campo a campo (ideal_amanha removido - não é mais editável)
     const fields = ['final_sobra', 'peso_total_g'];
     for (const field of fields) {
       if (current[field] !== undefined) {
@@ -353,6 +386,110 @@ const ContagemPorcionados = () => {
     return dirtyRows;
   };
 
+  // Handler para iniciar sessão
+  const handleIniciarSessao = async (lojaId: string) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('nome')
+      .eq('id', user!.id)
+      .single();
+
+    // Limpar valores editados desta loja
+    setEditingValues(prev => {
+      const newValues = { ...prev };
+      Object.keys(newValues).forEach(key => {
+        if (key.startsWith(lojaId)) delete newValues[key];
+      });
+      return newValues;
+    });
+
+    await iniciarSessao(lojaId, profile?.nome || user?.email || 'Usuário');
+  };
+
+  // Handler para encerrar sessão com verificação
+  const handleEncerrarSessao = async (lojaId: string) => {
+    const itemIds = itens.map(i => i.id);
+    
+    if (!todosItensPreenchidos(lojaId, itemIds)) {
+      const pendentes = contarItensPendentes(lojaId, itemIds);
+      toast.error(`Preencha todos os itens antes de encerrar. ${pendentes} item(ns) pendente(s).`);
+      return;
+    }
+
+    setSavingAll(true);
+
+    try {
+      // 1. Salvar todos os itens desta loja com verificação
+      const dirtyRowsLoja = getDirtyRows().filter(r => r.lojaId === lojaId);
+      
+      for (const row of dirtyRowsLoja) {
+        await executeSave(row.lojaId, row.itemId);
+      }
+
+      // 2. Verificar se todos foram salvos corretamente
+      const diaOperacional = diasOperacionaisPorLoja[lojaId];
+      const { data: verificacao, error: verifyError } = await supabase
+        .from('contagem_porcionados')
+        .select('id, item_porcionado_id, final_sobra, peso_total_g')
+        .eq('loja_id', lojaId)
+        .eq('dia_operacional', diaOperacional);
+
+      if (verifyError) {
+        toast.error('Falha na verificação dos dados salvos.');
+        setSavingAll(false);
+        return;
+      }
+
+      // 3. Verificar consistência
+      for (const item of itens) {
+        const saved = verificacao?.find(v => v.item_porcionado_id === item.id);
+        const key = `${lojaId}-${item.id}`;
+        const expected = editingValues[key];
+        
+        if (expected && saved) {
+          const expectedSobra = parseInt(expected.final_sobra || '0');
+          if (saved.final_sobra !== expectedSobra) {
+            toast.error(`Inconsistência detectada para ${item.nome}. Verifique e tente novamente.`);
+            setSavingAll(false);
+            return;
+          }
+        }
+      }
+
+      // 4. Encerrar sessão
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('nome')
+        .eq('id', user!.id)
+        .single();
+
+      const success = await encerrarSessao(lojaId, profile?.nome || user?.email || 'Usuário');
+
+      if (success) {
+        // 5. Disparar atualização de produção
+        const sessao = sessoes[lojaId];
+        
+        for (const item of itens) {
+          await supabase.rpc('criar_ou_atualizar_producao_registro', {
+            p_item_id: item.id,
+            p_organization_id: organizationId,
+            p_usuario_id: user!.id,
+            p_usuario_nome: profile?.nome || user?.email || 'Usuário',
+            p_dia_operacional: diaOperacional,
+          });
+        }
+
+        toast.success('✅ Contagem encerrada e verificada com sucesso!');
+        loadData();
+      }
+    } catch (error) {
+      console.error('Erro ao encerrar sessão:', error);
+      toast.error('Erro ao encerrar sessão. Tente novamente.');
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   // Função para salvar todas as alterações
   const handleSaveAll = async () => {
     const dirtyRows = getDirtyRows();
@@ -385,14 +522,12 @@ const ContagemPorcionados = () => {
     }
   };
 
-
   // Função para validar valores suspeitos
   const validateSuspiciousValues = (values: any): string[] => {
     const warnings: string[] = [];
     const sobra = parseInt(values?.final_sobra) || 0;
     const pesoKg = values?.peso_total_g ? parseFloat(values.peso_total_g) / 1000 : 0;
     
-    // Verificar se ambos são zero
     if (sobra === 0 && pesoKg === 0) {
       warnings.push("Sobra e Peso estão zerados. Tem certeza que deseja salvar?");
     } else {
@@ -404,7 +539,6 @@ const ContagemPorcionados = () => {
       }
     }
     
-    // Verificar valores maiores que 499
     if (sobra > 499) {
       warnings.push(`Sobra muito alta: ${sobra} unidades. Verifique se está correto.`);
     }
@@ -419,14 +553,12 @@ const ContagemPorcionados = () => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
     
-    // Verificar valores suspeitos (inclui zero e valores altos)
     const warnings = validateSuspiciousValues(values);
     if (warnings.length > 0) {
       setConfirmDialog({ open: true, lojaId, itemId, warnings });
       return;
     }
     
-    // Se não há alertas, salvar normalmente
     await executeSave(lojaId, itemId);
   };
 
@@ -445,7 +577,6 @@ const ContagemPorcionados = () => {
 
         if (!error) return { success: true };
         
-        // Se erro de rede ou timeout, tentar novamente
         if (attempt < maxRetries) {
           const waitTime = Math.pow(2, attempt - 1) * 1000;
           toast.warning(`Tentativa ${attempt} falhou. Aguardando ${waitTime/1000}s para nova tentativa...`);
@@ -511,27 +642,21 @@ const ContagemPorcionados = () => {
     const values = editingValues[key];
     const toastId = `save-${key}`;
     
-    // Marcar como salvando
     setSavingKeys(prev => new Set([...prev, key]));
-    
-    // Mostrar indicador de progresso
     toast.loading('Salvando contagem...', { id: toastId });
 
-    // ========== VALIDAÇÃO 1: Usuário autenticado ==========
     if (!user) {
       toast.error('Sessão expirada. Por favor, faça login novamente.', { id: toastId });
       setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
 
-    // ========== VALIDAÇÃO 2: Organization ID ==========
     if (!organizationId) {
       toast.error('Erro de configuração. Organização não identificada.', { id: toastId });
       setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
 
-    // ========== VALIDAÇÃO 3: Valor de sobra válido ==========
     const finalSobra = parseInt(values?.final_sobra);
     if (isNaN(finalSobra) || finalSobra < 0) {
       toast.error('Valor de Sobra inválido. Insira um número válido (≥ 0).', { id: toastId });
@@ -545,7 +670,6 @@ const ContagemPorcionados = () => {
     let dataToSave: any = null;
 
     try {
-      // Buscar perfil do usuário
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('nome')
@@ -556,7 +680,6 @@ const ContagemPorcionados = () => {
         console.error('Erro ao buscar perfil:', profileError);
       }
 
-      // Buscar informações do item
       const { data: itemData, error: itemError } = await supabase
         .from('itens_porcionados')
         .select('nome, peso_unitario_g, unidade_medida, equivalencia_traco, consumo_por_traco_g, usa_traco_massa')
@@ -570,7 +693,6 @@ const ContagemPorcionados = () => {
         return;
       }
 
-      // CALCULAR DIA OPERACIONAL DA LOJA
       const { data: diaOpData, error: diaOpError } = await supabase
         .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
       
@@ -583,7 +705,6 @@ const ContagemPorcionados = () => {
       
       diaOperacional = diaOpData;
 
-      // Calcular ideal diretamente da configuração semanal (não é mais editável pelo usuário)
       const estoqueKey = `${lojaId}-${itemId}`;
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
       if (estoqueSemanal) {
@@ -600,24 +721,21 @@ const ContagemPorcionados = () => {
         final_sobra: finalSobra,
         peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
         ideal_amanha: idealAmanha,
-        // a_produzir é uma coluna GENERATED - calculada automaticamente pelo banco
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
         organization_id: organizationId,
+        preenchido_na_sessao: true,
       };
 
-      // ========== SALVAMENTO COM RETRY ==========
       const saveResult = await saveWithRetry(dataToSave);
 
       if (!saveResult.success) {
         toast.error(`Falha ao salvar: ${saveResult.error}`, { id: toastId, duration: 8000 });
         await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'ERRO', undefined, saveResult.error, dataToSave);
-        // NÃO limpar valores editados em caso de erro - preservar dados do usuário
         setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
         return;
       }
 
-      // ========== VERIFICAÇÃO CRÍTICA: Confirmar dados salvos ==========
       const { data: savedData, error: verifyError } = await supabase
         .from('contagem_porcionados')
         .select('id, final_sobra, ideal_amanha, a_produzir, updated_at')
@@ -633,7 +751,6 @@ const ContagemPorcionados = () => {
         return;
       }
 
-      // Verificar se os valores salvos correspondem aos enviados
       if (savedData.final_sobra !== finalSobra) {
         toast.error(`INCONSISTÊNCIA: Sobra enviada (${finalSobra}) ≠ salva (${savedData.final_sobra}). Contate o suporte.`, { id: toastId, duration: 15000 });
         await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'ERRO', savedData.id, `Inconsistência: enviado=${finalSobra}, salvo=${savedData.final_sobra}`, dataToSave, savedData);
@@ -641,31 +758,13 @@ const ContagemPorcionados = () => {
         return;
       }
 
-      // ========== SUCESSO VERIFICADO ==========
       await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'VERIFICADO', savedData.id, undefined, dataToSave, savedData);
 
-      // Chamar função para criar/atualizar registro de produção
-      const { data: rpcResult, error: rpcError } = await supabase
-        .rpc('criar_ou_atualizar_producao_registro', {
-          p_item_id: itemId,
-          p_organization_id: organizationId,
-          p_usuario_id: user.id,
-          p_usuario_nome: profile?.nome || user.email || 'Usuário',
-          p_dia_operacional: diaOperacional,
-        });
+      toast.success(`Contagem salva! Sobra: ${finalSobra} | Ideal: ${idealAmanha} | A Produzir: ${aProduzir}`, { 
+        id: toastId,
+        duration: 3000 
+      });
 
-      if (rpcError) {
-        console.error('Erro ao criar registro de produção:', rpcError);
-        // Não falhar a operação principal por causa disto
-        toast.warning('Contagem salva, mas houve um problema ao atualizar produção.', { id: toastId, duration: 5000 });
-      } else {
-        toast.success(`Contagem salva e verificada! Sobra: ${finalSobra} | Ideal: ${idealAmanha} | A Produzir: ${aProduzir}`, { 
-          id: toastId,
-          duration: 5000 
-        });
-      }
-
-      // Atualizar valores originais após salvar (ideal_amanha não é mais rastreado aqui)
       setOriginalValues(prev => ({
         ...prev,
         [key]: {
@@ -674,18 +773,15 @@ const ContagemPorcionados = () => {
         }
       }));
       
-      // Limpar valores editados APENAS após sucesso
       setEditingValues(prev => {
         const newValues = { ...prev };
         delete newValues[key];
         return newValues;
       });
       
-      loadData();
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
       
-      // Mensagens específicas baseadas no tipo de erro
       let errorMsg = 'Erro desconhecido ao salvar';
       if (error.message?.includes('network') || error.message?.includes('fetch')) {
         errorMsg = 'Erro de conexão. Verifique sua internet e tente novamente.';
@@ -699,10 +795,7 @@ const ContagemPorcionados = () => {
       
       toast.error(errorMsg, { id: toastId, duration: 8000 });
       await logAudit(lojaId, itemId, diaOperacional || '', finalSobra, idealAmanha, aProduzir, 'ERRO', undefined, errorMsg, dataToSave);
-      
-      // NÃO limpar valores editados em caso de erro - preservar dados do usuário
     } finally {
-      // Remover do estado de salvando
       setSavingKeys(prev => {
         const newSet = new Set(prev);
         newSet.delete(key);
@@ -711,13 +804,9 @@ const ContagemPorcionados = () => {
     }
   };
 
-  // Obter o dia da semana do DIA ATUAL (dia operacional) em português
-  // Aceita uma data base opcional (formato YYYY-MM-DD) para calcular o dia
   const getCurrentDayKey = (baseDate?: string): keyof EstoqueIdeal => {
-    // Se baseDate for fornecido (dia operacional da loja), usar como base
-    // Caso contrário, usar data atual do navegador
     const base = baseDate ? new Date(baseDate + 'T12:00:00') : new Date();
-    const dayIndex = base.getDay(); // 0 = Domingo, 1 = Segunda, etc. (DIA ATUAL, não amanhã)
+    const dayIndex = base.getDay();
     
     const days: (keyof EstoqueIdeal)[] = [
       'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'
@@ -729,23 +818,18 @@ const ContagemPorcionados = () => {
   const getEditingValue = (lojaId: string, itemId: string, field: string, defaultValue: any) => {
     const key = `${lojaId}-${itemId}`;
     
-    // Se há valor editado manualmente, use-o
     if (editingValues[key]?.[field] !== undefined) {
       return editingValues[key][field];
     }
     
-    // Para ideal_amanha, SEMPRE buscar dos estoques ideais semanais primeiro
-    // NOTA: Apesar do nome "ideal_amanha", agora usamos o ideal do DIA ATUAL
     if (field === 'ideal_amanha') {
       const estoqueKey = `${lojaId}-${itemId}`;
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
       
       if (estoqueSemanal) {
-        // USAR DIA OPERACIONAL ATUAL DA LOJA (não amanhã!)
         const diaOperacional = diasOperacionaisPorLoja[lojaId];
         const currentDay = getCurrentDayKey(diaOperacional);
         const idealValue = estoqueSemanal[currentDay];
-        // Se o valor do estoque ideal é válido (> 0), use-o
         if (idealValue > 0) {
           return idealValue;
         }
@@ -756,14 +840,10 @@ const ContagemPorcionados = () => {
   };
 
   const openEstoquesDialog = async (lojaId: string, itemId: string, itemNome: string) => {
-    // Gerar ID único para esta operação
     const operationId = `${Date.now()}-${Math.random()}`;
     currentOperationId.current = operationId;
     
-    // Resetar estado de salvamento
     setSavingDialog(false);
-    
-    // Setar item e valores padrão
     setSelectedItem({ lojaId, itemId, itemNome });
     setEstoquesIdeais({
       segunda: 200,
@@ -775,10 +855,8 @@ const ContagemPorcionados = () => {
       domingo: 200,
     });
     
-    // Abrir o dialog
     setDialogOpen(true);
     
-    // Carregar dados existentes
     try {
       const { data, error } = await supabase
         .from('estoques_ideais_semanais')
@@ -787,9 +865,8 @@ const ContagemPorcionados = () => {
         .eq('item_porcionado_id', itemId)
         .maybeSingle();
       
-      // Verificar se ainda é a mesma operação
       if (currentOperationId.current !== operationId) {
-        return; // Operação cancelada - dialog foi aberto para outro item
+        return;
       }
       
       if (error && error.code !== 'PGRST116') {
@@ -824,10 +901,7 @@ const ContagemPorcionados = () => {
       return;
     }
 
-    // Capturar o ID da operação atual
     const operationId = currentOperationId.current;
-    
-    // Capturar valores no momento do clique
     const currentItem = { ...selectedItem };
     const currentEstoques = { ...estoquesIdeais };
 
@@ -851,7 +925,6 @@ const ContagemPorcionados = () => {
           onConflict: 'loja_id,item_porcionado_id',
         });
 
-      // Atualizar mapa local independentemente (dados foram salvos)
       const key = `${currentItem.lojaId}-${currentItem.itemId}`;
       setEstoquesIdeaisMap(prev => ({
         ...prev,
@@ -863,9 +936,8 @@ const ContagemPorcionados = () => {
         throw error;
       }
 
-      // Verificar se ainda é a mesma operação antes de modificar UI
       if (currentOperationId.current !== operationId) {
-        return; // Outro item foi aberto, não interferir
+        return;
       }
 
       toast.success('Estoques ideais salvos com sucesso');
@@ -873,9 +945,8 @@ const ContagemPorcionados = () => {
       setSelectedItem(null);
       setSavingDialog(false);
     } catch (error: any) {
-      // Verificar se ainda é a mesma operação
       if (currentOperationId.current !== operationId) {
-        return; // Ignorar erro de operação antiga
+        return;
       }
       
       console.error('Erro ao salvar:', error);
@@ -888,6 +959,43 @@ const ContagemPorcionados = () => {
       }
       setSavingDialog(false);
     }
+  };
+
+  // Badge de status por loja
+  const getStatusBadge = (lojaId: string) => {
+    const sessao = sessoes[lojaId];
+    
+    switch (sessao?.status) {
+      case 'encerrada':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs font-medium">
+            <CheckCircle className="h-3 w-3" /> Encerrada
+          </span>
+        );
+      case 'em_andamento':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs font-medium animate-pulse">
+            <Clock className="h-3 w-3" /> Contando...
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 text-xs font-medium">
+            <AlertCircle className="h-3 w-3" /> Pendente
+          </span>
+        );
+    }
+  };
+
+  // Verificar se sessão está ativa para uma loja
+  const isSessaoAtiva = (lojaId: string): boolean => {
+    return sessoes[lojaId]?.status === 'em_andamento';
+  };
+
+  // Verificar se pode encerrar
+  const podeEncerrar = (lojaId: string): boolean => {
+    const itemIds = itens.map(i => i.id);
+    return isSessaoAtiva(lojaId) && todosItensPreenchidos(lojaId, itemIds);
   };
 
   if (loading) {
@@ -930,9 +1038,8 @@ const ContagemPorcionados = () => {
           {lojas.map((loja) => {
             const contagensLoja = contagens[loja.id] || [];
             const isOpen = openLojas.has(loja.id);
-            
-            // Verificar se a loja tem lançamento válido hoje
-            const temLancamentoHoje = contagensLoja.length > 0;
+            const sessao = sessoes[loja.id];
+            const sessaoAtiva = isSessaoAtiva(loja.id);
 
             return (
               <Collapsible
@@ -943,15 +1050,10 @@ const ContagemPorcionados = () => {
               >
                 <CollapsibleTrigger className="w-full">
                   <div className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${temLancamentoHoje ? 'bg-green-500' : 'bg-orange-400'}`} />
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold">{loja.nome}</span>
                       <span className="text-xs text-muted-foreground">({loja.responsavel})</span>
-                      {!temLancamentoHoje && (
-                        <span className="inline-flex items-center rounded-full bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
-                          ⚠️ Sem lançamento hoje
-                        </span>
-                      )}
+                      {getStatusBadge(loja.id)}
                     </div>
                     {isOpen ? (
                       <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -963,154 +1065,214 @@ const ContagemPorcionados = () => {
 
                 <CollapsibleContent>
                   <div className="border-t">
-                    {/* Cabeçalho Simplificado */}
-                    {(() => {
-                      const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
-                      const showAdminCols = isAdminUser && showDetails;
-                      return (
-                        <div className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 text-xs font-semibold text-blue-700 dark:text-blue-300 border-b`}>
-                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>Item</div>
-                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'} >Sobra</div>
-                          <div className={showAdminCols ? 'col-span-2' : 'col-span-2'} >Peso (g)</div>
-                          {showAdminCols && <div className="col-span-2 text-center">Ideal ({diasSemanaLabels[getCurrentDayKey()]})</div>}
-                          {showAdminCols && <div className="col-span-2 text-center">A Produzir</div>}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Itens - Layout Simplificado */}
-                    {itens.map((item) => {
-                      const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
-                      const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
-                      const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
-                      const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
-                      
-                      // Buscar ideal diretamente da configuração semanal
-                      const estoqueKey = `${loja.id}-${item.id}`;
-                      const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
-                      const diaOperacional = diasOperacionaisPorLoja[loja.id];
-                      const currentDay = getCurrentDayKey(diaOperacional);
-                      const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
-                      
-                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
-                      const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
-                      const showAdminCols = isAdminUser && showDetails;
-                      const isDirty = isRowDirty(loja.id, item.id);
-                      
-                      // Funções de incremento/decremento
-                      const incrementSobra = () => {
-                        handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10));
-                      };
-                      const decrementSobra = () => {
-                        if (finalSobra > 0) {
-                          handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1));
-                        }
-                      };
-                      
-                      return (
-                        <div 
-                          key={item.id} 
-                          className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 items-center border-b last:border-b-0 ${isDirty ? 'bg-yellow-50 dark:bg-yellow-950/20' : 'hover:bg-accent/10'}`}
+                    {/* Tela de Iniciar Sessão */}
+                    {(!sessao || sessao.status === 'pendente') && (
+                      <div className="flex flex-col items-center justify-center p-8 bg-orange-50 dark:bg-orange-950/20">
+                        <PlayCircle className="h-12 w-12 text-orange-500 mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">Contagem não iniciada</h3>
+                        <p className="text-muted-foreground text-center mb-4 max-w-md">
+                          Clique para iniciar a contagem do dia operacional. 
+                          Todos os campos deverão ser preenchidos antes de encerrar.
+                        </p>
+                        <Button 
+                          onClick={() => handleIniciarSessao(loja.id)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                          size="lg"
                         >
-                          {/* Nome do Item */}
-                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm truncate">{item.nome}</span>
-                              {isAdminUser && (
-                                <Button 
-                                  variant="outline" 
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0 border-blue-500 bg-blue-50 hover:bg-blue-100"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEstoquesDialog(loja.id, item.id, item.nome);
-                                  }}
-                                  title="Configurar estoques ideais por dia"
-                                >
-                                  <Settings className="h-5 w-5 text-blue-600" />
-                                </Button>
-                              )}
-                            </div>
-                            {contagem && (
-                              <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-                                {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
-                              </p>
-                            )}
-                          </div>
+                          <PlayCircle className="h-5 w-5 mr-2" />
+                          Iniciar Contagem de Hoje
+                        </Button>
+                      </div>
+                    )}
 
-                          {/* Sobra com Botões +/- (Stepper) */}
-                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
-                            <div className="flex items-center justify-center">
-                              <Button 
-                                type="button"
-                                variant="default" 
-                                size="icon" 
-                                className="h-12 w-12 rounded-r-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
-                                onClick={decrementSobra}
-                              >
-                                <Minus className="h-5 w-5" />
-                              </Button>
-                              <div className="h-12 w-14 flex items-center justify-center bg-white text-blue-600 text-xl font-bold border-y-2 border-blue-500">
-                                {finalSobra}
-                              </div>
-                              <Button 
-                                type="button"
-                                variant="default" 
-                                size="icon" 
-                                className="h-12 w-12 rounded-l-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
-                                onClick={incrementSobra}
-                              >
-                                <Plus className="h-5 w-5" />
-                              </Button>
-                            </div>
-                          </div>
+                    {/* Sessão Encerrada */}
+                    {sessao?.status === 'encerrada' && (
+                      <div className="flex flex-col items-center justify-center p-8 bg-green-50 dark:bg-green-950/20">
+                        <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
+                        <h3 className="text-lg font-semibold mb-2 text-green-700 dark:text-green-300">
+                          Contagem Encerrada
+                        </h3>
+                        <p className="text-muted-foreground text-center mb-2">
+                          Encerrada por: {sessao.encerrado_por_nome}
+                        </p>
+                        {sessao.encerrado_em && (
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(sessao.encerrado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                          {/* Peso */}
-                          <div className={showAdminCols ? 'col-span-2' : 'col-span-2'}>
-                            <div className="relative">
-                              <WeightInputInline
-                                value={pesoTotal}
-                                onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                                placeholder="0"
-                              />
-                              {(!pesoTotal || pesoTotal === '0' || pesoTotal === '') && (
-                                <span className="absolute -bottom-3.5 left-0 right-0 text-center text-[9px] text-destructive">
-                                  Inserir peso
-                                </span>
-                              )}
+                    {/* Formulário de Contagem (sessão ativa) */}
+                    {sessaoAtiva && (
+                      <>
+                        {/* Cabeçalho */}
+                        {(() => {
+                          const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                          const showAdminCols = isAdminUser && showDetails;
+                          return (
+                            <div className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 text-xs font-semibold text-blue-700 dark:text-blue-300 border-b`}>
+                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>Item</div>
+                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'} >Sobra</div>
+                              <div className={showAdminCols ? 'col-span-2' : 'col-span-2'} >Peso (g)</div>
+                              {showAdminCols && <div className="col-span-2 text-center">Ideal ({diasSemanaLabels[getCurrentDayKey()]})</div>}
+                              {showAdminCols && <div className="col-span-2 text-center">A Produzir</div>}
                             </div>
-                          </div>
+                          );
+                        })()}
 
-                          {/* Colunas Admin (se visível) */}
-                          {showAdminCols && (
-                            <div className="col-span-2">
-                              <div className={`h-12 flex flex-col items-center justify-center rounded border text-sm ${
-                                idealFromConfig === 0 
-                                  ? 'bg-orange-50 border-orange-300 text-orange-600 dark:bg-orange-950/30' 
-                                  : 'bg-muted border-input'
-                              }`}>
-                                {idealFromConfig === 0 ? (
-                                  <span className="text-[10px] flex items-center gap-0.5">
-                                    <AlertTriangle className="h-3 w-3" />
-                                    Não config.
-                                  </span>
-                                ) : (
-                                  <span className="text-base font-semibold">{idealFromConfig}</span>
+                        {/* Itens */}
+                        {itens.map((item) => {
+                          const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
+                          const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
+                          const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
+                          const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
+                          
+                          const estoqueKey = `${loja.id}-${item.id}`;
+                          const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                          const diaOperacional = diasOperacionaisPorLoja[loja.id];
+                          const currentDay = getCurrentDayKey(diaOperacional);
+                          const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                          
+                          const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                          const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                          const showAdminCols = isAdminUser && showDetails;
+                          const isDirty = isRowDirty(loja.id, item.id);
+                          
+                          // Verificar se campo foi tocado na sessão
+                          const campoTocado = isCampoTocado(loja.id, item.id, 'final_sobra');
+                          const isItemNaoPreenchido = !campoTocado && sessaoAtiva;
+                          
+                          const incrementSobra = () => {
+                            handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10));
+                          };
+                          const decrementSobra = () => {
+                            if (finalSobra > 0) {
+                              handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1));
+                            }
+                          };
+                          
+                          return (
+                            <div 
+                              key={item.id} 
+                              className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 items-center border-b last:border-b-0 transition-all ${
+                                isItemNaoPreenchido 
+                                  ? 'bg-orange-50 dark:bg-orange-950/20 ring-2 ring-orange-400 ring-inset' 
+                                  : isDirty 
+                                    ? 'bg-yellow-50 dark:bg-yellow-950/20' 
+                                    : campoTocado 
+                                      ? 'bg-green-50/50 dark:bg-green-950/10'
+                                      : 'hover:bg-accent/10'
+                              }`}
+                            >
+                              {/* Nome do Item */}
+                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
+                                <div className="flex items-center gap-2">
+                                  {campoTocado && (
+                                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                                  )}
+                                  <span className="font-medium text-sm truncate">{item.nome}</span>
+                                  {isAdminUser && (
+                                    <Button 
+                                      variant="outline" 
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0 border-blue-500 bg-blue-50 hover:bg-blue-100"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openEstoquesDialog(loja.id, item.id, item.nome);
+                                      }}
+                                      title="Configurar estoques ideais por dia"
+                                    >
+                                      <Settings className="h-5 w-5 text-blue-600" />
+                                    </Button>
+                                  )}
+                                </div>
+                                {contagem && (
+                                  <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                                    {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
+                                  </p>
                                 )}
                               </div>
-                            </div>
-                          )}
 
-                          {showAdminCols && (
-                            <div className="col-span-2">
-                              <div className={`h-12 flex items-center justify-center text-base font-bold rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                                {aProduzir}
+                              {/* Sobra com Botões +/- */}
+                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
+                                <div className="flex items-center justify-center">
+                                  <Button 
+                                    type="button"
+                                    variant="default" 
+                                    size="icon" 
+                                    className="h-12 w-12 rounded-r-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
+                                    onClick={decrementSobra}
+                                  >
+                                    <Minus className="h-5 w-5" />
+                                  </Button>
+                                  <div className={`h-12 w-14 flex items-center justify-center text-xl font-bold border-y-2 ${
+                                    isItemNaoPreenchido 
+                                      ? 'bg-orange-100 text-orange-700 border-orange-400' 
+                                      : 'bg-white text-blue-600 border-blue-500'
+                                  }`}>
+                                    {finalSobra}
+                                  </div>
+                                  <Button 
+                                    type="button"
+                                    variant="default" 
+                                    size="icon" 
+                                    className="h-12 w-12 rounded-l-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
+                                    onClick={incrementSobra}
+                                  >
+                                    <Plus className="h-5 w-5" />
+                                  </Button>
+                                </div>
                               </div>
+
+                              {/* Peso */}
+                              <div className={showAdminCols ? 'col-span-2' : 'col-span-2'}>
+                                <div className="relative">
+                                  <WeightInputInline
+                                    value={pesoTotal}
+                                    onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                                    placeholder="0"
+                                  />
+                                  {(!pesoTotal || pesoTotal === '0' || pesoTotal === '') && (
+                                    <span className="absolute -bottom-3.5 left-0 right-0 text-center text-[9px] text-destructive">
+                                      Inserir peso
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Colunas Admin */}
+                              {showAdminCols && (
+                                <div className="col-span-2">
+                                  <div className={`h-12 flex flex-col items-center justify-center rounded border text-sm ${
+                                    idealFromConfig === 0 
+                                      ? 'bg-orange-50 border-orange-300 text-orange-600 dark:bg-orange-950/30' 
+                                      : 'bg-muted border-input'
+                                  }`}>
+                                    {idealFromConfig === 0 ? (
+                                      <span className="text-[10px] flex items-center gap-0.5">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        Não config.
+                                      </span>
+                                    ) : (
+                                      <span className="text-base font-semibold">{idealFromConfig}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {showAdminCols && (
+                                <div className="col-span-2">
+                                  <div className={`h-12 flex items-center justify-center text-base font-bold rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                                    {aProduzir}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </>
+                    )}
                   </div>
                 </CollapsibleContent>
               </Collapsible>
@@ -1118,30 +1280,59 @@ const ContagemPorcionados = () => {
           })}
         </div>
 
-        {/* Botão Fixo - Salvar Tudo */}
+        {/* Botão Fixo */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t shadow-lg z-50">
           <div className="max-w-4xl mx-auto">
-            <Button 
-              onClick={handleSaveAll}
-              disabled={!hasAnyChanges() || savingAll}
-              className="w-full h-14 text-lg font-bold bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
-            >
-              {savingAll ? (
-                <>
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  SALVAR TUDO E FINALIZAR
-                  {hasAnyChanges() && (
-                    <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
-                      {getDirtyRows().length} alteração(ões)
-                    </span>
-                  )}
-                </>
-              )}
-            </Button>
+            {lojaAtualId && isSessaoAtiva(lojaAtualId) ? (
+              <Button 
+                onClick={() => handleEncerrarSessao(lojaAtualId)}
+                disabled={!podeEncerrar(lojaAtualId) || savingAll}
+                className={`w-full h-14 text-lg font-bold transition-all ${
+                  podeEncerrar(lojaAtualId) 
+                    ? 'bg-green-500 hover:bg-green-600 text-white' 
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
+                }`}
+              >
+                {savingAll ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Salvando e verificando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-5 w-5 mr-2" />
+                    ENCERRAR CONTAGEM
+                    {!podeEncerrar(lojaAtualId) && (
+                      <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
+                        {contarItensPendentes(lojaAtualId, itens.map(i => i.id))} item(ns) pendente(s)
+                      </span>
+                    )}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleSaveAll}
+                disabled={!hasAnyChanges() || savingAll}
+                className="w-full h-14 text-lg font-bold bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
+              >
+                {savingAll ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    SALVAR TUDO E FINALIZAR
+                    {hasAnyChanges() && (
+                      <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
+                        {getDirtyRows().length} alteração(ões)
+                      </span>
+                    )}
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1152,7 +1343,7 @@ const ContagemPorcionados = () => {
             if (!open) {
               setSelectedItem(null);
               setSavingDialog(false);
-              currentOperationId.current = null; // Limpar operação
+              currentOperationId.current = null;
             }
           }}
         >
