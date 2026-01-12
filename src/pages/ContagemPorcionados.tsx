@@ -1003,15 +1003,16 @@ const ContagemPorcionados = () => {
                               <span className="font-medium text-sm truncate">{item.nome}</span>
                               {isAdminUser && (
                                 <Button 
-                                  variant="ghost" 
+                                  variant="outline" 
                                   size="icon"
-                                  className="h-6 w-6 shrink-0"
+                                  className="h-8 w-8 shrink-0 border-blue-500 bg-blue-50 hover:bg-blue-100"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openEstoquesDialog(loja.id, item.id, item.nome);
                                   }}
+                                  title="Configurar estoques ideais por dia"
                                 >
-                                  <Settings className="h-3 w-3 text-muted-foreground" />
+                                  <Settings className="h-5 w-5 text-blue-600" />
                                 </Button>
                               )}
                             </div>
