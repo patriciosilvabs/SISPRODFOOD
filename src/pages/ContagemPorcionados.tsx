@@ -984,7 +984,7 @@ const ContagemPorcionados = () => {
                       
                       // Funções de incremento/decremento
                       const incrementSobra = () => {
-                        handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1));
+                        handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10));
                       };
                       const decrementSobra = () => {
                         if (finalSobra > 0) {
