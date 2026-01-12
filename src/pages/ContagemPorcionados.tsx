@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
-import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Sparkles, Settings, ChevronDown, ChevronUp, X, Loader2, RefreshCw, AlertTriangle, Plus, Minus, Eye, EyeOff } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,6 +116,8 @@ const ContagemPorcionados = () => {
     warnings: string[];
   } | null>(null);
   const [savingDialog, setSavingDialog] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
   
   // Ref para rastrear a operação atual e evitar race conditions
   const currentOperationId = useRef<string | null>(null);
@@ -312,6 +314,62 @@ const ContagemPorcionados = () => {
     
     return false;
   };
+
+  // Verificar se há qualquer alteração pendente
+  const hasAnyChanges = (): boolean => {
+    return Object.keys(editingValues).some(key => {
+      const [lojaId, itemId] = key.split('-');
+      return isRowDirty(lojaId, itemId);
+    });
+  };
+
+  // Obter todas as linhas com alterações
+  const getDirtyRows = (): { lojaId: string; itemId: string }[] => {
+    const dirtyRows: { lojaId: string; itemId: string }[] = [];
+    
+    lojas.forEach(loja => {
+      itens.forEach(item => {
+        if (isRowDirty(loja.id, item.id)) {
+          dirtyRows.push({ lojaId: loja.id, itemId: item.id });
+        }
+      });
+    });
+    
+    return dirtyRows;
+  };
+
+  // Função para salvar todas as alterações
+  const handleSaveAll = async () => {
+    const dirtyRows = getDirtyRows();
+    
+    if (dirtyRows.length === 0) {
+      toast.info('Não há alterações para salvar');
+      return;
+    }
+    
+    setSavingAll(true);
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const row of dirtyRows) {
+      try {
+        await executeSave(row.lojaId, row.itemId);
+        successCount++;
+      } catch (error) {
+        errorCount++;
+        console.error('Erro ao salvar:', error);
+      }
+    }
+    
+    setSavingAll(false);
+    
+    if (errorCount === 0) {
+      toast.success(`${successCount} item(ns) salvos com sucesso!`);
+    } else {
+      toast.warning(`${successCount} salvos, ${errorCount} com erro`);
+    }
+  };
+
 
   // Função para validar valores suspeitos
   const validateSuspiciousValues = (values: any): string[] => {
@@ -832,17 +890,23 @@ const ContagemPorcionados = () => {
 
   return (
     <Layout>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Contagem de Porcionados</h1>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => loadData()} disabled={loading} className="!bg-green-600 hover:!bg-green-700 text-white">
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Atualizar
-            </Button>
-            <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
-              <Sparkles className="mr-2 h-4 w-4" />
-              Otimizar com IA
+      <div className="space-y-4 pb-24">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h1 className="text-xl font-bold">Contagem de Porcionados</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            {(roles.includes('Admin') || roles.includes('SuperAdmin')) && (
+              <Button 
+                size="sm" 
+                variant={showDetails ? "default" : "outline"}
+                onClick={() => setShowDetails(!showDetails)}
+                className="h-8"
+              >
+                {showDetails ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+                {showDetails ? 'Ocultar' : 'Detalhes'}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => loadData()} disabled={loading} variant="outline" className="h-8">
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </div>
@@ -884,44 +948,73 @@ const ContagemPorcionados = () => {
 
                 <CollapsibleContent>
                   <div className="border-t">
-                    {/* Cabeçalho */}
+                    {/* Cabeçalho Simplificado */}
                     {(() => {
                       const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                      const showAdminCols = isAdminUser && showDetails;
                       return (
-                        <div className={`grid ${isAdminUser ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground`}>
-                          <div className="col-span-3">Item</div>
-                          <div className="col-span-2 text-center">Sobra</div>
-                          <div className="col-span-2 text-center">Peso</div>
-                          {isAdminUser && <div className="col-span-2 text-center">Ideal (Dia)</div>}
-                          {isAdminUser && <div className="col-span-2 text-center">A Produzir</div>}
-                          <div className="col-span-1 text-center">Ação</div>
+                        <div className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 text-xs font-semibold text-blue-700 dark:text-blue-300 border-b`}>
+                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>Item</div>
+                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'} >Sobra</div>
+                          <div className={showAdminCols ? 'col-span-2' : 'col-span-2'} >Peso (g)</div>
+                          {showAdminCols && <div className="col-span-2 text-center">Ideal ({diasSemanaLabels[getCurrentDayKey()]})</div>}
+                          {showAdminCols && <div className="col-span-2 text-center">A Produzir</div>}
                         </div>
                       );
                     })()}
 
-                    {/* Itens */}
+                    {/* Itens - Layout Simplificado */}
                     {itens.map((item) => {
                       const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
                       const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
-                      const finalSobra = finalSobraRaw === '' ? '' : finalSobraRaw;
+                      const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
                       const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
                       
-                      // Buscar ideal diretamente da configuração semanal (não editável)
+                      // Buscar ideal diretamente da configuração semanal
                       const estoqueKey = `${loja.id}-${item.id}`;
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
                       const diaOperacional = diasOperacionaisPorLoja[loja.id];
                       const currentDay = getCurrentDayKey(diaOperacional);
                       const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
                       
-                      const aProduzir = Math.max(0, idealFromConfig - Number(finalSobra || 0));
-
+                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
                       const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+                      const showAdminCols = isAdminUser && showDetails;
+                      const isDirty = isRowDirty(loja.id, item.id);
+                      
+                      // Funções de incremento/decremento
+                      const incrementSobra = () => {
+                        handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1));
+                      };
+                      const decrementSobra = () => {
+                        if (finalSobra > 0) {
+                          handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1));
+                        }
+                      };
                       
                       return (
-                        <div key={item.id} 
-                             className={`grid ${isAdminUser ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-accent/20`}>
-                          <div className="col-span-3">
-                            <span className="font-medium text-sm">{item.nome}</span>
+                        <div 
+                          key={item.id} 
+                          className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 items-center border-b last:border-b-0 ${isDirty ? 'bg-yellow-50 dark:bg-yellow-950/20' : 'hover:bg-accent/10'}`}
+                        >
+                          {/* Nome do Item */}
+                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm truncate">{item.nome}</span>
+                              {isAdminUser && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEstoquesDialog(loja.id, item.id, item.nome);
+                                  }}
+                                >
+                                  <Settings className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                              )}
+                            </div>
                             {contagem && (
                               <p className="text-[10px] text-muted-foreground">
                                 {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
@@ -929,81 +1022,76 @@ const ContagemPorcionados = () => {
                             )}
                           </div>
 
-                          <div className="col-span-2">
-                            <Input
-                              type="number"
-                              value={finalSobra}
-                              onChange={(e) => handleValueChange(loja.id, item.id, 'final_sobra', e.target.value)}
-                              className="h-12 text-center text-base font-medium"
-                              placeholder="0"
-                            />
+                          {/* Sobra com Botões +/- (Stepper) */}
+                          <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
+                            <div className="flex items-center justify-center">
+                              <Button 
+                                type="button"
+                                variant="default" 
+                                size="icon" 
+                                className="h-12 w-12 rounded-r-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
+                                onClick={decrementSobra}
+                              >
+                                <Minus className="h-5 w-5" />
+                              </Button>
+                              <div className="h-12 w-14 flex items-center justify-center bg-blue-500 text-white text-xl font-bold border-x border-blue-400">
+                                {finalSobra}
+                              </div>
+                              <Button 
+                                type="button"
+                                variant="default" 
+                                size="icon" 
+                                className="h-12 w-12 rounded-l-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
+                                onClick={incrementSobra}
+                              >
+                                <Plus className="h-5 w-5" />
+                              </Button>
+                            </div>
                           </div>
 
-                          <div className="col-span-2">
-                            <div className={`${(!pesoTotal || pesoTotal === '0') ? '[&_input]:border-destructive [&_input]:ring-destructive' : ''}`}>
+                          {/* Peso */}
+                          <div className={showAdminCols ? 'col-span-2' : 'col-span-2'}>
+                            <div className="relative">
                               <WeightInputInline
                                 value={pesoTotal}
                                 onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                                 placeholder="0"
                               />
+                              {(!pesoTotal || pesoTotal === '0' || pesoTotal === '') && (
+                                <span className="absolute -bottom-3.5 left-0 right-0 text-center text-[9px] text-destructive">
+                                  Inserir peso
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          {isAdminUser && (
+                          {/* Colunas Admin (se visível) */}
+                          {showAdminCols && (
                             <div className="col-span-2">
-                              <div className={`h-12 flex flex-col items-center justify-center rounded border ${
+                              <div className={`h-12 flex flex-col items-center justify-center rounded border text-sm ${
                                 idealFromConfig === 0 
-                                  ? 'bg-orange-50 border-orange-300 text-orange-600' 
+                                  ? 'bg-orange-50 border-orange-300 text-orange-600 dark:bg-orange-950/30' 
                                   : 'bg-muted border-input'
                               }`}>
                                 {idealFromConfig === 0 ? (
-                                  <>
-                                    <span className="text-[10px] font-normal flex items-center gap-0.5">
-                                      <AlertTriangle className="h-3 w-3" />
-                                      Não config.
-                                    </span>
-                                    <span className="text-xs text-orange-500">{diasSemanaLabels[currentDay]}</span>
-                                  </>
+                                  <span className="text-[10px] flex items-center gap-0.5">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Não config.
+                                  </span>
                                 ) : (
-                                  <>
-                                    <span className="text-base font-medium">{idealFromConfig}</span>
-                                    <span className="text-[10px] text-muted-foreground">{diasSemanaLabels[currentDay]}</span>
-                                  </>
+                                  <span className="text-base font-semibold">{idealFromConfig}</span>
                                 )}
                               </div>
                             </div>
                           )}
 
-                          {isAdminUser && (
+                          {showAdminCols && (
                             <div className="col-span-2">
-                              <div className={`text-center font-bold text-base py-3 rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                                {aProduzir} un
+                              <div className={`h-12 flex items-center justify-center text-base font-bold rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                                {aProduzir}
                               </div>
                             </div>
                           )}
-
-                          <div className="col-span-1 flex gap-1 justify-center">
-                            {isAdminUser && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  openEstoquesDialog(loja.id, item.id, item.nome);
-                                }}
-                              >
-                                <Settings className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            <SaveButton
-                              isDirty={isRowDirty(loja.id, item.id)}
-                              isSaving={savingKeys.has(`${loja.id}-${item.id}`)}
-                              onClick={() => handleSave(loja.id, item.id)}
-                              className="h-8 px-2 text-xs"
-                            />
-                          </div>
                         </div>
                       );
                     })}
@@ -1014,7 +1102,33 @@ const ContagemPorcionados = () => {
           })}
         </div>
 
-        {/* Dialog de Estoques Ideais */}
+        {/* Botão Fixo - Salvar Tudo */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t shadow-lg z-50">
+          <div className="max-w-4xl mx-auto">
+            <Button 
+              onClick={handleSaveAll}
+              disabled={!hasAnyChanges() || savingAll}
+              className="w-full h-14 text-lg font-bold bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
+            >
+              {savingAll ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                <>
+                  SALVAR TUDO E FINALIZAR
+                  {hasAnyChanges() && (
+                    <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
+                      {getDirtyRows().length} alteração(ões)
+                    </span>
+                  )}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
         <Dialog 
           open={dialogOpen} 
           onOpenChange={(open) => {
