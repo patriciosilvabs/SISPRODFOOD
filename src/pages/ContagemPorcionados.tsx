@@ -290,8 +290,8 @@ const ContagemPorcionados = () => {
     
     if (!current) return false; // Nenhuma edição ainda
     
-    // Comparar campo a campo
-    const fields = ['final_sobra', 'peso_total_g', 'ideal_amanha'];
+    // Comparar campo a campo (ideal_amanha removido - não é mais editável)
+    const fields = ['final_sobra', 'peso_total_g'];
     for (const field of fields) {
       if (current[field] !== undefined) {
         const currentVal = String(current[field] ?? '');
@@ -500,16 +500,12 @@ const ContagemPorcionados = () => {
       
       diaOperacional = diaOpData;
 
-      // Calcular ideal
-      if (values?.ideal_amanha !== undefined) {
-        idealAmanha = parseInt(values.ideal_amanha) || 0;
-      } else {
-        const estoqueKey = `${lojaId}-${itemId}`;
-        const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
-        if (estoqueSemanal) {
-          const currentDay = getCurrentDayKey(diaOperacional);
-          idealAmanha = estoqueSemanal[currentDay] || 0;
-        }
+      // Calcular ideal diretamente da configuração semanal (não é mais editável pelo usuário)
+      const estoqueKey = `${lojaId}-${itemId}`;
+      const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+      if (estoqueSemanal) {
+        const currentDay = getCurrentDayKey(diaOperacional);
+        idealAmanha = estoqueSemanal[currentDay] || 0;
       }
       
       aProduzir = Math.max(0, idealAmanha - finalSobra);
@@ -586,13 +582,12 @@ const ContagemPorcionados = () => {
         });
       }
 
-      // Atualizar valores originais após salvar
+      // Atualizar valores originais após salvar (ideal_amanha não é mais rastreado aqui)
       setOriginalValues(prev => ({
         ...prev,
         [key]: {
           final_sobra: finalSobra,
           peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
-          ideal_amanha: idealAmanha,
         }
       }));
       
@@ -900,9 +895,15 @@ const ContagemPorcionados = () => {
                       const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
                       const finalSobra = finalSobraRaw === '' ? '' : finalSobraRaw;
                       const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
-                      const idealAmanhaRaw = getEditingValue(loja.id, item.id, 'ideal_amanha', '');
-                      const idealAmanha = idealAmanhaRaw === '' ? '' : idealAmanhaRaw;
-                      const aProduzir = Math.max(0, Number(idealAmanha || 0) - Number(finalSobra || 0));
+                      
+                      // Buscar ideal diretamente da configuração semanal (não editável)
+                      const estoqueKey = `${loja.id}-${item.id}`;
+                      const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                      const diaOperacional = diasOperacionaisPorLoja[loja.id];
+                      const currentDay = getCurrentDayKey(diaOperacional);
+                      const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                      
+                      const aProduzir = Math.max(0, idealFromConfig - Number(finalSobra || 0));
 
                       const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
                       
@@ -938,17 +939,15 @@ const ContagemPorcionados = () => {
                             </div>
                           </div>
 
-                          {isAdminUser && (
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                value={idealAmanha}
-                                onChange={(e) => handleValueChange(loja.id, item.id, 'ideal_amanha', e.target.value)}
-                                className="h-12 text-center text-base font-medium"
-                                placeholder="0"
-                              />
-                            </div>
-                          )}
+                      {isAdminUser && (
+                        <div className="col-span-2">
+                          <div className={`h-12 flex items-center justify-center text-base font-medium rounded border ${
+                            idealFromConfig === 0 ? 'bg-orange-50 border-orange-300 text-orange-600' : 'bg-muted border-input'
+                          }`}>
+                            {idealFromConfig}
+                          </div>
+                        </div>
+                      )}
 
                           {isAdminUser && (
                             <div className="col-span-2">
