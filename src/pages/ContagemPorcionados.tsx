@@ -1034,7 +1034,7 @@ const ContagemPorcionados = () => {
                               >
                                 <Minus className="h-5 w-5" />
                               </Button>
-                              <div className="h-12 w-14 flex items-center justify-center bg-blue-500 text-white text-xl font-bold border-x border-blue-400">
+                              <div className="h-12 w-14 flex items-center justify-center bg-white text-blue-600 text-xl font-bold border-y-2 border-blue-500">
                                 {finalSobra}
                               </div>
                               <Button 
