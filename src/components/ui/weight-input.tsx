@@ -112,7 +112,7 @@ export function WeightInputInline({
         className="h-12 text-center text-base font-medium"
       />
       {hasValue && !isFocused && (
-        <p className="text-xs text-muted-foreground truncate" title={pesoProgressivoToWords(value)}>
+        <p className="text-sm text-amber-700 dark:text-amber-400 font-medium truncate" title={pesoProgressivoToWords(value)}>
           {pesoProgressivoToWords(value)}
         </p>
       )}

@@ -1032,7 +1032,7 @@ const ContagemPorcionados = () => {
                               )}
                             </div>
                             {contagem && (
-                              <p className="text-[10px] text-muted-foreground">
+                              <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
                                 {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
                               </p>
                             )}
