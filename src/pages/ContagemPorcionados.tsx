@@ -258,6 +258,21 @@ const ContagemPorcionados = () => {
         };
       });
 
+      // Inicializar originalValues para TODOS os pares loja-item
+      // (mesmo os que não têm contagem prévia, para detectar mudanças corretamente)
+      (lojasData || []).forEach(loja => {
+        (itensData || []).forEach(item => {
+          const key = `${loja.id}-${item.id}`;
+          if (!originals[key]) {
+            originals[key] = {
+              final_sobra: '',
+              peso_total_g: '',
+              ideal_amanha: 0,
+            };
+          }
+        });
+      });
+
       setContagens(contagensPorLoja);
       setOriginalValues(originals);
       
