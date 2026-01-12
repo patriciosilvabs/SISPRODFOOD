@@ -12,6 +12,7 @@ import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
 import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
+import { CutoffStatusPanel } from '@/components/kanban/CutoffStatusPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
@@ -91,6 +92,10 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   // Código único do lote para rastreabilidade
   codigo_lote?: string;
+  // Campos de demanda congelada vs incremental
+  demanda_congelada?: number | null;
+  demanda_incremental?: number | null;
+  demanda_base?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -375,6 +380,18 @@ const ResumoDaProducao = () => {
         .select('*, insumos!inner(nome, quantidade_em_estoque, unidade_medida)')
         .in('item_porcionado_id', itemIds);
 
+      // Buscar demanda congelada para o dia atual
+      const { data: demandasCongeladas } = await supabase
+        .from('demanda_congelada')
+        .select('item_porcionado_id, demanda_total, detalhes_lojas')
+        .eq('organization_id', organizationId)
+        .eq('dia_producao', hoje);
+
+      // Mapear demanda congelada por item_id
+      const demandaCongeladaMap = new Map<string, { demanda_total: number }>(
+        demandasCongeladas?.map(d => [d.item_porcionado_id, { demanda_total: d.demanda_total }]) || []
+      );
+
       // Mapear insumos principais (is_principal = true) por item_porcionado_id
       const insumoPrincipalMap = new Map<string, {
         insumo_id: string;
@@ -496,6 +513,21 @@ const ResumoDaProducao = () => {
           insumoEmbalagemNome = embalagemInsumosMap.get(itemInfo.insumo_embalagem_id);
         }
 
+        // Calcular demanda congelada vs incremental
+        const demandaCongeladaItem = demandaCongeladaMap.get(registro.item_id);
+        const demandaCongeladaValue = demandaCongeladaItem?.demanda_total ?? null;
+        const demandaLojas = registro.demanda_lojas || 0;
+        
+        // Calcular incremental (apenas se há demanda congelada)
+        const demandaIncremental = demandaCongeladaValue !== null
+          ? Math.max(0, demandaLojas - demandaCongeladaValue)
+          : null;
+        
+        // Calcular base total
+        const demandaBase = demandaCongeladaValue !== null
+          ? demandaCongeladaValue + (demandaIncremental || 0)
+          : demandaLojas;
+
         const registroTyped: ProducaoRegistro = {
           ...registro,
           detalhes_lojas: Array.isArray(registro.detalhes_lojas) 
@@ -531,6 +563,10 @@ const ResumoDaProducao = () => {
             itemInfo?.peso_medio_operacional_bolinha_g
               ? Math.floor(registro.lotes_masseira * itemInfo.massa_gerada_por_lote_kg / (itemInfo.peso_medio_operacional_bolinha_g / 1000))
               : undefined,
+          // Dados de demanda congelada vs incremental
+          demanda_congelada: demandaCongeladaValue,
+          demanda_incremental: demandaIncremental,
+          demanda_base: demandaBase,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -1216,6 +1252,9 @@ const ResumoDaProducao = () => {
             </Button>
           </div>
         </div>
+
+        {/* Painel de Status do Cutoff */}
+        <CutoffStatusPanel />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (

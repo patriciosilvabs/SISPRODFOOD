@@ -500,6 +500,41 @@ export type Database = {
           },
         ]
       }
+      cron_execucao_log: {
+        Row: {
+          erro: string | null
+          executado_em: string | null
+          funcao: string
+          id: string
+          organization_id: string | null
+          resultado: Json | null
+        }
+        Insert: {
+          erro?: string | null
+          executado_em?: string | null
+          funcao: string
+          id?: string
+          organization_id?: string | null
+          resultado?: Json | null
+        }
+        Update: {
+          erro?: string | null
+          executado_em?: string | null
+          funcao?: string
+          id?: string
+          organization_id?: string | null
+          resultado?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cron_execucao_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demanda_congelada: {
         Row: {
           congelado_em: string | null
@@ -3275,6 +3310,7 @@ export type Database = {
         Returns: Json
       }
       verificar_cutoff_loja: { Args: { p_loja_id: string }; Returns: Json }
+      verificar_e_congelar_cutoffs: { Args: never; Returns: Json }
     }
     Enums: {
       app_role: "Admin" | "Produção" | "Loja" | "SuperAdmin"

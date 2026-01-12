@@ -67,3 +67,6 @@ verify_jwt = true
 
 [functions.excluir-organizacao]
 verify_jwt = true
+
+[functions.processar-cutoff-lojas]
+verify_jwt = false
