@@ -74,6 +74,16 @@ interface EstoqueIdeal {
   domingo: number;
 }
 
+const diasSemanaLabels: Record<keyof EstoqueIdeal, string> = {
+  segunda: 'Seg',
+  terca: 'Ter',
+  quarta: 'Qua',
+  quinta: 'Qui',
+  sexta: 'Sex',
+  sabado: 'Sáb',
+  domingo: 'Dom'
+};
+
 const ContagemPorcionados = () => {
   const { user, roles, isAdmin, hasRole } = useAuth();
   const { organizationId } = useOrganization();
@@ -882,7 +892,7 @@ const ContagemPorcionados = () => {
                           <div className="col-span-3">Item</div>
                           <div className="col-span-2 text-center">Sobra</div>
                           <div className="col-span-2 text-center">Peso</div>
-                          {isAdminUser && <div className="col-span-2 text-center">Ideal</div>}
+                          {isAdminUser && <div className="col-span-2 text-center">Ideal (Dia)</div>}
                           {isAdminUser && <div className="col-span-2 text-center">A Produzir</div>}
                           <div className="col-span-1 text-center">Ação</div>
                         </div>
@@ -939,15 +949,30 @@ const ContagemPorcionados = () => {
                             </div>
                           </div>
 
-                      {isAdminUser && (
-                        <div className="col-span-2">
-                          <div className={`h-12 flex items-center justify-center text-base font-medium rounded border ${
-                            idealFromConfig === 0 ? 'bg-orange-50 border-orange-300 text-orange-600' : 'bg-muted border-input'
-                          }`}>
-                            {idealFromConfig}
-                          </div>
-                        </div>
-                      )}
+                          {isAdminUser && (
+                            <div className="col-span-2">
+                              <div className={`h-12 flex flex-col items-center justify-center rounded border ${
+                                idealFromConfig === 0 
+                                  ? 'bg-orange-50 border-orange-300 text-orange-600' 
+                                  : 'bg-muted border-input'
+                              }`}>
+                                {idealFromConfig === 0 ? (
+                                  <>
+                                    <span className="text-[10px] font-normal flex items-center gap-0.5">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Não config.
+                                    </span>
+                                    <span className="text-xs text-orange-500">{diasSemanaLabels[currentDay]}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-base font-medium">{idealFromConfig}</span>
+                                    <span className="text-[10px] text-muted-foreground">{diasSemanaLabels[currentDay]}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           {isAdminUser && (
                             <div className="col-span-2">
