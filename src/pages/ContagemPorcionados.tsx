@@ -117,6 +117,11 @@ const ContagemPorcionados = () => {
     warnings: string[];
   } | null>(null);
   const [savingDialog, setSavingDialog] = useState(false);
+  const [reiniciarDialog, setReiniciarDialog] = useState<{
+    open: boolean;
+    lojaId: string;
+    aposCutoff: boolean;
+  } | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [lojaAtualId, setLojaAtualId] = useState<string | null>(null);
@@ -135,6 +140,7 @@ const ContagemPorcionados = () => {
     todosItensPreenchidos,
     contarItensPendentes,
     limparCamposTocados,
+    verificarCutoff,
   } = useSessaoContagem({
     organizationId,
     userId: user?.id,
@@ -404,6 +410,58 @@ const ContagemPorcionados = () => {
     });
 
     await iniciarSessao(lojaId, profile?.nome || user?.email || 'Usuário');
+  };
+
+  // Handler para solicitar reinício de sessão
+  const handleSolicitarReinicio = async (lojaId: string) => {
+    const cutoffInfo = await verificarCutoff(lojaId);
+    setReiniciarDialog({
+      open: true,
+      lojaId,
+      aposCutoff: cutoffInfo?.passou_cutoff ?? false,
+    });
+  };
+
+  // Handler para confirmar reinício de sessão
+  const handleConfirmarReinicio = async () => {
+    if (!reiniciarDialog) return;
+    
+    const { lojaId } = reiniciarDialog;
+    setReiniciarDialog(null);
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('nome')
+      .eq('id', user!.id)
+      .single();
+
+    // Limpar valores editados desta loja
+    setEditingValues(prev => {
+      const newValues = { ...prev };
+      Object.keys(newValues).forEach(key => {
+        if (key.startsWith(lojaId)) delete newValues[key];
+      });
+      return newValues;
+    });
+
+    // Limpar valores originais para não mostrar como dirty
+    setOriginalValues(prev => {
+      const newValues = { ...prev };
+      Object.keys(newValues).forEach(key => {
+        if (key.startsWith(lojaId)) delete newValues[key];
+      });
+      return newValues;
+    });
+
+    const result = await iniciarSessao(lojaId, profile?.nome || user?.email || 'Usuário');
+    
+    if (result.success) {
+      // Expandir a loja se não estiver aberta
+      if (!openLojas.has(lojaId)) {
+        setOpenLojas(prev => new Set([...prev, lojaId]));
+      }
+      toast.success('Contagem reiniciada! Preencha os itens novamente.');
+    }
   };
 
   // Handler para encerrar sessão com verificação
@@ -1096,8 +1154,24 @@ const ContagemPorcionados = () => {
                           Encerrada por: {sessao.encerrado_por_nome}
                         </p>
                         {sessao.encerrado_em && (
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-muted-foreground mb-4">
                             {format(new Date(sessao.encerrado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          </p>
+                        )}
+                        
+                        {/* Botão para reiniciar contagem */}
+                        <Button 
+                          onClick={() => handleSolicitarReinicio(loja.id)}
+                          variant="outline"
+                          className="mt-2 border-orange-500 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Reiniciar Contagem
+                        </Button>
+                        
+                        {sessao.iniciado_apos_cutoff && (
+                          <p className="text-xs text-orange-600 mt-3 text-center">
+                            Nota: Esta contagem foi iniciada após o cutoff
                           </p>
                         )}
                       </div>
@@ -1486,6 +1560,50 @@ const ContagemPorcionados = () => {
                 }}
               >
                 Confirmar e Salvar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* AlertDialog de Confirmação para Reiniciar Contagem */}
+        <AlertDialog open={reiniciarDialog?.open} onOpenChange={(open) => !open && setReiniciarDialog(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 text-orange-500" />
+                Reiniciar Contagem?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  {reiniciarDialog?.aposCutoff ? (
+                    <>
+                      <p className="font-medium text-orange-600">
+                        ⚠️ Atenção: O horário de cutoff já passou!
+                      </p>
+                      <p>
+                        Reiniciar a contagem agora pode gerar demanda adicional para o CPD 
+                        caso os novos valores sejam maiores que os anteriores.
+                      </p>
+                    </>
+                  ) : (
+                    <p>
+                      Isso permitirá preencher todos os itens novamente. 
+                      Os dados anteriores serão substituídos pelos novos valores.
+                    </p>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setReiniciarDialog(null)}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                className={reiniciarDialog?.aposCutoff ? "bg-orange-500 hover:bg-orange-600" : ""}
+                onClick={handleConfirmarReinicio}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Reiniciar
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
