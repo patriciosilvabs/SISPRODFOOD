@@ -5,6 +5,7 @@ import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle,
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
+import { DemandaIndicator, PostCutoffBadge } from './DemandaIndicator';
 import { useProductionTimer } from '@/hooks/useProductionTimer';
 import { useEffect } from 'react';
 import { formatarPesoExibicao } from '@/lib/weightUtils';
@@ -74,6 +75,10 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   // Código único do lote para rastreabilidade
   codigo_lote?: string;
+  // Campos de demanda congelada vs incremental
+  demanda_congelada?: number | null;
+  demanda_incremental?: number | null;
+  demanda_base?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -204,6 +209,8 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
               </Badge>
             )}
+            {/* Badge de Pós-Cutoff */}
+            <PostCutoffBadge demandaIncremental={registro.demanda_incremental} />
           </div>
 
           {/* Indicador de bloqueio */}
@@ -267,16 +274,28 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   </div>
                 )}
 
-                {/* Composição da Produção */}
-                {(registro.demanda_lojas || registro.reserva_configurada || registro.sobra_reserva) && (
-                  <div className="mt-2 space-y-1 bg-blue-50 dark:bg-blue-950 rounded p-2">
+                {/* Composição da Produção com Demanda Congelada */}
+                {(registro.demanda_lojas || registro.demanda_congelada || registro.reserva_configurada || registro.sobra_reserva) && (
+                  <div className="mt-2 space-y-2 bg-blue-50 dark:bg-blue-950 rounded p-2">
                     <p className="text-xs font-medium text-blue-700 dark:text-blue-300">📊 Composição:</p>
-                    {registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
-                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-                        <span>• Demanda Lojas:</span>
-                        <span className="font-medium">{registro.demanda_lojas} un</span>
-                      </div>
+                    
+                    {/* Indicador de Demanda Congelada vs Incremental */}
+                    {registro.demanda_congelada !== null && registro.demanda_congelada !== undefined ? (
+                      <DemandaIndicator
+                        demandaLojas={registro.demanda_lojas}
+                        demandaCongelada={registro.demanda_congelada}
+                        demandaIncremental={registro.demanda_incremental}
+                        demandaBase={registro.demanda_base}
+                      />
+                    ) : (
+                      registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                          <span>• Demanda Lojas:</span>
+                          <span className="font-medium">{registro.demanda_lojas} un</span>
+                        </div>
+                      )
                     )}
+                    
                     {registro.reserva_configurada !== null && registro.reserva_configurada !== undefined && registro.reserva_configurada > 0 && (
                       <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
                         <span>• Reserva do Dia:</span>
