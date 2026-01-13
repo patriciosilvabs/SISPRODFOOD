@@ -167,9 +167,10 @@ interface KanbanCardProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: () => void;
   onRegistrarPerda?: () => void;
+  isPreview?: boolean;
 }
 
-export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda }: KanbanCardProps) {
+export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda, isPreview = false }: KanbanCardProps) {
   // Estados para seções colapsáveis
   const [producaoOpen, setProducaoOpen] = useState(true);
   const [composicaoOpen, setComposicaoOpen] = useState(false);
@@ -431,30 +432,44 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         </div>
                       )}
                       
-                      {/* Nota sobre margem de flexibilização - só mostrar quando realmente aplicada */}
+                      {/* Nota sobre margem de flexibilização - só mostrar no ÚLTIMO LOTE quando realmente aplicada */}
                       {registro.unidade_medida === 'lote_masseira' && 
                        registro.unidades_estimadas_masseira && 
                        registro.demanda_lojas && 
                        registro.lotes_masseira &&
+                       registro.sequencia_traco === registro.total_tracos_lote && // Só no último lote
                        (() => {
-                         // Calcular se a margem foi realmente aplicada
+                         // Calcular se a margem foi realmente aplicada no último lote
                          const unidadesPorLote = registro.unidades_estimadas_masseira / registro.lotes_masseira;
                          const margem = registro.margem_lote_percentual || 0;
-                         const capacidadeComMargem = unidadesPorLote * (1 + margem / 100);
                          
-                         // Margem aplicada = demanda cabe na capacidade com margem, 
-                         // mas NÃO caberia sem a margem (reduziu número de lotes)
-                         const lotesNecessariosSemMargem = Math.ceil(registro.demanda_lojas / unidadesPorLote);
-                         const lotesNecessariosComMargem = Math.ceil(registro.demanda_lojas / capacidadeComMargem);
+                         if (margem === 0) return false;
                          
-                         // Margem só foi aplicada se reduziu o número de lotes
-                         return lotesNecessariosComMargem < lotesNecessariosSemMargem;
+                         // Capacidade total dos lotes anteriores (sem o último)
+                         const lotesAnteriores = registro.lotes_masseira - 1;
+                         const capacidadeLotesAnteriores = lotesAnteriores * unidadesPorLote;
+                         
+                         // Demanda que sobrou para o último lote
+                         const demandaUltimoLote = registro.demanda_lojas - capacidadeLotesAnteriores;
+                         
+                         // Capacidade base do último lote (sem margem)
+                         const capacidadeBaseLote = unidadesPorLote;
+                         
+                         // Margem só foi aplicada se demanda do último lote > capacidade base
+                         // (ou seja, sem a margem, precisaria de mais um lote)
+                         return demandaUltimoLote > capacidadeBaseLote;
                        })() && (
                         <div className="flex items-start gap-2 mt-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
                           <span className="text-amber-600 text-xs">ℹ️</span>
                           <span className="text-xs text-amber-700 dark:text-amber-300">
-                            Margem de flexibilização aplicada: produção ajustada para{' '}
-                            <strong>~{registro.unidades_estimadas_masseira} un</strong> ({registro.lotes_masseira} lote{registro.lotes_masseira !== 1 ? 's' : ''})
+                            Último lote absorveu {(() => {
+                              const unidadesPorLote = (registro.unidades_estimadas_masseira || 0) / (registro.lotes_masseira || 1);
+                              const lotesAnteriores = (registro.lotes_masseira || 1) - 1;
+                              const capacidadeLotesAnteriores = lotesAnteriores * unidadesPorLote;
+                              const demandaUltimoLote = (registro.demanda_lojas || 0) - capacidadeLotesAnteriores;
+                              const unidadesExtras = Math.round(demandaUltimoLote - unidadesPorLote);
+                              return unidadesExtras;
+                            })()} un extras (margem {registro.margem_lote_percentual}%)
                           </span>
                         </div>
                       )}
@@ -722,8 +737,8 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             )}
           </div>
 
-          {/* Botões de Ação */}
-          {columnId !== 'finalizado' && (
+          {/* Botões de Ação - esconder quando em modo preview */}
+          {columnId !== 'finalizado' && !isPreview && (
             <div className="space-y-2 mt-1">
               {buttonConfig && (
                 <Button 
