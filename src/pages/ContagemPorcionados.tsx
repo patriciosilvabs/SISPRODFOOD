@@ -36,6 +36,7 @@ import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
 import { ContagemFixedFooter } from '@/components/contagem/ContagemFixedFooter';
 import { LojaContagemSection } from '@/components/contagem/LojaContagemSection';
+import { SolicitarProducaoExtraModal } from '@/components/modals/SolicitarProducaoExtraModal';
 
 interface Loja {
   id: string;
@@ -122,6 +123,16 @@ const ContagemPorcionados = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [lojaAtualId, setLojaAtualId] = useState<string | null>(null);
+  
+  // Estado para modal de produção extra
+  const [producaoExtraModal, setProducaoExtraModal] = useState<{
+    open: boolean;
+    item: { id: string; nome: string };
+    loja: { id: string; nome: string };
+    diaOperacional: string;
+    demandaAtual: number;
+    producaoAtual: number;
+  } | null>(null);
   
   // Ref para rastrear a operação atual e evitar race conditions
   const currentOperationId = useRef<string | null>(null);
@@ -1055,6 +1066,48 @@ const ContagemPorcionados = () => {
     return isSessaoAtiva(lojaId) && todosItensPreenchidos(lojaId, itemIds);
   };
 
+  // Abrir modal de produção extra
+  const handleOpenProducaoExtra = async (lojaId: string, item: { id: string; nome: string }) => {
+    const loja = lojas.find(l => l.id === lojaId);
+    if (!loja || !organizationId) return;
+
+    const diaOperacional = diasOperacionaisPorLoja[lojaId];
+    if (!diaOperacional) {
+      toast.error('Erro ao identificar dia operacional');
+      return;
+    }
+
+    // Buscar demanda atual (contagem) e produção programada
+    const estoqueKey = `${lojaId}-${item.id}`;
+    const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+    const currentDay = getCurrentDayKey(diaOperacional);
+    const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+    
+    const contagem = contagens[lojaId]?.find(c => c.item_porcionado_id === item.id);
+    const finalSobra = contagem?.final_sobra ?? 0;
+    const demandaAtual = Math.max(0, idealFromConfig - finalSobra);
+
+    // Buscar produção programada
+    const { data: producaoData } = await supabase
+      .from('producao_registros')
+      .select('unidades_programadas')
+      .eq('item_id', item.id)
+      .eq('data_referencia', diaOperacional)
+      .eq('organization_id', organizationId)
+      .in('status', ['a_produzir', 'em_preparo', 'em_porcionamento', 'finalizado']);
+
+    const producaoAtual = producaoData?.reduce((sum, p) => sum + (p.unidades_programadas || 0), 0) || 0;
+
+    setProducaoExtraModal({
+      open: true,
+      item: { id: item.id, nome: item.nome },
+      loja: { id: loja.id, nome: loja.nome },
+      diaOperacional,
+      demandaAtual,
+      producaoAtual,
+    });
+  };
+
   // Calcular estatísticas para os cards de resumo - ANTES do early return
   const summaryStats = useMemo(() => {
     const activeLojaId = lojaAtualId;
@@ -1169,8 +1222,9 @@ const ContagemPorcionados = () => {
                       onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10))}
                       onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
                       onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                      
                       currentDayLabel={diasSemanaLabels[currentDay]}
+                      showProducaoExtra={isAdminUser && !sessaoAtiva}
+                      onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
                     />
                   );
                 })}
@@ -1375,6 +1429,22 @@ const ContagemPorcionados = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Modal de Produção Extra */}
+        {producaoExtraModal && user && organizationId && (
+          <SolicitarProducaoExtraModal
+            open={producaoExtraModal.open}
+            onOpenChange={(open) => !open && setProducaoExtraModal(null)}
+            item={producaoExtraModal.item}
+            loja={producaoExtraModal.loja}
+            diaOperacional={producaoExtraModal.diaOperacional}
+            demandaAtual={producaoExtraModal.demandaAtual}
+            producaoAtual={producaoExtraModal.producaoAtual}
+            organizationId={organizationId}
+            userId={user.id}
+            onSuccess={loadData}
+          />
+        )}
       </div>
     </Layout>
   );
