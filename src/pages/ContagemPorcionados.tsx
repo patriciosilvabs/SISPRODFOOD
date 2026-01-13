@@ -162,8 +162,8 @@ const ContagemPorcionados = () => {
     isDepoisJanela,
   } = useJanelaContagem(lojas.map(l => l.id));
 
-  // Verificar se usuário é restrito (não-admin e não-produção) - inclui funcionários de Loja e CPD
-  const isRestrictedUser = !isAdmin() && !hasRole('Produção');
+  // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
+  const isRestrictedUser = !isAdmin();
 
   useEffect(() => {
     if (user) {
