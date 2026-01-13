@@ -54,15 +54,15 @@ export const ContagemItemCard = ({
 }: ContagemItemCardProps) => {
   const getCardClasses = () => {
     if (isItemNaoPreenchido) {
-      return 'bg-warning/5 border-l-warning ring-2 ring-warning/30 ring-inset';
+      return 'bg-gray-50 border-l-amber-400 ring-2 ring-amber-200 ring-inset';
     }
     if (isDirty) {
-      return 'bg-warning/10 border-l-warning';
+      return 'bg-gray-50 border-l-amber-400';
     }
     if (campoTocado) {
-      return 'bg-success/5 border-l-success';
+      return 'bg-gray-50 border-l-emerald-400';
     }
-    return 'bg-card border-l-primary hover:shadow-md';
+    return 'bg-white border-l-blue-500 hover:shadow-md';
   };
 
   return (
@@ -78,7 +78,7 @@ export const ContagemItemCard = ({
           {campoTocado && (
             <CheckCircle className="h-4 w-4 text-success shrink-0" />
           )}
-          <span className="font-semibold text-sm uppercase tracking-wide text-foreground truncate">
+          <span className="font-semibold text-sm uppercase tracking-wide text-gray-900 truncate">
             {item.nome}
           </span>
         </div>
@@ -104,8 +104,8 @@ export const ContagemItemCard = ({
           </Button>
           <div className={`h-12 w-16 flex items-center justify-center text-xl font-bold border-y-2 ${
             isItemNaoPreenchido 
-              ? 'bg-warning/10 text-warning border-warning' 
-              : 'bg-background text-primary border-primary'
+              ? 'bg-amber-50 text-amber-600 border-amber-400' 
+              : 'bg-white text-blue-600 border-blue-500'
           }`}>
             {finalSobra}
           </div>
