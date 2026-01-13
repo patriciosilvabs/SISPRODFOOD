@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
-  Plus, Minus, Settings, CheckCircle, AlertTriangle 
+  Plus, Minus, CheckCircle, AlertTriangle 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -26,7 +26,6 @@ interface ContagemItemCardProps {
   onIncrementSobra: () => void;
   onDecrementSobra: () => void;
   onPesoChange: (value: string) => void;
-  onOpenEstoqueDialog: () => void;
   currentDayLabel: string;
 }
 
@@ -46,7 +45,6 @@ export const ContagemItemCard = ({
   onIncrementSobra,
   onDecrementSobra,
   onPesoChange,
-  onOpenEstoqueDialog,
   currentDayLabel,
 }: ContagemItemCardProps) => {
   const getCardClasses = () => {
@@ -78,20 +76,6 @@ export const ContagemItemCard = ({
           <span className="font-semibold text-sm uppercase tracking-wide text-foreground truncate">
             {item.nome}
           </span>
-          {isAdmin && (
-            <Button 
-              variant="outline" 
-              size="icon"
-              className="h-8 w-8 shrink-0 border-primary/50 bg-primary/5 hover:bg-primary/10"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenEstoqueDialog();
-              }}
-              title="Configurar estoques ideais por dia"
-            >
-              <Settings className="h-4 w-4 text-primary" />
-            </Button>
-          )}
         </div>
         {lastUpdate && (
           <p className="text-xs text-muted-foreground mt-1">
