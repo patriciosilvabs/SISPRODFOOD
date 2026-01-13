@@ -207,8 +207,7 @@ const ItensPorcionados = () => {
       // Buscar lojas (exceto CPD)
       const { data: lojasData } = await supabase
         .from('lojas')
-        .select('id, nome')
-        .neq('tipo', 'cpd')
+        .select('id, nome, tipo')
         .order('nome');
       
       setLojas(lojasData || []);
