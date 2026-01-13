@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
-  Plus, Minus, CheckCircle, AlertTriangle 
+  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -27,6 +27,9 @@ interface ContagemItemCardProps {
   onDecrementSobra: () => void;
   onPesoChange: (value: string) => void;
   currentDayLabel: string;
+  // Novas props para produção extra
+  showProducaoExtra?: boolean;
+  onSolicitarProducaoExtra?: () => void;
 }
 
 export const ContagemItemCard = ({
@@ -46,6 +49,8 @@ export const ContagemItemCard = ({
   onDecrementSobra,
   onPesoChange,
   currentDayLabel,
+  showProducaoExtra = false,
+  onSolicitarProducaoExtra,
 }: ContagemItemCardProps) => {
   const getCardClasses = () => {
     if (isItemNaoPreenchido) {
@@ -156,6 +161,20 @@ export const ContagemItemCard = ({
               <span className="text-base font-bold">{aProduzir}</span>
             </div>
           </>
+        )}
+
+        {/* Botão Produção Extra */}
+        {showProducaoExtra && onSolicitarProducaoExtra && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onSolicitarProducaoExtra}
+            className="h-10 gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span className="hidden sm:inline">Extra</span>
+          </Button>
         )}
       </div>
     </div>

@@ -287,8 +287,10 @@ export type Database = {
           final_sobra: number
           id: string
           ideal_amanha: number
+          is_incremento: boolean | null
           item_porcionado_id: string
           loja_id: string
+          motivo_incremento: string | null
           organization_id: string | null
           peso_total_g: number | null
           preenchido_na_sessao: boolean | null
@@ -303,8 +305,10 @@ export type Database = {
           final_sobra?: number
           id?: string
           ideal_amanha?: number
+          is_incremento?: boolean | null
           item_porcionado_id: string
           loja_id: string
+          motivo_incremento?: string | null
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
@@ -319,8 +323,10 @@ export type Database = {
           final_sobra?: number
           id?: string
           ideal_amanha?: number
+          is_incremento?: boolean | null
           item_porcionado_id?: string
           loja_id?: string
+          motivo_incremento?: string | null
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
