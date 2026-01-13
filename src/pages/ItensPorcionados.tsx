@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, ShoppingBag, Timer, RefreshCw, AlertCircle, Settings } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -86,6 +86,18 @@ interface InsumoVinculado {
   unidade: UnidadeMedida;
 }
 
+interface ReservaDiaria {
+  id?: string;
+  item_porcionado_id: string;
+  segunda: number;
+  terca: number;
+  quarta: number;
+  quinta: number;
+  sexta: number;
+  sabado: number;
+  domingo: number;
+}
+
 const ItensPorcionados = () => {
   const { organizationId } = useOrganization();
   const { canDelete } = useCanDelete();
@@ -95,6 +107,20 @@ const ItensPorcionados = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
+  
+  // Estado para reservas semanais
+  const [reservasDiarias, setReservasDiarias] = useState<Map<string, ReservaDiaria>>(new Map());
+  const [reservaDialogOpen, setReservaDialogOpen] = useState(false);
+  const [editingReservaItemId, setEditingReservaItemId] = useState<string | null>(null);
+  const [reservaForm, setReservaForm] = useState({
+    segunda: 0,
+    terca: 0,
+    quarta: 0,
+    quinta: 0,
+    sexta: 0,
+    sabado: 0,
+    domingo: 0,
+  });
   
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
@@ -169,6 +195,27 @@ const ItensPorcionados = () => {
         .order('nome');
 
       if (insumosError) throw insumosError;
+
+      // Buscar reservas diárias
+      const { data: reservasData } = await supabase
+        .from('itens_reserva_diaria')
+        .select('*');
+
+      // Mapear reservas por item_porcionado_id
+      const reservasMap = new Map<string, ReservaDiaria>(
+        reservasData?.map(r => [r.item_porcionado_id, {
+          id: r.id,
+          item_porcionado_id: r.item_porcionado_id,
+          segunda: r.segunda || 0,
+          terca: r.terca || 0,
+          quarta: r.quarta || 0,
+          quinta: r.quinta || 0,
+          sexta: r.sexta || 0,
+          sabado: r.sabado || 0,
+          domingo: r.domingo || 0,
+        }]) || []
+      );
+      setReservasDiarias(reservasMap);
 
       setItens(itensData || []);
       setInsumos(insumosData || []);
@@ -452,6 +499,63 @@ const ItensPorcionados = () => {
     } catch (error: any) {
       console.error('Erro ao excluir item:', error);
       toast.error('Erro ao excluir item: ' + error.message);
+    }
+  };
+
+  // Funções para gerenciar reserva semanal
+  const openReservaEditor = (itemId: string) => {
+    const reserva = reservasDiarias.get(itemId);
+    setReservaForm({
+      segunda: reserva?.segunda || 0,
+      terca: reserva?.terca || 0,
+      quarta: reserva?.quarta || 0,
+      quinta: reserva?.quinta || 0,
+      sexta: reserva?.sexta || 0,
+      sabado: reserva?.sabado || 0,
+      domingo: reserva?.domingo || 0,
+    });
+    setEditingReservaItemId(itemId);
+    setReservaDialogOpen(true);
+  };
+
+  const salvarReserva = async () => {
+    if (!editingReservaItemId || !organizationId) return;
+
+    try {
+      const reservaExistente = reservasDiarias.get(editingReservaItemId);
+
+      const data = {
+        item_porcionado_id: editingReservaItemId,
+        organization_id: organizationId,
+        segunda: reservaForm.segunda,
+        terca: reservaForm.terca,
+        quarta: reservaForm.quarta,
+        quinta: reservaForm.quinta,
+        sexta: reservaForm.sexta,
+        sabado: reservaForm.sabado,
+        domingo: reservaForm.domingo,
+      };
+
+      if (reservaExistente?.id) {
+        const { error } = await supabase
+          .from('itens_reserva_diaria')
+          .update(data)
+          .eq('id', reservaExistente.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('itens_reserva_diaria')
+          .insert([data]);
+        if (error) throw error;
+      }
+
+      toast.success('Reserva semanal atualizada!');
+      setReservaDialogOpen(false);
+      setEditingReservaItemId(null);
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao salvar reserva:', error);
+      toast.error('Erro ao salvar reserva: ' + error.message);
     }
   };
 
@@ -1461,13 +1565,14 @@ const ItensPorcionados = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Configuração</TableHead>
+                  <TableHead>Reserva Semanal</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itens.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       Nenhum item cadastrado
                     </TableCell>
                   </TableRow>
@@ -1514,6 +1619,54 @@ const ItensPorcionados = () => {
                           '-'
                         )}
                       </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const reserva = reservasDiarias.get(item.id);
+                          const dias = [
+                            { key: 'segunda', label: 'S' },
+                            { key: 'terca', label: 'T' },
+                            { key: 'quarta', label: 'Q' },
+                            { key: 'quinta', label: 'Q' },
+                            { key: 'sexta', label: 'S' },
+                            { key: 'sabado', label: 'S' },
+                            { key: 'domingo', label: 'D' },
+                          ];
+                          const total = reserva 
+                            ? reserva.segunda + reserva.terca + reserva.quarta + reserva.quinta + reserva.sexta + reserva.sabado + reserva.domingo 
+                            : 0;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-0.5">
+                                {dias.map((dia) => {
+                                  const valor = reserva?.[dia.key as keyof typeof reserva] as number || 0;
+                                  return (
+                                    <span 
+                                      key={dia.key} 
+                                      className={`text-[10px] w-5 h-5 flex items-center justify-center rounded ${
+                                        valor > 0 
+                                          ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 font-medium' 
+                                          : 'bg-muted text-muted-foreground'
+                                      }`}
+                                      title={`${dia.key}: ${valor}`}
+                                    >
+                                      {valor}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => openReservaEditor(item.id)}
+                                title="Configurar reserva semanal"
+                              >
+                                <Settings className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
                           variant="ghost"
@@ -1540,6 +1693,62 @@ const ItensPorcionados = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Dialog para editar reserva semanal */}
+        <Dialog open={reservaDialogOpen} onOpenChange={setReservaDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Configurar Reserva Semanal</DialogTitle>
+              <DialogDescription>
+                Defina o estoque ideal para cada dia da semana. Este valor será usado para calcular a demanda de produção.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid grid-cols-7 gap-2 py-4">
+              {[
+                { key: 'segunda', label: 'Seg' },
+                { key: 'terca', label: 'Ter' },
+                { key: 'quarta', label: 'Qua' },
+                { key: 'quinta', label: 'Qui' },
+                { key: 'sexta', label: 'Sex' },
+                { key: 'sabado', label: 'Sáb' },
+                { key: 'domingo', label: 'Dom' },
+              ].map((dia) => (
+                <div key={dia.key} className="space-y-1">
+                  <Label className="text-xs text-center block font-medium">{dia.label}</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={reservaForm[dia.key as keyof typeof reservaForm]}
+                    onChange={(e) => setReservaForm({
+                      ...reservaForm,
+                      [dia.key]: parseInt(e.target.value) || 0,
+                    })}
+                    className="text-center h-10"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 bg-muted/50 rounded-lg">
+              <p className="text-xs text-muted-foreground">
+                <strong>Total semanal:</strong> {
+                  reservaForm.segunda + reservaForm.terca + reservaForm.quarta + 
+                  reservaForm.quinta + reservaForm.sexta + reservaForm.sabado + reservaForm.domingo
+                } unidades
+              </p>
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setReservaDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={salvarReserva}>
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
