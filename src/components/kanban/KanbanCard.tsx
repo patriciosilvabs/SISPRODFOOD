@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2 } from 'lucide-react';
+import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
@@ -79,6 +79,9 @@ interface ProducaoRegistro {
   demanda_congelada?: number | null;
   demanda_incremental?: number | null;
   demanda_base?: number | null;
+  // Novo: lote incremental gerado após início da produção
+  is_incremental?: boolean;
+  demanda_base_snapshot?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -207,6 +210,13 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
               <Badge variant="outline" className="text-xs shrink-0">
                 Lote {registro.sequencia_traco}
                 {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
+              </Badge>
+            )}
+            {/* Badge de Lote Extra (incremental) */}
+            {registro.is_incremental && (
+              <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-300 dark:border-purple-700 text-xs shrink-0">
+                <Plus className="h-3 w-3 mr-1" />
+                Lote Extra
               </Badge>
             )}
             {/* Badge de Pós-Cutoff */}

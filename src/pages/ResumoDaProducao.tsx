@@ -96,6 +96,9 @@ interface ProducaoRegistro {
   demanda_congelada?: number | null;
   demanda_incremental?: number | null;
   demanda_base?: number | null;
+  // Novo: lote incremental gerado após início da produção
+  is_incremental?: boolean;
+  demanda_base_snapshot?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -567,6 +570,9 @@ const ResumoDaProducao = () => {
           demanda_congelada: demandaCongeladaValue,
           demanda_incremental: demandaIncremental,
           demanda_base: demandaBase,
+          // Dados de lote incremental
+          is_incremental: registro.is_incremental || false,
+          demanda_base_snapshot: registro.demanda_base_snapshot,
         };
         
         organizedColumns[targetColumn].push(registroTyped);
@@ -648,12 +654,25 @@ const ResumoDaProducao = () => {
       // Determinar timer_status baseado se o item tem timer ativo
       const timerStatus = registro.timer_ativo ? 'rodando' : 'concluido';
 
+      // Calcular demanda atual total para snapshot
+      const { data: demandaData } = await supabase
+        .from('contagem_porcionados')
+        .select('ideal_amanha, final_sobra')
+        .eq('item_porcionado_id', registro.item_id)
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', registro.data_referencia || new Date().toISOString().split('T')[0]);
+      
+      const demandaAtual = demandaData?.reduce(
+        (acc, c) => acc + Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0)), 0
+      ) || 0;
+
       const { error } = await supabase
         .from('producao_registros')
         .update({
           status: 'em_preparo',
           data_inicio_preparo: new Date().toISOString(),
           timer_status: timerStatus,
+          demanda_base_snapshot: demandaAtual, // Snapshot da demanda ao iniciar preparo
         })
         .eq('id', registroId);
 

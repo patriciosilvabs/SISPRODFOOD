@@ -695,6 +695,20 @@ const ContagemPorcionados = () => {
     }
   };
 
+  // Verificar se há produção ativa para um item
+  const verificarProducaoAtiva = async (itemId: string, diaOperacional: string): Promise<boolean> => {
+    const { data } = await supabase
+      .from('producao_registros')
+      .select('status')
+      .eq('item_id', itemId)
+      .eq('data_referencia', diaOperacional)
+      .eq('organization_id', organizationId)
+      .in('status', ['em_preparo', 'em_porcionamento', 'finalizado'])
+      .limit(1);
+    
+    return (data?.length ?? 0) > 0;
+  };
+
   const executeSave = async (lojaId: string, itemId: string) => {
     const key = `${lojaId}-${itemId}`;
     const values = editingValues[key];
@@ -762,6 +776,15 @@ const ContagemPorcionados = () => {
       }
       
       diaOperacional = diaOpData;
+
+      // Verificar se há produção ativa - exibir aviso se sim
+      const producaoAtiva = await verificarProducaoAtiva(itemId, diaOperacional);
+      if (producaoAtiva) {
+        toast.warning(
+          `Produção de ${itemData.nome} em andamento. Sua alteração gerará um lote extra.`,
+          { duration: 5000 }
+        );
+      }
 
       const estoqueKey = `${lojaId}-${itemId}`;
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
