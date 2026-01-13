@@ -26,7 +26,7 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   const lastCheckedPath = useRef<string | null>(null);
   
   // Detecção mobile e verificação de admin
-  const isMobile = useIsMobile();
+  const { isMobile, isLoading: mobileLoading } = useIsMobile();
   const isAdmin = roles.includes('Admin') || roles.includes('SuperAdmin');
 
   const userIsSuperAdmin = roles.includes('SuperAdmin');
@@ -135,8 +135,8 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
     }
   }, [user, loading, orgLoading, pageAccessLoading, subscriptionLoading, needsOnboarding, canAccess, roles, requiredRoles, navigate, currentPath, userIsSuperAdmin, isSuperAdminRoute]);
 
-  // Loading
-  if (loading || orgLoading) {
+  // Loading (inclui detecção mobile para evitar flash)
+  if (loading || orgLoading || mobileLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
