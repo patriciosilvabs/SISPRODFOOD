@@ -86,9 +86,11 @@ interface InsumoVinculado {
   unidade: UnidadeMedida;
 }
 
-interface ReservaDiaria {
+interface EstoqueIdealSemanal {
   id?: string;
   item_porcionado_id: string;
+  loja_id: string;
+  loja_nome?: string;
   segunda: number;
   terca: number;
   quarta: number;
@@ -96,6 +98,11 @@ interface ReservaDiaria {
   sexta: number;
   sabado: number;
   domingo: number;
+}
+
+interface Loja {
+  id: string;
+  nome: string;
 }
 
 const ItensPorcionados = () => {
@@ -108,19 +115,20 @@ const ItensPorcionados = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemPorcionado | null>(null);
   
-  // Estado para reservas semanais
-  const [reservasDiarias, setReservasDiarias] = useState<Map<string, ReservaDiaria>>(new Map());
-  const [reservaDialogOpen, setReservaDialogOpen] = useState(false);
-  const [editingReservaItemId, setEditingReservaItemId] = useState<string | null>(null);
-  const [reservaForm, setReservaForm] = useState({
-    segunda: 0,
-    terca: 0,
-    quarta: 0,
-    quinta: 0,
-    sexta: 0,
-    sabado: 0,
-    domingo: 0,
-  });
+  // Estado para lojas e estoques ideais por loja
+  const [lojas, setLojas] = useState<Loja[]>([]);
+  const [estoquesPorLoja, setEstoquesPorLoja] = useState<Map<string, Map<string, EstoqueIdealSemanal>>>(new Map());
+  const [estoqueDialogOpen, setEstoqueDialogOpen] = useState(false);
+  const [editingEstoqueItemId, setEditingEstoqueItemId] = useState<string | null>(null);
+  const [estoqueForm, setEstoqueForm] = useState<Record<string, {
+    segunda: number;
+    terca: number;
+    quarta: number;
+    quinta: number;
+    sexta: number;
+    sabado: number;
+    domingo: number;
+  }>>({});
   
   // Estado para novo insumo vinculado
   const [novoInsumo, setNovoInsumo] = useState({
@@ -196,26 +204,41 @@ const ItensPorcionados = () => {
 
       if (insumosError) throw insumosError;
 
-      // Buscar reservas diárias
-      const { data: reservasData } = await supabase
-        .from('itens_reserva_diaria')
-        .select('*');
+      // Buscar lojas (exceto CPD)
+      const { data: lojasData } = await supabase
+        .from('lojas')
+        .select('id, nome')
+        .neq('tipo', 'cpd')
+        .order('nome');
+      
+      setLojas(lojasData || []);
 
-      // Mapear reservas por item_porcionado_id
-      const reservasMap = new Map<string, ReservaDiaria>(
-        reservasData?.map(r => [r.item_porcionado_id, {
-          id: r.id,
-          item_porcionado_id: r.item_porcionado_id,
-          segunda: r.segunda || 0,
-          terca: r.terca || 0,
-          quarta: r.quarta || 0,
-          quinta: r.quinta || 0,
-          sexta: r.sexta || 0,
-          sabado: r.sabado || 0,
-          domingo: r.domingo || 0,
-        }]) || []
-      );
-      setReservasDiarias(reservasMap);
+      // Buscar estoques ideais semanais por loja
+      const { data: estoquesData } = await supabase
+        .from('estoques_ideais_semanais')
+        .select('*, lojas(nome)');
+
+      // Mapear estoques por item_id -> loja_id
+      const estoquesMap = new Map<string, Map<string, EstoqueIdealSemanal>>();
+      estoquesData?.forEach((e: any) => {
+        if (!estoquesMap.has(e.item_porcionado_id)) {
+          estoquesMap.set(e.item_porcionado_id, new Map());
+        }
+        estoquesMap.get(e.item_porcionado_id)!.set(e.loja_id, {
+          id: e.id,
+          item_porcionado_id: e.item_porcionado_id,
+          loja_id: e.loja_id,
+          loja_nome: e.lojas?.nome,
+          segunda: e.segunda || 0,
+          terca: e.terca || 0,
+          quarta: e.quarta || 0,
+          quinta: e.quinta || 0,
+          sexta: e.sexta || 0,
+          sabado: e.sabado || 0,
+          domingo: e.domingo || 0,
+        });
+      });
+      setEstoquesPorLoja(estoquesMap);
 
       setItens(itensData || []);
       setInsumos(insumosData || []);
@@ -502,60 +525,85 @@ const ItensPorcionados = () => {
     }
   };
 
-  // Funções para gerenciar reserva semanal
-  const openReservaEditor = (itemId: string) => {
-    const reserva = reservasDiarias.get(itemId);
-    setReservaForm({
-      segunda: reserva?.segunda || 0,
-      terca: reserva?.terca || 0,
-      quarta: reserva?.quarta || 0,
-      quinta: reserva?.quinta || 0,
-      sexta: reserva?.sexta || 0,
-      sabado: reserva?.sabado || 0,
-      domingo: reserva?.domingo || 0,
+  // Funções para gerenciar estoques ideais por loja
+  const openEstoqueEditor = (itemId: string) => {
+    const itemEstoques = estoquesPorLoja.get(itemId);
+    const form: Record<string, {
+      segunda: number;
+      terca: number;
+      quarta: number;
+      quinta: number;
+      sexta: number;
+      sabado: number;
+      domingo: number;
+    }> = {};
+    
+    lojas.forEach(loja => {
+      const estoque = itemEstoques?.get(loja.id);
+      form[loja.id] = {
+        segunda: estoque?.segunda || 0,
+        terca: estoque?.terca || 0,
+        quarta: estoque?.quarta || 0,
+        quinta: estoque?.quinta || 0,
+        sexta: estoque?.sexta || 0,
+        sabado: estoque?.sabado || 0,
+        domingo: estoque?.domingo || 0,
+      };
     });
-    setEditingReservaItemId(itemId);
-    setReservaDialogOpen(true);
+    
+    setEstoqueForm(form);
+    setEditingEstoqueItemId(itemId);
+    setEstoqueDialogOpen(true);
   };
 
-  const salvarReserva = async () => {
-    if (!editingReservaItemId || !organizationId) return;
+  const salvarEstoques = async () => {
+    if (!editingEstoqueItemId || !organizationId) return;
 
     try {
-      const reservaExistente = reservasDiarias.get(editingReservaItemId);
-
-      const data = {
-        item_porcionado_id: editingReservaItemId,
-        organization_id: organizationId,
-        segunda: reservaForm.segunda,
-        terca: reservaForm.terca,
-        quarta: reservaForm.quarta,
-        quinta: reservaForm.quinta,
-        sexta: reservaForm.sexta,
-        sabado: reservaForm.sabado,
-        domingo: reservaForm.domingo,
-      };
-
-      if (reservaExistente?.id) {
-        const { error } = await supabase
-          .from('itens_reserva_diaria')
-          .update(data)
-          .eq('id', reservaExistente.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('itens_reserva_diaria')
-          .insert([data]);
-        if (error) throw error;
+      for (const loja of lojas) {
+        const formDaLoja = estoqueForm[loja.id];
+        if (!formDaLoja) continue;
+        
+        const estoqueExistente = estoquesPorLoja.get(editingEstoqueItemId)?.get(loja.id);
+        
+        const data = {
+          item_porcionado_id: editingEstoqueItemId,
+          loja_id: loja.id,
+          organization_id: organizationId,
+          segunda: formDaLoja.segunda || 0,
+          terca: formDaLoja.terca || 0,
+          quarta: formDaLoja.quarta || 0,
+          quinta: formDaLoja.quinta || 0,
+          sexta: formDaLoja.sexta || 0,
+          sabado: formDaLoja.sabado || 0,
+          domingo: formDaLoja.domingo || 0,
+        };
+        
+        if (estoqueExistente?.id) {
+          const { error } = await supabase
+            .from('estoques_ideais_semanais')
+            .update(data)
+            .eq('id', estoqueExistente.id);
+          if (error) throw error;
+        } else {
+          // Só inserir se houver algum valor
+          const total = data.segunda + data.terca + data.quarta + data.quinta + data.sexta + data.sabado + data.domingo;
+          if (total > 0) {
+            const { error } = await supabase
+              .from('estoques_ideais_semanais')
+              .insert([data]);
+            if (error) throw error;
+          }
+        }
       }
-
-      toast.success('Reserva semanal atualizada!');
-      setReservaDialogOpen(false);
-      setEditingReservaItemId(null);
+      
+      toast.success('Estoques ideais atualizados!');
+      setEstoqueDialogOpen(false);
+      setEditingEstoqueItemId(null);
       fetchData();
     } catch (error: any) {
-      console.error('Erro ao salvar reserva:', error);
-      toast.error('Erro ao salvar reserva: ' + error.message);
+      console.error('Erro ao salvar estoques:', error);
+      toast.error('Erro ao salvar estoques: ' + error.message);
     }
   };
 
@@ -1565,7 +1613,7 @@ const ItensPorcionados = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Configuração</TableHead>
-                  <TableHead>Reserva Semanal</TableHead>
+                  <TableHead>Estoques Ideais por Loja</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1621,7 +1669,7 @@ const ItensPorcionados = () => {
                       </TableCell>
                       <TableCell>
                         {(() => {
-                          const reserva = reservasDiarias.get(item.id);
+                          const itemEstoques = estoquesPorLoja.get(item.id);
                           const dias = [
                             { key: 'segunda', label: 'S' },
                             { key: 'terca', label: 'T' },
@@ -1631,37 +1679,62 @@ const ItensPorcionados = () => {
                             { key: 'sabado', label: 'S' },
                             { key: 'domingo', label: 'D' },
                           ];
-                          const total = reserva 
-                            ? reserva.segunda + reserva.terca + reserva.quarta + reserva.quinta + reserva.sexta + reserva.sabado + reserva.domingo 
-                            : 0;
+                          
+                          const lojasComEstoque = lojas.filter(loja => {
+                            const estoque = itemEstoques?.get(loja.id);
+                            if (!estoque) return false;
+                            const total = estoque.segunda + estoque.terca + estoque.quarta + estoque.quinta + estoque.sexta + estoque.sabado + estoque.domingo;
+                            return total > 0;
+                          });
+
                           return (
-                            <div className="flex items-center gap-2">
-                              <div className="flex gap-0.5">
-                                {dias.map((dia) => {
-                                  const valor = reserva?.[dia.key as keyof typeof reserva] as number || 0;
+                            <div className="flex flex-col gap-1">
+                              {lojasComEstoque.length === 0 ? (
+                                <span className="text-xs text-muted-foreground">Não configurado</span>
+                              ) : (
+                                lojasComEstoque.slice(0, 2).map(loja => {
+                                  const estoque = itemEstoques?.get(loja.id);
                                   return (
-                                    <span 
-                                      key={dia.key} 
-                                      className={`text-[10px] w-5 h-5 flex items-center justify-center rounded ${
-                                        valor > 0 
-                                          ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 font-medium' 
-                                          : 'bg-muted text-muted-foreground'
-                                      }`}
-                                      title={`${dia.key}: ${valor}`}
-                                    >
-                                      {valor}
-                                    </span>
+                                    <div key={loja.id} className="flex items-center gap-1">
+                                      <span className="text-[10px] text-muted-foreground w-20 truncate" title={loja.nome}>
+                                        {loja.nome}:
+                                      </span>
+                                      <div className="flex gap-0.5">
+                                        {dias.map((dia) => {
+                                          const valor = estoque?.[dia.key as keyof typeof estoque] as number || 0;
+                                          return (
+                                            <span 
+                                              key={dia.key} 
+                                              className={`text-[9px] w-4 h-4 flex items-center justify-center rounded ${
+                                                valor > 0 
+                                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 font-medium' 
+                                                  : 'bg-muted text-muted-foreground'
+                                              }`}
+                                              title={`${dia.key}: ${valor}`}
+                                            >
+                                              {valor}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
                                   );
-                                })}
-                              </div>
+                                })
+                              )}
+                              {lojasComEstoque.length > 2 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  +{lojasComEstoque.length - 2} lojas
+                                </span>
+                              )}
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => openReservaEditor(item.id)}
-                                title="Configurar reserva semanal"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => openEstoqueEditor(item.id)}
+                                title="Configurar estoques ideais por loja"
                               >
-                                <Settings className="h-3.5 w-3.5" />
+                                <Settings className="h-3 w-3 mr-1" />
+                                Configurar
                               </Button>
                             </div>
                           );
@@ -1694,56 +1767,74 @@ const ItensPorcionados = () => {
           </CardContent>
         </Card>
 
-        {/* Dialog para editar reserva semanal */}
-        <Dialog open={reservaDialogOpen} onOpenChange={setReservaDialogOpen}>
-          <DialogContent className="max-w-md">
+        {/* Dialog para editar estoques ideais por loja */}
+        <Dialog open={estoqueDialogOpen} onOpenChange={setEstoqueDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Configurar Reserva Semanal</DialogTitle>
+              <DialogTitle>Configurar Estoques Ideais por Loja</DialogTitle>
               <DialogDescription>
-                Defina o estoque ideal para cada dia da semana. Este valor será usado para calcular a demanda de produção.
+                Defina o estoque ideal para cada dia da semana em cada loja. Estes valores serão usados para calcular a demanda de produção.
               </DialogDescription>
             </DialogHeader>
             
-            <div className="grid grid-cols-7 gap-2 py-4">
-              {[
-                { key: 'segunda', label: 'Seg' },
-                { key: 'terca', label: 'Ter' },
-                { key: 'quarta', label: 'Qua' },
-                { key: 'quinta', label: 'Qui' },
-                { key: 'sexta', label: 'Sex' },
-                { key: 'sabado', label: 'Sáb' },
-                { key: 'domingo', label: 'Dom' },
-              ].map((dia) => (
-                <div key={dia.key} className="space-y-1">
-                  <Label className="text-xs text-center block font-medium">{dia.label}</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={reservaForm[dia.key as keyof typeof reservaForm]}
-                    onChange={(e) => setReservaForm({
-                      ...reservaForm,
-                      [dia.key]: parseInt(e.target.value) || 0,
-                    })}
-                    className="text-center h-10"
-                  />
+            <div className="space-y-4 py-4">
+              {lojas.length === 0 ? (
+                <div className="text-center text-muted-foreground py-4">
+                  Nenhuma loja cadastrada
                 </div>
-              ))}
-            </div>
-
-            <div className="p-3 bg-muted/50 rounded-lg">
-              <p className="text-xs text-muted-foreground">
-                <strong>Total semanal:</strong> {
-                  reservaForm.segunda + reservaForm.terca + reservaForm.quarta + 
-                  reservaForm.quinta + reservaForm.sexta + reservaForm.sabado + reservaForm.domingo
-                } unidades
-              </p>
+              ) : (
+                lojas.map((loja) => (
+                  <div key={loja.id} className="p-3 bg-muted/30 rounded-lg border">
+                    <h4 className="font-medium mb-3 text-sm">{loja.nome}</h4>
+                    <div className="grid grid-cols-7 gap-2">
+                      {[
+                        { key: 'segunda', label: 'Seg' },
+                        { key: 'terca', label: 'Ter' },
+                        { key: 'quarta', label: 'Qua' },
+                        { key: 'quinta', label: 'Qui' },
+                        { key: 'sexta', label: 'Sex' },
+                        { key: 'sabado', label: 'Sáb' },
+                        { key: 'domingo', label: 'Dom' },
+                      ].map((dia) => (
+                        <div key={dia.key} className="space-y-1">
+                          <Label className="text-xs text-center block">{dia.label}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={estoqueForm[loja.id]?.[dia.key as keyof typeof estoqueForm[typeof loja.id]] || 0}
+                            onChange={(e) => setEstoqueForm({
+                              ...estoqueForm,
+                              [loja.id]: {
+                                ...estoqueForm[loja.id],
+                                [dia.key]: parseInt(e.target.value) || 0,
+                              },
+                            })}
+                            className="text-center h-8"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground text-right">
+                      Total: {
+                        (estoqueForm[loja.id]?.segunda || 0) + 
+                        (estoqueForm[loja.id]?.terca || 0) + 
+                        (estoqueForm[loja.id]?.quarta || 0) + 
+                        (estoqueForm[loja.id]?.quinta || 0) + 
+                        (estoqueForm[loja.id]?.sexta || 0) + 
+                        (estoqueForm[loja.id]?.sabado || 0) + 
+                        (estoqueForm[loja.id]?.domingo || 0)
+                      } un/semana
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setReservaDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setEstoqueDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={salvarReserva}>
+              <Button onClick={salvarEstoques}>
                 Salvar
               </Button>
             </DialogFooter>
