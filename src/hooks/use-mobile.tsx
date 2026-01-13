@@ -34,6 +34,7 @@ function detectMobileDevice(): boolean {
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     const checkMobile = () => {
@@ -42,6 +43,7 @@ export function useIsMobile() {
       
       // É mobile se o dispositivo for mobile OU se a viewport for pequena
       setIsMobile(isDeviceMobile || isViewportSmall);
+      setIsLoading(false);
     };
 
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
@@ -52,5 +54,5 @@ export function useIsMobile() {
     return () => mql.removeEventListener("change", checkMobile);
   }, []);
 
-  return !!isMobile;
+  return { isMobile: !!isMobile, isLoading };
 }
