@@ -829,6 +829,20 @@ const ContagemPorcionados = () => {
 
       await logAudit(lojaId, itemId, diaOperacional, finalSobra, idealAmanha, aProduzir, 'VERIFICADO', savedData.id, undefined, dataToSave, savedData);
 
+      // Disparar recálculo da produção em tempo real
+      const { error: rpcError } = await supabase.rpc('criar_ou_atualizar_producao_registro', {
+        p_item_id: itemId,
+        p_organization_id: organizationId,
+        p_usuario_id: user.id,
+        p_usuario_nome: dataToSave.usuario_nome,
+        p_dia_operacional: diaOperacional,
+      });
+
+      if (rpcError) {
+        console.error('Erro ao atualizar produção em tempo real:', rpcError);
+        // Não bloquear o fluxo - contagem já foi salva com sucesso
+      }
+
       toast.success(`Contagem salva! Sobra: ${finalSobra} | Ideal: ${idealAmanha} | A Produzir: ${aProduzir}`, { 
         id: toastId,
         duration: 3000 
