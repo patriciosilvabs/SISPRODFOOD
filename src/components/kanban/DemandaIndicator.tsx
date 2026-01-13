@@ -1,11 +1,18 @@
 import { Badge } from '@/components/ui/badge';
 import { Lock, TrendingUp, Store, Target } from 'lucide-react';
 
+interface DetalheLojaProducao {
+  loja_id?: string;
+  loja_nome: string;
+  quantidade: number;
+}
+
 interface DemandaIndicatorProps {
   demandaLojas: number | null | undefined;
   demandaCongelada: number | null | undefined;
   demandaIncremental: number | null | undefined;
   demandaBase: number | null | undefined;
+  detalhesLojas?: DetalheLojaProducao[];
   compact?: boolean;
 }
 
@@ -14,12 +21,36 @@ export function DemandaIndicator({
   demandaCongelada,
   demandaIncremental,
   demandaBase,
+  detalhesLojas,
   compact = false,
 }: DemandaIndicatorProps) {
   const temCutoff = demandaCongelada !== null && demandaCongelada !== undefined;
 
   if (!temCutoff) {
-    // Antes do cutoff - mostrar apenas demanda lojas
+    // Antes do cutoff - mostrar detalhamento por loja se disponível
+    if (detalhesLojas && detalhesLojas.length > 0) {
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Store className="h-3 w-3" />
+            <span>Demanda por Loja:</span>
+          </div>
+          {detalhesLojas.map((detalhe, idx) => (
+            <div key={idx} className="flex justify-between text-xs pl-4">
+              <span className="truncate max-w-[140px]">• {detalhe.loja_nome}:</span>
+              <span className="font-medium">{detalhe.quantidade} un</span>
+            </div>
+          ))}
+          {demandaLojas !== null && demandaLojas !== undefined && (
+            <div className="flex justify-between text-xs font-semibold pt-1 border-t border-border">
+              <span>Total:</span>
+              <span>{demandaLojas} un</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (demandaLojas === null || demandaLojas === undefined) {
       return null;
     }
@@ -59,6 +90,18 @@ export function DemandaIndicator({
         <span className="text-blue-600 dark:text-blue-400">Congelada:</span>
         <span className="font-semibold text-blue-700 dark:text-blue-300">{demandaCongelada} un</span>
       </div>
+
+      {/* Detalhamento por loja quando pós-cutoff */}
+      {detalhesLojas && detalhesLojas.length > 0 && (
+        <div className="space-y-0.5 pl-4 border-l-2 border-blue-300 dark:border-blue-600 ml-1">
+          {detalhesLojas.map((detalhe, idx) => (
+            <div key={idx} className="flex justify-between text-xs text-blue-500 dark:text-blue-400">
+              <span className="truncate max-w-[120px]">{detalhe.loja_nome}</span>
+              <span className="font-medium">{detalhe.quantidade} un</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {(demandaIncremental ?? 0) > 0 && (
         <div className="flex items-center gap-1.5 text-xs">

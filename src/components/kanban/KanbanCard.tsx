@@ -296,13 +296,35 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         demandaCongelada={registro.demanda_congelada}
                         demandaIncremental={registro.demanda_incremental}
                         demandaBase={registro.demanda_base}
+                        detalhesLojas={registro.detalhes_lojas}
                       />
                     ) : (
-                      registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
-                        <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-                          <span>• Demanda Lojas:</span>
-                          <span className="font-medium">{registro.demanda_lojas} un</span>
+                      // Exibir detalhamento por loja OU total se não houver detalhes
+                      registro.detalhes_lojas && registro.detalhes_lojas.length > 0 ? (
+                        <div className="space-y-1">
+                          <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            🏪 Demanda por Loja:
+                          </p>
+                          {registro.detalhes_lojas.map((detalhe, idx) => (
+                            <div key={idx} className="flex justify-between text-xs text-blue-600 dark:text-blue-400 pl-3">
+                              <span className="truncate max-w-[140px]">• {detalhe.loja_nome}:</span>
+                              <span className="font-medium">{detalhe.quantidade} un</span>
+                            </div>
+                          ))}
+                          {registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                            <div className="flex justify-between text-xs text-blue-700 dark:text-blue-300 font-semibold pt-1 border-t border-blue-200 dark:border-blue-700">
+                              <span>Total Demanda:</span>
+                              <span>{registro.demanda_lojas} un</span>
+                            </div>
+                          )}
                         </div>
+                      ) : (
+                        registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                          <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
+                            <span>• Demanda Lojas:</span>
+                            <span className="font-medium">{registro.demanda_lojas} un</span>
+                          </div>
+                        )
                       )
                     )}
                     
