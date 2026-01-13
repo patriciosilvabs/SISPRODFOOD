@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,8 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { 
-  Settings, ChevronDown, ChevronUp, Loader2, RefreshCw, AlertTriangle, 
-  Plus, Minus, Eye, EyeOff, PlayCircle, CheckCircle, Clock, AlertCircle 
+  Loader2, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -23,12 +22,6 @@ import {
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { WeightInputInline } from '@/components/ui/weight-input';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -38,6 +31,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useSessaoContagem } from '@/hooks/useSessaoContagem';
+import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
+import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
+import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
+import { ContagemFixedFooter } from '@/components/contagem/ContagemFixedFooter';
+import { LojaContagemSection } from '@/components/contagem/LojaContagemSection';
 
 interface Loja {
   id: string;
@@ -1042,32 +1040,6 @@ const ContagemPorcionados = () => {
     }
   };
 
-  // Badge de status por loja
-  const getStatusBadge = (lojaId: string) => {
-    const sessao = sessoes[lojaId];
-    
-    switch (sessao?.status) {
-      case 'encerrada':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs font-medium">
-            <CheckCircle className="h-3 w-3" /> Encerrada
-          </span>
-        );
-      case 'em_andamento':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs font-medium animate-pulse">
-            <Clock className="h-3 w-3" /> Contando...
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 text-xs font-medium">
-            <AlertCircle className="h-3 w-3" /> Pendente
-          </span>
-        );
-    }
-  };
-
   // Verificar se sessão está ativa para uma loja
   const isSessaoAtiva = (lojaId: string): boolean => {
     return sessoes[lojaId]?.status === 'em_andamento';
@@ -1092,347 +1064,130 @@ const ContagemPorcionados = () => {
     );
   }
 
+  // Calcular estatísticas para os cards de resumo
+  const summaryStats = useMemo(() => {
+    const activeLojaId = lojaAtualId;
+    if (!activeLojaId) return { totalItens: 0, pesoTotalG: 0, itensPendentes: 0, ultimaAtualizacao: undefined };
+    
+    const contagensLoja = contagens[activeLojaId] || [];
+    let pesoTotal = 0;
+    let ultimaData: Date | undefined;
+    
+    contagensLoja.forEach(c => {
+      pesoTotal += c.peso_total_g || 0;
+      const d = new Date(c.updated_at);
+      if (!ultimaData || d > ultimaData) ultimaData = d;
+    });
+    
+    return {
+      totalItens: itens.length,
+      pesoTotalG: pesoTotal,
+      itensPendentes: activeLojaId ? contarItensPendentes(activeLojaId, itens.map(i => i.id)) : 0,
+      ultimaAtualizacao: ultimaData,
+    };
+  }, [lojaAtualId, contagens, itens, contarItensPendentes]);
+
+  const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
+  const showAdminCols = isAdminUser && showDetails;
+
   return (
     <Layout>
-      <div className="space-y-4 pb-24">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-xl font-bold">Contagem de Porcionados</h1>
-          <div className="flex items-center gap-2 flex-wrap">
-            {(roles.includes('Admin') || roles.includes('SuperAdmin')) && (
-              <Button 
-                size="sm" 
-                variant={showDetails ? "default" : "outline"}
-                onClick={() => setShowDetails(!showDetails)}
-                className="h-8"
-              >
-                {showDetails ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
-                {showDetails ? 'Ocultar' : 'Detalhes'}
-              </Button>
-            )}
-            <Button size="sm" onClick={() => loadData()} disabled={loading} variant="outline" className="h-8">
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-6 pb-28">
+        {/* Header da Página */}
+        <ContagemPageHeader
+          showDetails={showDetails}
+          isAdmin={isAdminUser}
+          loading={loading}
+          onToggleDetails={() => setShowDetails(!showDetails)}
+          onRefresh={loadData}
+        />
 
-        <div className="space-y-3">
+        {/* Cards de Resumo - só mostrar se houver loja ativa */}
+        {lojaAtualId && isSessaoAtiva(lojaAtualId) && (
+          <ContagemSummaryCards
+            totalItens={summaryStats.totalItens}
+            pesoTotalG={summaryStats.pesoTotalG}
+            itensPendentes={summaryStats.itensPendentes}
+            ultimaAtualizacao={summaryStats.ultimaAtualizacao}
+          />
+        )}
+
+        {/* Lista de Lojas */}
+        <div className="space-y-4">
           {lojas.map((loja) => {
             const contagensLoja = contagens[loja.id] || [];
             const isOpen = openLojas.has(loja.id);
             const sessao = sessoes[loja.id];
             const sessaoAtiva = isSessaoAtiva(loja.id);
+            const diaOperacional = diasOperacionaisPorLoja[loja.id];
+            const currentDay = getCurrentDayKey(diaOperacional);
 
             return (
-              <Collapsible
+              <LojaContagemSection
                 key={loja.id}
-                open={isOpen}
-                onOpenChange={() => toggleLoja(loja.id)}
-                className="bg-card rounded-lg border"
+                loja={loja}
+                sessao={sessao}
+                isOpen={isOpen}
+                onToggle={() => toggleLoja(loja.id)}
+                onIniciarSessao={() => handleIniciarSessao(loja.id)}
+                onReiniciarSessao={() => handleSolicitarReinicio(loja.id)}
               >
-                <CollapsibleTrigger className="w-full">
-                  <div className="flex items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold">{loja.nome}</span>
-                      <span className="text-xs text-muted-foreground">({loja.responsavel})</span>
-                      {getStatusBadge(loja.id)}
-                    </div>
-                    {isOpen ? (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </div>
-                </CollapsibleTrigger>
-
-                <CollapsibleContent>
-                  <div className="border-t">
-                    {/* Tela de Iniciar Sessão */}
-                    {(!sessao || sessao.status === 'pendente') && (
-                      <div className="flex flex-col items-center justify-center p-8 bg-orange-50 dark:bg-orange-950/20">
-                        <PlayCircle className="h-12 w-12 text-orange-500 mb-4" />
-                        <h3 className="text-lg font-semibold mb-2">Contagem não iniciada</h3>
-                        <p className="text-muted-foreground text-center mb-4 max-w-md">
-                          Clique para iniciar a contagem do dia operacional. 
-                          Todos os campos deverão ser preenchidos antes de encerrar.
-                        </p>
-                        <Button 
-                          onClick={() => handleIniciarSessao(loja.id)}
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
-                          size="lg"
-                        >
-                          <PlayCircle className="h-5 w-5 mr-2" />
-                          Iniciar Contagem de Hoje
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Sessão Encerrada */}
-                    {sessao?.status === 'encerrada' && (
-                      <div className="flex flex-col items-center justify-center p-8 bg-green-50 dark:bg-green-950/20">
-                        <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
-                        <h3 className="text-lg font-semibold mb-2 text-green-700 dark:text-green-300">
-                          Contagem Encerrada
-                        </h3>
-                        <p className="text-muted-foreground text-center mb-2">
-                          Encerrada por: {sessao.encerrado_por_nome}
-                        </p>
-                        {sessao.encerrado_em && (
-                          <p className="text-sm text-muted-foreground mb-4">
-                            {format(new Date(sessao.encerrado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                          </p>
-                        )}
-                        
-                        {/* Botão para reiniciar contagem */}
-                        <Button 
-                          onClick={() => handleSolicitarReinicio(loja.id)}
-                          variant="outline"
-                          className="mt-2 border-orange-500 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          Reiniciar Contagem
-                        </Button>
-                        
-                        {sessao.iniciado_apos_cutoff && (
-                          <p className="text-xs text-orange-600 mt-3 text-center">
-                            Nota: Esta contagem foi iniciada após o cutoff
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Formulário de Contagem (sessão ativa) */}
-                    {sessaoAtiva && (
-                      <>
-                        {/* Cabeçalho */}
-                        {(() => {
-                          const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
-                          const showAdminCols = isAdminUser && showDetails;
-                          return (
-                            <div className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 text-xs font-semibold text-blue-700 dark:text-blue-300 border-b`}>
-                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>Item</div>
-                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'} >Sobra</div>
-                              <div className={showAdminCols ? 'col-span-2' : 'col-span-2'} >Peso (g)</div>
-                              {showAdminCols && <div className="col-span-2 text-center">Ideal ({diasSemanaLabels[getCurrentDayKey()]})</div>}
-                              {showAdminCols && <div className="col-span-2 text-center">A Produzir</div>}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Itens */}
-                        {itens.map((item) => {
-                          const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
-                          const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
-                          const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
-                          const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
-                          
-                          const estoqueKey = `${loja.id}-${item.id}`;
-                          const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
-                          const diaOperacional = diasOperacionaisPorLoja[loja.id];
-                          const currentDay = getCurrentDayKey(diaOperacional);
-                          const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
-                          
-                          const aProduzir = Math.max(0, idealFromConfig - finalSobra);
-                          const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
-                          const showAdminCols = isAdminUser && showDetails;
-                          const isDirty = isRowDirty(loja.id, item.id);
-                          
-                          // Verificar se campo foi tocado na sessão
-                          const campoTocado = isCampoTocado(loja.id, item.id, 'final_sobra');
-                          const isItemNaoPreenchido = !campoTocado && sessaoAtiva;
-                          
-                          const incrementSobra = () => {
-                            handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10));
-                          };
-                          const decrementSobra = () => {
-                            if (finalSobra > 0) {
-                              handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1));
-                            }
-                          };
-                          
-                          return (
-                            <div 
-                              key={item.id} 
-                              className={`grid ${showAdminCols ? 'grid-cols-12' : 'grid-cols-8'} gap-2 px-3 py-2 items-center border-b last:border-b-0 transition-all ${
-                                isItemNaoPreenchido 
-                                  ? 'bg-orange-50 dark:bg-orange-950/20 ring-2 ring-orange-400 ring-inset' 
-                                  : isDirty 
-                                    ? 'bg-yellow-50 dark:bg-yellow-950/20' 
-                                    : campoTocado 
-                                      ? 'bg-green-50/50 dark:bg-green-950/10'
-                                      : 'hover:bg-accent/10'
-                              }`}
-                            >
-                              {/* Nome do Item */}
-                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
-                                <div className="flex items-center gap-2">
-                                  {campoTocado && (
-                                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                                  )}
-                                  <span className="font-medium text-sm truncate">{item.nome}</span>
-                                  {isAdminUser && (
-                                    <Button 
-                                      variant="outline" 
-                                      size="icon"
-                                      className="h-8 w-8 shrink-0 border-blue-500 bg-blue-50 hover:bg-blue-100"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openEstoquesDialog(loja.id, item.id, item.nome);
-                                      }}
-                                      title="Configurar estoques ideais por dia"
-                                    >
-                                      <Settings className="h-5 w-5 text-blue-600" />
-                                    </Button>
-                                  )}
-                                </div>
-                                {contagem && (
-                                  <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-                                    {format(new Date(contagem.updated_at), "dd/MM HH:mm", { locale: ptBR })}
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Sobra com Botões +/- */}
-                              <div className={showAdminCols ? 'col-span-3' : 'col-span-3'}>
-                                <div className="flex items-center justify-center">
-                                  <Button 
-                                    type="button"
-                                    variant="default" 
-                                    size="icon" 
-                                    className="h-12 w-12 rounded-r-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
-                                    onClick={decrementSobra}
-                                  >
-                                    <Minus className="h-5 w-5" />
-                                  </Button>
-                                  <div className={`h-12 w-14 flex items-center justify-center text-xl font-bold border-y-2 ${
-                                    isItemNaoPreenchido 
-                                      ? 'bg-orange-100 text-orange-700 border-orange-400' 
-                                      : 'bg-white text-blue-600 border-blue-500'
-                                  }`}>
-                                    {finalSobra}
-                                  </div>
-                                  <Button 
-                                    type="button"
-                                    variant="default" 
-                                    size="icon" 
-                                    className="h-12 w-12 rounded-l-none bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold shrink-0"
-                                    onClick={incrementSobra}
-                                  >
-                                    <Plus className="h-5 w-5" />
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Peso */}
-                              <div className={showAdminCols ? 'col-span-2' : 'col-span-2'}>
-                                <div className="relative">
-                                  <WeightInputInline
-                                    value={pesoTotal}
-                                    onChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                                    placeholder="0"
-                                  />
-                                  {(!pesoTotal || pesoTotal === '0' || pesoTotal === '') && (
-                                    <span className="absolute -bottom-3.5 left-0 right-0 text-center text-[9px] text-destructive">
-                                      Inserir peso
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Colunas Admin */}
-                              {showAdminCols && (
-                                <div className="col-span-2">
-                                  <div className={`h-12 flex flex-col items-center justify-center rounded border text-sm ${
-                                    idealFromConfig === 0 
-                                      ? 'bg-orange-50 border-orange-300 text-orange-600 dark:bg-orange-950/30' 
-                                      : 'bg-muted border-input'
-                                  }`}>
-                                    {idealFromConfig === 0 ? (
-                                      <span className="text-[10px] flex items-center gap-0.5">
-                                        <AlertTriangle className="h-3 w-3" />
-                                        Não config.
-                                      </span>
-                                    ) : (
-                                      <span className="text-base font-semibold">{idealFromConfig}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {showAdminCols && (
-                                <div className="col-span-2">
-                                  <div className={`h-12 flex items-center justify-center text-base font-bold rounded ${aProduzir > 0 ? 'bg-orange-500 text-white' : 'bg-muted text-muted-foreground'}`}>
-                                    {aProduzir}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                {/* Itens da Loja */}
+                {itens.map((item) => {
+                  const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
+                  const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
+                  const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
+                  const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
+                  
+                  const estoqueKey = `${loja.id}-${item.id}`;
+                  const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                  const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                  const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                  const isDirty = isRowDirty(loja.id, item.id);
+                  const campoTocado = isCampoTocado(loja.id, item.id, 'final_sobra');
+                  const isItemNaoPreenchido = !campoTocado && sessaoAtiva;
+                  
+                  return (
+                    <ContagemItemCard
+                      key={item.id}
+                      item={item}
+                      finalSobra={finalSobra}
+                      pesoTotal={pesoTotal}
+                      idealFromConfig={idealFromConfig}
+                      aProduzir={aProduzir}
+                      campoTocado={campoTocado}
+                      isDirty={isDirty}
+                      isItemNaoPreenchido={isItemNaoPreenchido}
+                      sessaoAtiva={sessaoAtiva}
+                      isAdmin={isAdminUser}
+                      showAdminCols={showAdminCols}
+                      lastUpdate={contagem?.updated_at}
+                      onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10))}
+                      onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                      onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                      onOpenEstoqueDialog={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                      currentDayLabel={diasSemanaLabels[currentDay]}
+                    />
+                  );
+                })}
+              </LojaContagemSection>
             );
           })}
         </div>
 
-        {/* Botão Fixo */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t shadow-lg z-50">
-          <div className="max-w-4xl mx-auto">
-            {lojaAtualId && isSessaoAtiva(lojaAtualId) ? (
-              <Button 
-                onClick={() => handleEncerrarSessao(lojaAtualId)}
-                disabled={!podeEncerrar(lojaAtualId) || savingAll}
-                className={`w-full h-14 text-lg font-bold transition-all ${
-                  podeEncerrar(lojaAtualId) 
-                    ? 'bg-green-500 hover:bg-green-600 text-white' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
-                }`}
-              >
-                {savingAll ? (
-                  <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    Salvando e verificando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="h-5 w-5 mr-2" />
-                    ENCERRAR CONTAGEM
-                    {!podeEncerrar(lojaAtualId) && (
-                      <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
-                        {contarItensPendentes(lojaAtualId, itens.map(i => i.id))} item(ns) pendente(s)
-                      </span>
-                    )}
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button 
-                onClick={handleSaveAll}
-                disabled={!hasAnyChanges() || savingAll}
-                className="w-full h-14 text-lg font-bold bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
-              >
-                {savingAll ? (
-                  <>
-                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    SALVAR TUDO E FINALIZAR
-                    {hasAnyChanges() && (
-                      <span className="ml-2 bg-white/20 px-2 py-0.5 rounded text-sm">
-                        {getDirtyRows().length} alteração(ões)
-                      </span>
-                    )}
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
+        {/* Footer Fixo */}
+        <ContagemFixedFooter
+          isSessaoAtiva={lojaAtualId ? isSessaoAtiva(lojaAtualId) : false}
+          podeEncerrar={lojaAtualId ? podeEncerrar(lojaAtualId) : false}
+          savingAll={savingAll}
+          hasChanges={hasAnyChanges()}
+          itensPendentes={lojaAtualId ? contarItensPendentes(lojaAtualId, itens.map(i => i.id)) : 0}
+          changesCount={getDirtyRows().length}
+          onEncerrar={() => lojaAtualId && handleEncerrarSessao(lojaAtualId)}
+          onSaveAll={handleSaveAll}
+        />
 
+        {/* Dialog para Estoques Ideais */}
         <Dialog 
           open={dialogOpen} 
           onOpenChange={(open) => {
