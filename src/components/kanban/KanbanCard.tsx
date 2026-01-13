@@ -277,12 +277,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
               )}
             </div>
             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {temSequenciaTraco && temLote && (
-                <Badge variant="outline" className="text-xs font-semibold bg-background">
-                  Lote {registro.sequencia_traco}
-                  {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
-                </Badge>
-              )}
               {registro.is_incremental && (
                 <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-300 dark:border-purple-700 text-xs">
                   <Plus className="h-3 w-3 mr-1" />
