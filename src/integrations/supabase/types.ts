@@ -1400,6 +1400,8 @@ export type Database = {
           cutoff_operacional: string
           fuso_horario: string
           id: string
+          janela_contagem_fim: string | null
+          janela_contagem_inicio: string | null
           nome: string
           organization_id: string | null
           responsavel: string
@@ -1410,6 +1412,8 @@ export type Database = {
           cutoff_operacional?: string
           fuso_horario?: string
           id?: string
+          janela_contagem_fim?: string | null
+          janela_contagem_inicio?: string | null
           nome: string
           organization_id?: string | null
           responsavel: string
@@ -1420,6 +1424,8 @@ export type Database = {
           cutoff_operacional?: string
           fuso_horario?: string
           id?: string
+          janela_contagem_fim?: string | null
+          janela_contagem_inicio?: string | null
           nome?: string
           organization_id?: string | null
           responsavel?: string

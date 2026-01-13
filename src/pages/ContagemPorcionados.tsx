@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useSessaoContagem } from '@/hooks/useSessaoContagem';
+import { useJanelaContagem } from '@/hooks/useJanelaContagem';
 import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
 import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
@@ -153,6 +154,13 @@ const ContagemPorcionados = () => {
     userId: user?.id,
     diasOperacionaisPorLoja,
   });
+
+  // Hook de janela de contagem
+  const { 
+    getStatusLoja, 
+    isDentroJanela,
+    isDepoisJanela,
+  } = useJanelaContagem(lojas.map(l => l.id));
 
   // Verificar se usuário é restrito (não-admin e não-produção) - inclui funcionários de Loja e CPD
   const isRestrictedUser = !isAdmin() && !hasRole('Produção');
@@ -1191,6 +1199,7 @@ const ContagemPorcionados = () => {
                 isAdmin={isAdminUser}
                 itensProducaoExtra={itens.map(i => ({ id: i.id, nome: i.nome }))}
                 onSolicitarProducaoExtra={(itemId, itemNome) => handleOpenProducaoExtra(loja.id, { id: itemId, nome: itemNome })}
+                janelaStatus={getStatusLoja(loja.id)}
               >
                 {/* Itens da Loja */}
                 {itens.map((item) => {
