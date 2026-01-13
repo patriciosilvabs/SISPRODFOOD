@@ -5,7 +5,8 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { usePageAccess } from '@/hooks/usePageAccess';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Monitor } from 'lucide-react';
+import { Monitor, LogOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -13,7 +14,7 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, roles, loading } = useAuth();
+  const { user, roles, loading, signOut } = useAuth();
   const { needsOnboarding, loading: orgLoading } = useOrganization();
   const { canAccess, subscriptionLoading } = useSubscription();
   const { accessiblePages, loading: pageAccessLoading } = usePageAccess();
@@ -160,6 +161,11 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
 
   // Bloquear acesso mobile para não-administradores
   if (isMobile && !isAdmin && user) {
+    const handleBackToLogin = async () => {
+      await signOut();
+      navigate('/auth');
+    };
+
     return (
       <div className="flex min-h-screen items-center justify-center p-6 bg-background">
         <div className="text-center max-w-md">
@@ -173,10 +179,18 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
             Esta aplicação está disponível apenas para acesso via computador. 
             Por favor, utilize um desktop ou notebook para continuar.
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-6">
             Se você é administrador e está vendo esta mensagem por engano, 
             entre em contato com o suporte.
           </p>
+          <Button 
+            onClick={handleBackToLogin}
+            variant="outline"
+            className="gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            Voltar ao Login
+          </Button>
         </div>
       </div>
     );
