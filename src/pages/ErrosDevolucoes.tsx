@@ -44,8 +44,8 @@ const ErrosDevolucoes = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  // Verificar se usuário é restrito (não-admin e não-produção) - inclui funcionários de Loja e CPD
-  const isRestrictedUser = !isAdmin() && !hasRole('Produção');
+  // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
+  const isRestrictedUser = !isAdmin();
 
   useEffect(() => {
     if (user) {

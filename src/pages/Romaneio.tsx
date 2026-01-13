@@ -433,7 +433,8 @@ const Romaneio = () => {
   const { primaryLoja, userLojas } = useUserLoja();
   const { cpdLojaId } = useCPDLoja();
 
-  const isRestrictedUser = !isAdmin() && !hasRole('Produção');
+  // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
+  const isRestrictedUser = !isAdmin();
   const canManageProduction = isAdmin() || hasRole('Produção');
 
   // ==================== ESTADOS ====================
