@@ -1,13 +1,33 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Package, ArrowRight, CheckCircle2, Clock, AlertTriangle, Lock, XCircle, Trash2, Plus } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@/components/ui/collapsible';
+import { 
+  Package, 
+  ArrowRight, 
+  CheckCircle2, 
+  Clock, 
+  AlertTriangle, 
+  Lock, 
+  XCircle, 
+  Trash2, 
+  Plus,
+  ChevronDown,
+  Factory,
+  LayoutList,
+  Package2,
+  Building2
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
 import { DemandaIndicator, PostCutoffBadge } from './DemandaIndicator';
 import { useProductionTimer } from '@/hooks/useProductionTimer';
-import { useEffect } from 'react';
 import { formatarPesoExibicao } from '@/lib/weightUtils';
 
 interface InsumoExtraComEstoque {
@@ -51,18 +71,15 @@ interface ProducaoRegistro {
   sobra_reserva?: number | null;
   timer_ativo?: boolean;
   tempo_timer_minutos?: number | null;
-  // Campos da fila de traços
   sequencia_traco?: number;
   lote_producao_id?: string;
   bloqueado_por_traco_anterior?: boolean;
   timer_status?: string;
   total_tracos_lote?: number;
-  // Campos de embalagem
   usa_embalagem_por_porcao?: boolean;
   insumo_embalagem_nome?: string;
   quantidade_embalagem?: number;
   unidade_embalagem?: string;
-  // Campos LOTE_MASSEIRA
   lotes_masseira?: number;
   farinha_consumida_kg?: number;
   massa_total_gerada_kg?: number;
@@ -73,22 +90,16 @@ interface ProducaoRegistro {
   unidades_estimadas_masseira?: number;
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
-  // Código único do lote para rastreabilidade
   codigo_lote?: string;
-  // Campos de demanda congelada vs incremental
   demanda_congelada?: number | null;
   demanda_incremental?: number | null;
   demanda_base?: number | null;
-  // Novo: lote incremental gerado após início da produção
   is_incremental?: boolean;
   demanda_base_snapshot?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
-// Formatar código do lote adicionando data legível
-// Entrada: "LOTE-20260110-003"
-// Saída: "10/01 LOTE-20260110-003"
 const formatarCodigoLoteComData = (codigoLote: string): string => {
   const match = codigoLote.match(/LOTE-(\d{4})(\d{2})(\d{2})-/);
   if (match) {
@@ -96,6 +107,61 @@ const formatarCodigoLoteComData = (codigoLote: string): string => {
     return `${dia}/${mes} ${codigoLote}`;
   }
   return codigoLote;
+};
+
+// Componente de seção colapsável
+interface CollapsibleSectionProps {
+  title: string;
+  icon: React.ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  badge?: React.ReactNode;
+  variant?: 'default' | 'purple' | 'blue' | 'slate';
+}
+
+const CollapsibleSection = ({ 
+  title, 
+  icon, 
+  isOpen, 
+  onToggle, 
+  children, 
+  badge,
+  variant = 'default' 
+}: CollapsibleSectionProps) => {
+  const bgClasses = {
+    default: 'bg-card',
+    purple: 'bg-purple-50/50 dark:bg-purple-950/30',
+    blue: 'bg-blue-50/50 dark:bg-blue-950/30',
+    slate: 'bg-slate-50/50 dark:bg-slate-900/50'
+  };
+
+  const borderClasses = {
+    default: 'border-border',
+    purple: 'border-purple-200 dark:border-purple-800',
+    blue: 'border-blue-200 dark:border-blue-800',
+    slate: 'border-slate-200 dark:border-slate-700'
+  };
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
+      <div className={`${bgClasses[variant]} border ${borderClasses[variant]} rounded-lg overflow-hidden`}>
+        <CollapsibleTrigger className="w-full flex items-center justify-between p-3 hover:bg-muted/30 transition-colors">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            {icon}
+            <span>{title}</span>
+            {badge}
+          </div>
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-3 pb-3 pt-1 border-t border-inherit">
+            {children}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
 };
 
 interface KanbanCardProps {
@@ -108,7 +174,11 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCancelarPreparo, onRegistrarPerda }: KanbanCardProps) {
-  // Hook para gerenciar timer (apenas para EM PREPARO)
+  // Estados para seções colapsáveis
+  const [producaoOpen, setProducaoOpen] = useState(true);
+  const [composicaoOpen, setComposicaoOpen] = useState(false);
+  const [insumosOpen, setInsumosOpen] = useState(false);
+
   const timerState = useProductionTimer(
     registro.id,
     registro.tempo_timer_minutos || 10,
@@ -116,13 +186,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     registro.data_inicio_preparo || null
   );
 
-  // Notificar quando timer acabar - apenas se ainda não foi processado
   useEffect(() => {
-    // Só disparar se:
-    // 1. Está na coluna em_preparo
-    // 2. Timer está finished
-    // 3. Callback existe
-    // 4. timer_status ainda não é 'concluido' (não foi processado)
     if (
       columnId === 'em_preparo' && 
       timerState.isFinished && 
@@ -161,7 +225,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   const buttonConfig = getButtonConfig();
   const ButtonIcon = buttonConfig?.icon;
 
-  // Verificar estoque insuficiente (apenas para coluna "a_produzir")
   const estoqueInsuficiente = columnId === 'a_produzir' && 
     registro.insumo_principal_estoque_kg !== undefined && 
     registro.peso_programado_kg !== null &&
@@ -170,108 +233,138 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   const temInsumosExtrasInsuficientes = columnId === 'a_produzir' &&
     registro.insumosExtras?.some(extra => !extra.estoque_suficiente);
 
-  // Verificar se está bloqueado (fila de traços)
   const estaBloqueadoPorTraco = registro.bloqueado_por_traco_anterior === true;
   
-  // Verificar se timer ainda está rodando (bloqueia "Ir para Porcionamento")
   const timerAindaRodando = columnId === 'em_preparo' && 
     registro.timer_ativo && 
     timerState.isActive && 
     !timerState.isFinished;
 
-  // Combinação de todas as condições de bloqueio
   const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando;
   
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
 
+  // Cores da borda lateral por status
+  const borderColorByColumn = {
+    a_produzir: 'border-l-blue-500',
+    em_preparo: 'border-l-amber-500',
+    em_porcionamento: 'border-l-purple-500',
+    finalizado: 'border-l-emerald-500'
+  };
+
   return (
-    <Card className={`hover:shadow-md transition-all duration-300 ease-out animate-fade-in ${
-      columnId === 'em_preparo' && timerState.isFinished ? 'ring-4 ring-red-500 animate-pulse' : ''
-    } ${estaBloqueado ? 'opacity-60' : ''}`}>
+    <Card className={`
+      transition-all duration-300 ease-out animate-fade-in 
+      hover:shadow-lg hover:-translate-y-0.5
+      border-l-4 ${borderColorByColumn[columnId]}
+      ${columnId === 'em_preparo' && timerState.isFinished ? 'ring-2 ring-destructive ring-offset-2 animate-pulse' : ''} 
+      ${estaBloqueado ? 'opacity-60' : ''}
+    `}>
       <CardContent className="p-4">
         <div className="space-y-3">
           {/* Header */}
-          <div className="flex items-start gap-2">
+          <div className="flex items-start gap-2 pb-2 border-b">
             <Package className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-sm leading-tight">
+              <h4 className="font-bold text-sm leading-tight tracking-tight">
                 {registro.item_nome}
               </h4>
-              {/* Código único do lote com data formatada */}
               {registro.codigo_lote && (
-                <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded inline-block mt-1">
+                <span className="text-xs font-mono text-muted-foreground bg-muted/80 px-2 py-0.5 rounded-md inline-block mt-1.5">
                   📦 {formatarCodigoLoteComData(registro.codigo_lote)}
                 </span>
               )}
             </div>
-            {/* Badge de sequência do lote */}
-            {temSequenciaTraco && temLote && (
-              <Badge variant="outline" className="text-xs shrink-0">
-                Lote {registro.sequencia_traco}
-                {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
-              </Badge>
-            )}
-            {/* Badge de Lote Extra (incremental) */}
-            {registro.is_incremental && (
-              <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-300 dark:border-purple-700 text-xs shrink-0">
-                <Plus className="h-3 w-3 mr-1" />
-                Lote Extra
-              </Badge>
-            )}
-            {/* Badge de Pós-Cutoff */}
-            <PostCutoffBadge demandaIncremental={registro.demanda_incremental} />
+            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              {temSequenciaTraco && temLote && (
+                <Badge variant="outline" className="text-xs font-semibold bg-background">
+                  Lote {registro.sequencia_traco}
+                  {registro.total_tracos_lote && `/${registro.total_tracos_lote}`}
+                </Badge>
+              )}
+              {registro.is_incremental && (
+                <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-300 dark:border-purple-700 text-xs">
+                  <Plus className="h-3 w-3 mr-1" />
+                  Extra
+                </Badge>
+              )}
+              <PostCutoffBadge demandaIncremental={registro.demanda_incremental} />
+            </div>
           </div>
 
           {/* Indicador de bloqueio */}
           {estaBloqueado && columnId === 'a_produzir' && (
-            <div className="flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-              <Lock className="h-4 w-4 text-slate-500" />
-              <span className="text-xs text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <span className="text-xs text-amber-700 dark:text-amber-300">
                 Aguardando lote {(registro.sequencia_traco || 1) - 1} finalizar
               </span>
             </div>
           )}
 
           {/* Informações por coluna */}
-          <div className="space-y-1.5 text-xs">
+          <div className="space-y-2">
             {/* A PRODUZIR */}
             {columnId === 'a_produzir' && (
               <>
-                {/* Seção especial LOTE_MASSEIRA */}
+                {/* Seção: Produção Industrial (LOTE_MASSEIRA) */}
                 {registro.unidade_medida === 'lote_masseira' && registro.lotes_masseira ? (
-                  <div className="space-y-2 bg-purple-50 dark:bg-purple-950 rounded-lg p-2 border border-purple-200 dark:border-purple-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-purple-600 dark:text-purple-400">🏭 Produção Industrial:</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground">Lotes:</span>
-                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.lotes_masseira}</p>
+                  <CollapsibleSection
+                    title="Produção Industrial"
+                    icon={<Factory className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
+                    isOpen={producaoOpen}
+                    onToggle={() => setProducaoOpen(!producaoOpen)}
+                    variant="purple"
+                    badge={
+                      registro.lotes_masseira > 1 ? (
+                        <Badge variant="secondary" className="ml-2 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                          {registro.lotes_masseira} traços
+                        </Badge>
+                      ) : null
+                    }
+                  >
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Massa Estimada</span>
+                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                          {registro.massa_total_gerada_kg?.toFixed(1)}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                        </p>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Massa Estimada:</span>
-                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.massa_total_gerada_kg?.toFixed(1)} kg</p>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Farinha</span>
+                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                          {registro.farinha_consumida_kg?.toFixed(1)}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                        </p>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Unid. Estimadas:</span>
-                        <p className="font-bold text-purple-700 dark:text-purple-300">~{registro.unidades_estimadas_masseira || registro.unidades_programadas} un</p>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Lotes</span>
+                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                          {registro.lotes_masseira}
+                        </p>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Farinha:</span>
-                        <p className="font-bold text-purple-700 dark:text-purple-300">{registro.farinha_consumida_kg?.toFixed(1)} kg</p>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unid. Estimadas</span>
+                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                          ~{registro.unidades_estimadas_masseira || registro.unidades_programadas}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
+                        </p>
                       </div>
                     </div>
                     {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
-                      <div className="text-xs text-purple-600 dark:text-purple-400 border-t border-purple-200 dark:border-purple-700 pt-1 mt-1">
+                      <div className="mt-3 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
                         ⚖️ Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
-                        {registro.peso_alvo_bolinha_g && ` (Alvo: ${registro.peso_alvo_bolinha_g}g)`}
+                        {registro.peso_alvo_bolinha_g && (
+                          <span className="text-muted-foreground">(Alvo: {registro.peso_alvo_bolinha_g}g)</span>
+                        )}
                       </div>
                     )}
-                  </div>
+                  </CollapsibleSection>
                 ) : registro.unidades_programadas && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">📦 Total:</span>
+                  <div className="flex items-center gap-2 p-2.5 bg-muted/50 rounded-lg">
+                    <span className="text-xs text-muted-foreground">📦 Total:</span>
                     <Badge variant="secondary" className="font-semibold">
                       {(registro.unidade_medida === 'traco' || registro.unidade_medida === 'lote') && registro.equivalencia_traco ? (
                         <>
@@ -284,127 +377,172 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                   </div>
                 )}
 
-                {/* Composição da Produção com Demanda Congelada */}
-                {(registro.demanda_lojas || registro.demanda_congelada || registro.reserva_configurada || registro.sobra_reserva) && (
-                  <div className="mt-2 space-y-2 bg-blue-50 dark:bg-blue-950 rounded p-2">
-                    <p className="text-xs font-medium text-blue-700 dark:text-blue-300">📊 Composição:</p>
-                    
-                    {/* Indicador de Demanda Congelada vs Incremental */}
-                    {registro.demanda_congelada !== null && registro.demanda_congelada !== undefined ? (
-                      <DemandaIndicator
-                        demandaLojas={registro.demanda_lojas}
-                        demandaCongelada={registro.demanda_congelada}
-                        demandaIncremental={registro.demanda_incremental}
-                        demandaBase={registro.demanda_base}
-                        detalhesLojas={registro.detalhes_lojas}
-                      />
-                    ) : (
-                      // Exibir detalhamento por loja OU total se não houver detalhes
+                {/* Seção: Composição da Demanda */}
+                {(registro.demanda_lojas || registro.demanda_congelada || registro.detalhes_lojas?.length) && (
+                  <CollapsibleSection
+                    title="Composição"
+                    icon={<LayoutList className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                    isOpen={composicaoOpen}
+                    onToggle={() => setComposicaoOpen(!composicaoOpen)}
+                    variant="blue"
+                    badge={
                       registro.detalhes_lojas && registro.detalhes_lojas.length > 0 ? (
-                        <div className="space-y-1">
-                          <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                            🏪 Demanda por Loja:
-                          </p>
-                          {registro.detalhes_lojas.map((detalhe, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-blue-600 dark:text-blue-400 pl-3">
-                              <span className="truncate max-w-[140px]">• {detalhe.loja_nome}:</span>
-                              <span className="font-medium">{detalhe.quantidade} un</span>
-                            </div>
-                          ))}
-                          {registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
-                            <div className="flex justify-between text-xs text-blue-700 dark:text-blue-300 font-semibold pt-1 border-t border-blue-200 dark:border-blue-700">
-                              <span>Total Demanda:</span>
-                              <span>{registro.demanda_lojas} un</span>
-                            </div>
-                          )}
-                        </div>
+                        <Badge variant="secondary" className="ml-2 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                          {registro.detalhes_lojas.length} {registro.detalhes_lojas.length === 1 ? 'loja' : 'lojas'}
+                        </Badge>
+                      ) : null
+                    }
+                  >
+                    <div className="mt-2">
+                      {registro.demanda_congelada !== null && registro.demanda_congelada !== undefined ? (
+                        <DemandaIndicator
+                          demandaLojas={registro.demanda_lojas}
+                          demandaCongelada={registro.demanda_congelada}
+                          demandaIncremental={registro.demanda_incremental}
+                          demandaBase={registro.demanda_base}
+                          detalhesLojas={registro.detalhes_lojas}
+                        />
                       ) : (
-                        registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
-                          <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-                            <span>• Demanda Lojas:</span>
-                            <span className="font-medium">{registro.demanda_lojas} un</span>
+                        registro.detalhes_lojas && registro.detalhes_lojas.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {registro.detalhes_lojas.map((detalhe, idx) => (
+                              <div 
+                                key={idx} 
+                                className="flex items-center justify-between py-1.5 px-2 rounded-md bg-blue-100/50 dark:bg-blue-900/30"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                  <span className="text-xs font-medium truncate max-w-[120px]">{detalhe.loja_nome}</span>
+                                </div>
+                                <span className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">
+                                  {detalhe.quantidade}
+                                  <span className="font-normal text-muted-foreground ml-1">un</span>
+                                </span>
+                              </div>
+                            ))}
+                            {registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                              <div className="flex justify-end pt-2 mt-1 border-t border-blue-200 dark:border-blue-700">
+                                <span className="text-xs text-muted-foreground">
+                                  Total: <span className="font-bold text-blue-700 dark:text-blue-300">{registro.demanda_lojas} un</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
+                        ) : (
+                          registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
+                            <div className="flex justify-between text-xs py-1.5">
+                              <span className="text-muted-foreground">Demanda Lojas:</span>
+                              <span className="font-bold text-blue-700 dark:text-blue-300">{registro.demanda_lojas} un</span>
+                            </div>
+                          )
                         )
-                      )
-                    )}
-                    
-                    {registro.reserva_configurada !== null && registro.reserva_configurada !== undefined && registro.reserva_configurada > 0 && (
-                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-                        <span>• Reserva do Dia:</span>
-                        <span className="font-medium">{registro.reserva_configurada} un</span>
-                      </div>
-                    )}
-                    {registro.sobra_reserva !== null && registro.sobra_reserva !== undefined && registro.sobra_reserva > 0 && (
-                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
-                        <span>• Arredondamento:</span>
-                        <span className="font-medium">+{registro.sobra_reserva} un</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Insumos Necessários */}
-                {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
-                  <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-900 rounded p-2">
-                    <p className="text-xs font-medium text-muted-foreground">📋 Insumos Necessários:</p>
-                    
-                    {/* Insumo Principal */}
-                    {registro.insumo_principal_nome && registro.peso_programado_kg && (
-                      <div className={`flex justify-between text-xs ${estoqueInsuficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
-                        <span>{registro.insumo_principal_nome}:</span>
-                        <span className="font-medium flex items-center gap-1">
-                          {registro.peso_programado_kg} kg
-                          {estoqueInsuficiente && <AlertTriangle className="h-3 w-3" />}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {/* Insumos Extras */}
-                                    {registro.insumosExtras?.map((extra, idx) => (
-                      <div key={idx} className={`flex justify-between text-xs ${!extra.estoque_suficiente ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
-                        <span>{extra.nome}:</span>
-                        <span className="font-medium flex items-center gap-1">
-                          {extra.unidade === 'g' 
-                            ? formatarPesoExibicao(extra.quantidade_necessaria)
-                            : extra.unidade === 'unidade'
-                              ? `${extra.quantidade_necessaria % 1 === 0 
-                                  ? extra.quantidade_necessaria.toFixed(0) 
-                                  : extra.quantidade_necessaria.toFixed(2)} unidades`
-                              : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
-                          }
-                          {!extra.estoque_suficiente && <AlertTriangle className="h-3 w-3" />}
-                        </span>
-                      </div>
-                    ))}
-
-                    {/* Embalagem (se configurada) */}
-                    {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
-                      <div className="flex justify-between text-xs text-purple-600 dark:text-purple-400 pt-1 border-t border-slate-200 dark:border-slate-700">
-                        <span className="flex items-center gap-1">
-                          🎁 {registro.insumo_embalagem_nome}:
-                        </span>
-                        <span className="font-medium">
-                          {registro.quantidade_embalagem % 1 === 0 
-                            ? registro.quantidade_embalagem.toFixed(0) 
-                            : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Alerta de Estoque Insuficiente */}
-                {(estoqueInsuficiente || temInsumosExtrasInsuficientes) && (
-                  <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950 rounded p-2 mt-2">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                    <div className="text-xs">
-                      <p className="font-semibold">Estoque insuficiente!</p>
-                      {estoqueInsuficiente && registro.insumo_principal_nome && (
-                        <p className="text-[10px] mt-0.5">
-                          {registro.insumo_principal_nome}: {registro.insumo_principal_estoque_kg} kg disponível
-                        </p>
+                      )}
+                      
+                      {registro.reserva_configurada !== null && registro.reserva_configurada !== undefined && registro.reserva_configurada > 0 && (
+                        <div className="flex justify-between text-xs py-1.5 mt-1">
+                          <span className="text-muted-foreground">Reserva do Dia:</span>
+                          <span className="font-medium text-blue-600 dark:text-blue-400">{registro.reserva_configurada} un</span>
+                        </div>
+                      )}
+                      {registro.sobra_reserva !== null && registro.sobra_reserva !== undefined && registro.sobra_reserva > 0 && (
+                        <div className="flex justify-between text-xs py-1.5">
+                          <span className="text-muted-foreground">Arredondamento:</span>
+                          <span className="font-medium text-blue-600 dark:text-blue-400">+{registro.sobra_reserva} un</span>
+                        </div>
                       )}
                     </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Seção: Insumos Necessários */}
+                {(registro.insumo_principal_nome || (registro.insumosExtras && registro.insumosExtras.length > 0)) && (
+                  <CollapsibleSection
+                    title="Insumos Necessários"
+                    icon={<Package2 className="h-4 w-4 text-slate-600 dark:text-slate-400" />}
+                    isOpen={insumosOpen}
+                    onToggle={() => setInsumosOpen(!insumosOpen)}
+                    variant="slate"
+                    badge={
+                      (estoqueInsuficiente || temInsumosExtrasInsuficientes) ? (
+                        <Badge variant="destructive" className="ml-2 text-xs">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Atenção
+                        </Badge>
+                      ) : null
+                    }
+                  >
+                    <div className="space-y-1.5 mt-2">
+                      {/* Insumo Principal */}
+                      {registro.insumo_principal_nome && registro.peso_programado_kg && (
+                        <div className={`
+                          flex items-center justify-between py-2 px-2 rounded-md
+                          ${estoqueInsuficiente ? 'bg-destructive/10 border border-destructive/30' : 'bg-slate-100/80 dark:bg-slate-800/50'}
+                        `}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
+                            {estoqueInsuficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                          </div>
+                          <div className="text-right">
+                            <span className={`text-xs font-bold tabular-nums ${estoqueInsuficiente ? 'text-destructive' : ''}`}>
+                              {registro.peso_programado_kg} kg
+                            </span>
+                            {estoqueInsuficiente && registro.insumo_principal_estoque_kg !== undefined && (
+                              <div className="text-[10px] text-destructive">
+                                Disp: {registro.insumo_principal_estoque_kg} kg
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Insumos Extras */}
+                      {registro.insumosExtras?.map((extra, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`
+                            flex items-center justify-between py-2 px-2 rounded-md
+                            ${!extra.estoque_suficiente ? 'bg-destructive/10 border border-destructive/30' : 'bg-slate-100/80 dark:bg-slate-800/50'}
+                          `}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium">{extra.nome}</span>
+                            {!extra.estoque_suficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                          </div>
+                          <span className={`text-xs font-bold tabular-nums ${!extra.estoque_suficiente ? 'text-destructive' : ''}`}>
+                            {extra.unidade === 'g' 
+                              ? formatarPesoExibicao(extra.quantidade_necessaria)
+                              : extra.unidade === 'unidade'
+                                ? `${extra.quantidade_necessaria % 1 === 0 
+                                    ? extra.quantidade_necessaria.toFixed(0) 
+                                    : extra.quantidade_necessaria.toFixed(2)} unidades`
+                                : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                            }
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Embalagem */}
+                      {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
+                        <div className="flex items-center justify-between py-2 px-2 rounded-md bg-purple-100/50 dark:bg-purple-900/30 mt-1 border-t border-slate-200 dark:border-slate-700">
+                          <span className="text-xs font-medium flex items-center gap-1">
+                            🎁 {registro.insumo_embalagem_nome}
+                          </span>
+                          <span className="text-xs font-bold text-purple-700 dark:text-purple-300">
+                            {registro.quantidade_embalagem % 1 === 0 
+                              ? registro.quantidade_embalagem.toFixed(0) 
+                              : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Alerta de Estoque - fora do collapsible para visibilidade */}
+                {(estoqueInsuficiente || temInsumosExtrasInsuficientes) && !insumosOpen && (
+                  <div className="flex items-center gap-2 text-destructive bg-destructive/10 rounded-lg p-2.5 border border-destructive/20">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-xs font-medium">Estoque insuficiente - verifique insumos</span>
                   </div>
                 )}
               </>
@@ -412,10 +550,25 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
 
             {/* EM PREPARO */}
             {columnId === 'em_preparo' && (
-              <>
+              <div className="space-y-3">
                 {/* Timer Display */}
                 {registro.timer_ativo && registro.tempo_timer_minutos && timerState.isActive && (
-                  <div className="mb-3">
+                  <div className={`p-3 rounded-lg border-2 ${
+                    timerState.isFinished 
+                      ? 'bg-destructive/10 border-destructive' 
+                      : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        Timer de Preparo
+                      </span>
+                      {timerState.isFinished && (
+                        <Badge variant="destructive" className="text-xs animate-pulse">
+                          Finalizado!
+                        </Badge>
+                      )}
+                    </div>
                     <TimerDisplay
                       secondsRemaining={timerState.secondsRemaining}
                       isFinished={timerState.isFinished}
@@ -424,139 +577,157 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 )}
                 
                 {registro.unidades_programadas && (
-                  <p className="text-muted-foreground">
-                    📦 Programadas: <span className="font-medium">{registro.unidades_programadas} un</span>
-                  </p>
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
+                    <span className="text-xs text-muted-foreground">📦 Programadas:</span>
+                    <span className="text-sm font-bold">{registro.unidades_programadas} un</span>
+                  </div>
                 )}
                 {registro.data_inicio_preparo && (
-                  <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                     <Clock className="h-3 w-3" />
                     <span className="font-medium">
                       Em preparo desde {format(new Date(registro.data_inicio_preparo), 'HH:mm', { locale: ptBR })}
                     </span>
                   </div>
                 )}
-              </>
+              </div>
             )}
 
             {/* EM PORCIONAMENTO */}
             {columnId === 'em_porcionamento' && (
-              <>
-                {registro.unidades_programadas && (
-                  <p className="text-muted-foreground">
-                    📦 Programadas: <span className="font-medium">{registro.unidades_programadas} un</span>
-                  </p>
-                )}
-                {registro.peso_preparo_kg && (
-                  <p className="text-muted-foreground">
-                    ⚖️ Peso preparo: <span className="font-medium text-foreground">{registro.peso_preparo_kg} kg</span>
-                  </p>
-                )}
+              <div className="space-y-2 bg-purple-50 dark:bg-purple-950/30 p-3 rounded-lg border border-purple-200 dark:border-purple-800">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Programadas</span>
+                    <p className="text-lg font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                      {registro.unidades_programadas}
+                      <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
+                    </p>
+                  </div>
+                  {registro.peso_preparo_kg && (
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Peso Preparo</span>
+                      <p className="text-lg font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                        {registro.peso_preparo_kg}
+                        <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
                 {registro.sobra_preparo_kg !== null && registro.sobra_preparo_kg !== undefined && (
-                  <p className="text-muted-foreground">
-                    🗑️ Sobra preparo: <span className="font-medium text-foreground">{registro.sobra_preparo_kg} kg</span>
-                  </p>
+                  <div className="text-xs text-muted-foreground pt-1 border-t border-purple-200 dark:border-purple-700">
+                    Sobra preparo: {registro.sobra_preparo_kg} kg
+                  </div>
                 )}
                 {registro.data_inicio_porcionamento && (
-                  <div className="flex items-center gap-1.5 text-yellow-600 dark:text-yellow-400">
+                  <div className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 pt-1">
                     <Clock className="h-3 w-3" />
-                    <span className="font-medium">
-                      Porcionando desde {format(new Date(registro.data_inicio_porcionamento), 'HH:mm', { locale: ptBR })}
+                    <span>
+                      Desde {format(new Date(registro.data_inicio_porcionamento), 'HH:mm', { locale: ptBR })}
                     </span>
                   </div>
                 )}
-              </>
+              </div>
             )}
 
             {/* FINALIZADO */}
-          {columnId === 'finalizado' && (
-            <>
-              {registro.unidades_reais && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">✅ Reais:</span>
-                  <Badge variant="default" className="font-semibold bg-green-600">
-                    {registro.unidades_reais} un
-                  </Badge>
-                </div>
-              )}
-              {registro.peso_final_kg && (
-                <p className="text-muted-foreground">
-                  ⚖️ Peso final: <span className="font-medium text-foreground">{registro.peso_final_kg} kg</span>
-                </p>
-              )}
-
-              {/* Resultado de Calibragem LOTE_MASSEIRA */}
-              {registro.unidade_medida === 'lote_masseira' && registro.peso_medio_real_bolinha_g && (
-                <div className={`mt-2 p-2 rounded-lg ${
-                  registro.status_calibracao === 'dentro_do_padrao' 
-                    ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' 
-                    : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'
-                }`}>
-                  <p className="text-xs font-medium mb-1">📊 Calibragem:</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">Peso Médio: <strong>{registro.peso_medio_real_bolinha_g.toFixed(1)}g</strong></span>
-                    <Badge variant={registro.status_calibracao === 'dentro_do_padrao' ? 'default' : 'destructive'} className="text-[10px]">
-                      {registro.status_calibracao === 'dentro_do_padrao' ? '✅ OK' : '⚠️ Fora'}
-                    </Badge>
-                  </div>
-                  {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
-                    </p>
+            {columnId === 'finalizado' && (
+              <div className="space-y-2 bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                <div className="grid grid-cols-2 gap-3">
+                  {registro.unidades_reais && (
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unid. Reais</span>
+                      <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        {registro.unidades_reais}
+                        <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
+                      </p>
+                    </div>
+                  )}
+                  {registro.peso_final_kg && (
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Peso Final</span>
+                      <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        {registro.peso_final_kg}
+                        <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                      </p>
+                    </div>
                   )}
                 </div>
-              )}
-              
-              {registro.data_fim && (
-                <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span className="font-medium">
-                    Finalizado às {format(new Date(registro.data_fim), 'HH:mm', { locale: ptBR })}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
 
-          {/* Detalhamento por Loja - SEMPRE VISÍVEL */}
-          {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
-            <div className="space-y-1 bg-muted/50 rounded p-2 border-l-4 border-primary">
-              <p className="text-xs font-medium text-muted-foreground">🏪 Por loja:</p>
-              {registro.detalhes_lojas.map((loja) => (
-                <div key={loja.loja_id} className="flex justify-between text-xs">
-                  <span className="text-foreground">{loja.loja_nome}:</span>
-                  <span className="font-medium text-foreground">{loja.quantidade} un</span>
-                </div>
-              ))}
-            </div>
-          )}
+                {/* Calibragem LOTE_MASSEIRA */}
+                {registro.unidade_medida === 'lote_masseira' && registro.peso_medio_real_bolinha_g && (
+                  <div className={`mt-2 pt-2 border-t ${
+                    registro.status_calibracao === 'dentro_do_padrao' 
+                      ? 'border-emerald-200 dark:border-emerald-700' 
+                      : 'border-red-200 dark:border-red-700'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Calibragem:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium">{registro.peso_medio_real_bolinha_g.toFixed(1)}g</span>
+                        <Badge 
+                          variant={registro.status_calibracao === 'dentro_do_padrao' ? 'default' : 'destructive'} 
+                          className="text-[10px]"
+                        >
+                          {registro.status_calibracao === 'dentro_do_padrao' ? '✅ OK' : '⚠️ Fora'}
+                        </Badge>
+                      </div>
+                    </div>
+                    {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
+                      </p>
+                    )}
+                  </div>
+                )}
+                
+                {registro.data_fim && (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 pt-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    <span>
+                      Finalizado às {format(new Date(registro.data_fim), 'HH:mm', { locale: ptBR })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Detalhamento por Loja - para colunas que não mostram composição */}
+            {columnId !== 'a_produzir' && registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
+              <div className="space-y-1 bg-muted/50 rounded-lg p-2.5 border-l-4 border-primary">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">🏪 Por loja:</p>
+                {registro.detalhes_lojas.map((loja) => (
+                  <div key={loja.loja_id} className="flex justify-between text-xs py-0.5">
+                    <span>{loja.loja_nome}:</span>
+                    <span className="font-bold">{loja.quantidade} un</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Usuário e Data */}
-          <div className="pt-2 border-t space-y-1 text-xs text-muted-foreground">
-            <p className="font-medium">👤 {registro.usuario_nome}</p>
+          {/* Footer: Usuário e Data */}
+          <div className="pt-2.5 border-t flex items-center justify-between text-xs text-muted-foreground">
+            <span className="font-medium truncate max-w-[150px]">👤 {registro.usuario_nome}</span>
             {registro.data_inicio && columnId === 'a_produzir' && (
-              <p>
-                🕐 {format(new Date(registro.data_inicio), 'dd/MM HH:mm', { locale: ptBR })}
-              </p>
+              <span>🕐 {format(new Date(registro.data_inicio), 'dd/MM HH:mm', { locale: ptBR })}</span>
             )}
           </div>
 
           {/* Botões de Ação */}
           {columnId !== 'finalizado' && (
-            <div className="space-y-2 mt-2">
-              {/* Botão Principal */}
+            <div className="space-y-2 mt-1">
               {buttonConfig && (
                 <Button 
                   onClick={onAction}
-                  className="w-full"
+                  className="w-full font-medium"
                   variant={estaBloqueado ? 'secondary' : buttonConfig.variant}
-                  size="sm"
+                  size="default"
                   disabled={estaBloqueado}
                 >
                   {timerAindaRodando ? (
                     <>
-                      <Clock className="h-4 w-4 mr-2" />
+                      <Clock className="h-4 w-4 mr-2 animate-pulse" />
                       Aguardando timer
                     </>
                   ) : estaBloqueadoPorTraco ? (
@@ -573,7 +744,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 </Button>
               )}
 
-              {/* Botões de Cancelamento e Perda - apenas para EM PREPARO e EM PORCIONAMENTO */}
               {(columnId === 'em_preparo' || columnId === 'em_porcionamento') && (
                 <div className="grid grid-cols-2 gap-2">
                   <Button
@@ -589,7 +759,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     variant="outline"
                     size="sm"
                     onClick={onRegistrarPerda}
-                    className="text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-950"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
                     Perda
