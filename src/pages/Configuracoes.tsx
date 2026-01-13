@@ -2,7 +2,7 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone, Play, Trash2, Music } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone, Play, Trash2, Music, AlertTriangle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -11,6 +11,16 @@ import { ConfigurarAlertasEstoqueModal } from '@/components/modals/ConfigurarAle
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const Configuracoes = () => {
   const navigate = useNavigate();
@@ -22,6 +32,9 @@ const Configuracoes = () => {
   const [uploading, setUploading] = useState(false);
   const [currentSoundUrl, setCurrentSoundUrl] = useState<string | null>(null);
   const [savedFileName, setSavedFileName] = useState<string | null>(null);
+  const [resetContagensDialog, setResetContagensDialog] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [resettingContagens, setResettingContagens] = useState(false);
 
   useEffect(() => {
     loadCurrentSound();
@@ -225,6 +238,69 @@ const Configuracoes = () => {
     }
   };
 
+  const handleResetContagens = async () => {
+    if (!organizationId || !user) return;
+    
+    setResettingContagens(true);
+    
+    try {
+      // Determinar dia operacional atual (usando fuso de São Paulo)
+      const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      
+      // 1. Deletar contagens do dia
+      const { error: errContagens } = await supabase
+        .from('contagem_porcionados')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', hoje);
+      
+      if (errContagens) throw errContagens;
+      
+      // 2. Deletar sessões do dia
+      const { error: errSessoes } = await supabase
+        .from('sessoes_contagem')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', hoje);
+      
+      if (errSessoes) throw errSessoes;
+      
+      // 3. Deletar produção pendente do dia (apenas a_produzir)
+      const { error: errProducao } = await supabase
+        .from('producao_registros')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('status', 'a_produzir')
+        .eq('data_referencia', hoje);
+      
+      if (errProducao) throw errProducao;
+      
+      // 4. Registrar no audit log
+      await supabase.from('audit_logs').insert({
+        action: 'RESET_CONTAGENS',
+        entity_type: 'contagem_porcionados',
+        entity_id: null,
+        details: { 
+          dia: hoje, 
+          descricao: 'Reset geral das contagens do dia'
+        },
+        user_id: user.id,
+        user_email: user.email || '',
+        organization_id: organizationId,
+      });
+      
+      toast.success('Reset realizado com sucesso! Todas as contagens do dia foram zeradas.');
+      setResetContagensDialog(false);
+      setConfirmText('');
+      
+    } catch (error: any) {
+      console.error('Erro no reset:', error);
+      toast.error(`Erro ao resetar: ${error.message}`);
+    } finally {
+      setResettingContagens(false);
+    }
+  };
+
   const configCards = [
     {
       title: 'Otimização Sazonal (IA)',
@@ -315,11 +391,90 @@ const Configuracoes = () => {
         open={alertasModalOpen} 
         onOpenChange={setAlertasModalOpen} 
       />
+
+      {/* Dialog de confirmação de reset */}
+      <AlertDialog open={resetContagensDialog} onOpenChange={setResetContagensDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Atenção: Ação Irreversível
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Esta ação irá <strong>APAGAR permanentemente</strong>:</p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                  <li>Todas as contagens de <strong>TODAS as lojas</strong> do dia atual</li>
+                  <li>Todas as sessões de contagem em andamento</li>
+                  <li>Todos os registros de produção pendentes ("A Produzir")</li>
+                </ul>
+                <p className="font-semibold pt-2">
+                  Digite "CONFIRMAR" para prosseguir:
+                </p>
+                <Input 
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+                  placeholder="Digite CONFIRMAR"
+                  className="mt-2"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmText('')}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              disabled={confirmText !== 'CONFIRMAR' || resettingContagens}
+              onClick={handleResetContagens}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {resettingContagens ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Resetando...
+                </>
+              ) : (
+                'Confirmar Reset'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Configurações do Sistema</h1>
         </div>
+
+        {/* Card de Reset - Apenas para Admin */}
+        {isAdmin() && (
+          <Card className="border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="p-3 rounded-lg bg-red-200 text-red-700 dark:bg-red-900 dark:text-red-300">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg mb-1 text-red-700 dark:text-red-300">
+                    Reset de Contagens
+                  </h3>
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    Apagar todas as contagens do dia atual e recomeçar do zero.
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="destructive" 
+                onClick={() => setResetContagensDialog(true)}
+                className="w-full"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Resetar Contagens do Dia
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Otimização Sazonal Card */}
