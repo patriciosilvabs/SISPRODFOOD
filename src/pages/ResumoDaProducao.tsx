@@ -390,9 +390,20 @@ const ResumoDaProducao = () => {
         .eq('organization_id', organizationId)
         .eq('dia_producao', hoje);
 
-      // Mapear demanda congelada por item_id
-      const demandaCongeladaMap = new Map<string, { demanda_total: number }>(
-        demandasCongeladas?.map(d => [d.item_porcionado_id, { demanda_total: d.demanda_total }]) || []
+      // Mapear demanda congelada por item_id (incluindo detalhes por loja)
+      const demandaCongeladaMap = new Map<string, { 
+        demanda_total: number; 
+        detalhes_lojas?: DetalheLojaProducao[] 
+      }>(
+        demandasCongeladas?.map(d => [
+          d.item_porcionado_id, 
+          { 
+            demanda_total: d.demanda_total,
+            detalhes_lojas: Array.isArray(d.detalhes_lojas) 
+              ? (d.detalhes_lojas as unknown as DetalheLojaProducao[])
+              : undefined
+          }
+        ]) || []
       );
 
       // Mapear insumos principais (is_principal = true) por item_porcionado_id
@@ -533,9 +544,10 @@ const ResumoDaProducao = () => {
 
         const registroTyped: ProducaoRegistro = {
           ...registro,
-          detalhes_lojas: Array.isArray(registro.detalhes_lojas) 
+          // Priorizar detalhes do registro, fallback para demanda congelada
+          detalhes_lojas: (Array.isArray(registro.detalhes_lojas) && registro.detalhes_lojas.length > 0)
             ? (registro.detalhes_lojas as unknown as DetalheLojaProducao[])
-            : undefined,
+            : demandaCongeladaItem?.detalhes_lojas,
           unidade_medida: itemInfo?.unidade_medida,
           equivalencia_traco: itemInfo?.equivalencia_traco,
           insumo_principal_nome: insumoPrincipal?.nome,
