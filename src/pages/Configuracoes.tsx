@@ -265,12 +265,11 @@ const Configuracoes = () => {
       
       if (errSessoes) throw errSessoes;
       
-      // 3. Deletar produção pendente do dia (apenas a_produzir)
+      // 3. Deletar TODAS as produções do dia (todos os status)
       const { error: errProducao } = await supabase
         .from('producao_registros')
         .delete()
         .eq('organization_id', organizationId)
-        .eq('status', 'a_produzir')
         .eq('data_referencia', hoje);
       
       if (errProducao) throw errProducao;
@@ -406,8 +405,11 @@ const Configuracoes = () => {
                 <ul className="list-disc list-inside space-y-1 text-sm">
                   <li>Todas as contagens de <strong>TODAS as lojas</strong> do dia atual</li>
                   <li>Todas as sessões de contagem em andamento</li>
-                  <li>Todos os registros de produção pendentes ("A Produzir")</li>
+                  <li><strong>Todas as produções do dia</strong> (A Produzir, Em Preparo, Em Porcionamento, Finalizado)</li>
                 </ul>
+                <p className="text-sm text-muted-foreground">
+                  O painel "Resumo da Produção" ficará completamente vazio.
+                </p>
                 <p className="font-semibold pt-2">
                   Digite "CONFIRMAR" para prosseguir:
                 </p>
