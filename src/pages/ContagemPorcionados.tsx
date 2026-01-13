@@ -1165,7 +1165,7 @@ const ContagemPorcionados = () => {
                       onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10))}
                       onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
                       onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                      onOpenEstoqueDialog={() => openEstoquesDialog(loja.id, item.id, item.nome)}
+                      
                       currentDayLabel={diasSemanaLabels[currentDay]}
                     />
                   );
