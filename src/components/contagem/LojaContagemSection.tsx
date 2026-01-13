@@ -277,19 +277,21 @@ export const LojaContagemSection = ({
                   </p>
                 )}
                 
-                {/* Botão para reiniciar contagem */}
-                <Button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReiniciarSessao();
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="border-2 border-warning text-warning hover:bg-warning/10 rounded-xl"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Reiniciar Contagem
-                </Button>
+                {/* Botão para reiniciar contagem - apenas enquanto janela aberta */}
+                {janelaStatus?.status === 'dentro' && (
+                  <Button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReiniciarSessao();
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border-2 border-warning text-warning hover:bg-warning/10 rounded-xl"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reiniciar Contagem
+                  </Button>
+                )}
               </div>
 
               {/* Resumo da Contagem */}
