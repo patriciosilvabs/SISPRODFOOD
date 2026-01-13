@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { usePageAccess } from '@/hooks/usePageAccess';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Monitor } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -21,6 +23,10 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   // Ref para evitar navegação duplicada
   const hasCheckedAccess = useRef(false);
   const lastCheckedPath = useRef<string | null>(null);
+  
+  // Detecção mobile e verificação de admin
+  const isMobile = useIsMobile();
+  const isAdmin = roles.includes('Admin') || roles.includes('SuperAdmin');
 
   const userIsSuperAdmin = roles.includes('SuperAdmin');
   const currentPath = location.pathname;
@@ -147,6 +153,30 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
           <p className="mt-4 text-muted-foreground">Verificando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Bloquear acesso mobile para não-administradores
+  if (isMobile && !isAdmin && user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6 bg-background">
+        <div className="text-center max-w-md">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mb-4">
+            <Monitor className="h-8 w-8 text-destructive" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">
+            Acesso Restrito
+          </h2>
+          <p className="text-muted-foreground mb-4">
+            Esta aplicação está disponível apenas para acesso via computador. 
+            Por favor, utilize um desktop ou notebook para continuar.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Se você é administrador e está vendo esta mensagem por engano, 
+            entre em contato com o suporte.
+          </p>
         </div>
       </div>
     );
