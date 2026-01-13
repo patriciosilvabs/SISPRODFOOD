@@ -40,6 +40,8 @@ interface Loja {
   responsavel: string;
   fuso_horario: string;
   cutoff_operacional: string;
+  janela_contagem_inicio: string | null;
+  janela_contagem_fim: string | null;
   tipo: string | null;
 }
 
@@ -67,6 +69,8 @@ const Lojas = () => {
     responsavel: '',
     fuso_horario: 'America/Sao_Paulo',
     cutoff_operacional: '03:00',
+    janela_contagem_inicio: '22:00',
+    janela_contagem_fim: '00:00',
   });
 
   useEffect(() => {
@@ -198,6 +202,8 @@ const Lojas = () => {
       responsavel: loja.responsavel,
       fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
       cutoff_operacional: loja.cutoff_operacional?.slice(0, 5) || '03:00',
+      janela_contagem_inicio: loja.janela_contagem_inicio?.slice(0, 5) || '22:00',
+      janela_contagem_fim: loja.janela_contagem_fim?.slice(0, 5) || '00:00',
     });
     setDialogOpen(true);
   };
@@ -209,6 +215,8 @@ const Lojas = () => {
       responsavel: '',
       fuso_horario: 'America/Sao_Paulo',
       cutoff_operacional: '03:00',
+      janela_contagem_inicio: '22:00',
+      janela_contagem_fim: '00:00',
     });
   };
 
@@ -325,6 +333,52 @@ const Lojas = () => {
                       Contagens registradas até {formData.cutoff_operacional || '03:00'} serão consideradas para a produção do dia seguinte.
                     </p>
                   </div>
+
+                  {/* Janela de Contagem */}
+                  <div className="space-y-3 p-3 bg-accent/30 rounded-lg border">
+                    <Label className="flex items-center gap-1 font-semibold">
+                      <Clock className="h-3.5 w-3.5" />
+                      Janela de Contagem
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Período em que a loja pode inserir contagens normais. Fora desta janela, apenas Produção Extra é permitida.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="janela_contagem_inicio" className="text-xs">
+                          Início
+                        </Label>
+                        <Input
+                          id="janela_contagem_inicio"
+                          type="time"
+                          value={formData.janela_contagem_inicio}
+                          onChange={(e) =>
+                            setFormData({ ...formData, janela_contagem_inicio: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="janela_contagem_fim" className="text-xs">
+                          Fim
+                        </Label>
+                        <Input
+                          id="janela_contagem_fim"
+                          type="time"
+                          value={formData.janela_contagem_fim}
+                          onChange={(e) =>
+                            setFormData({ ...formData, janela_contagem_fim: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground italic">
+                      Janela atual: {formData.janela_contagem_inicio || '22:00'} às {formData.janela_contagem_fim || '00:00'}
+                      {formData.janela_contagem_inicio && formData.janela_contagem_fim && 
+                       formData.janela_contagem_inicio > formData.janela_contagem_fim && (
+                        <span className="ml-1">(cruza meia-noite)</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
                 <DialogFooter className="mt-6">
@@ -359,14 +413,15 @@ const Lojas = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Responsável</TableHead>
                   <TableHead>Fuso Horário</TableHead>
+                  <TableHead>Janela Contagem</TableHead>
                   <TableHead>Cutoff</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lojas.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       Nenhuma loja cadastrada
                     </TableCell>
                   </TableRow>
@@ -388,6 +443,9 @@ const Lojas = () => {
                         </TableCell>
                         <TableCell>{loja.responsavel}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fusoLabel}</TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {loja.janela_contagem_inicio?.slice(0, 5) || '22:00'} - {loja.janela_contagem_fim?.slice(0, 5) || '00:00'}
+                        </TableCell>
                         <TableCell className="text-xs">{loja.cutoff_operacional?.slice(0, 5) || '03:00'}</TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button

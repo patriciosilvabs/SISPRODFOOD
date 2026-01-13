@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { 
   ChevronDown, ChevronUp, PlayCircle, CheckCircle, Clock, 
-  AlertCircle, RefreshCw, TrendingUp 
+  AlertCircle, RefreshCw, TrendingUp, Lock, Timer
 } from 'lucide-react';
 import {
   Collapsible,
@@ -25,6 +25,16 @@ interface SessaoContagem {
   encerrado_em?: string;
 }
 
+interface JanelaStatus {
+  status: 'antes' | 'dentro' | 'depois';
+  horaInicio: string;
+  horaFim: string;
+  horaAtual: string;
+  tempoAteAbrir?: string;
+  tempoAteFechar?: string;
+  mensagem: string;
+}
+
 interface LojaContagemSectionProps {
   loja: Loja;
   sessao?: SessaoContagem;
@@ -40,9 +50,28 @@ interface LojaContagemSectionProps {
   }>;
   onSolicitarProducaoExtra?: (itemId: string, itemNome: string) => void;
   isAdmin?: boolean;
+  // Status da janela de contagem
+  janelaStatus?: JanelaStatus;
 }
 
-const getStatusBadge = (sessao?: SessaoContagem) => {
+const getStatusBadge = (sessao?: SessaoContagem, janelaStatus?: JanelaStatus) => {
+  // Se a janela está fechada (antes ou depois), mostrar badge apropriado
+  if (janelaStatus?.status === 'antes') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-muted-foreground text-xs font-semibold uppercase tracking-wide">
+        <Lock className="h-3.5 w-3.5" /> Aguardando Janela
+      </span>
+    );
+  }
+  
+  if (janelaStatus?.status === 'depois' && sessao?.status !== 'encerrada') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-semibold uppercase tracking-wide">
+        <Lock className="h-3.5 w-3.5" /> Janela Fechada
+      </span>
+    );
+  }
+
   switch (sessao?.status) {
     case 'encerrada':
       return (
@@ -76,8 +105,12 @@ export const LojaContagemSection = ({
   itensProducaoExtra,
   onSolicitarProducaoExtra,
   isAdmin,
+  janelaStatus,
 }: LojaContagemSectionProps) => {
   const isSessaoAtiva = sessao?.status === 'em_andamento';
+  const isJanelaAberta = janelaStatus?.status === 'dentro';
+  const isAntesJanela = janelaStatus?.status === 'antes';
+  const isDepoisJanela = janelaStatus?.status === 'depois';
 
   return (
     <Collapsible
@@ -90,7 +123,7 @@ export const LojaContagemSection = ({
           <div className="flex items-center gap-3 flex-wrap">
             <span className="font-bold text-lg text-foreground">{loja.nome}</span>
             <span className="text-sm text-muted-foreground">({loja.responsavel})</span>
-            {getStatusBadge(sessao)}
+            {getStatusBadge(sessao, janelaStatus)}
           </div>
           <div className="flex items-center gap-2">
             {isOpen ? (
@@ -104,8 +137,87 @@ export const LojaContagemSection = ({
 
       <CollapsibleContent>
         <div className="border-t-2">
-          {/* Tela de Iniciar Sessão */}
-          {(!sessao || sessao.status === 'pendente') && (
+          {/* Banner de status da janela */}
+          {janelaStatus && (
+            <div className={`flex items-center justify-center gap-2 py-2 px-4 text-xs font-medium ${
+              isAntesJanela ? 'bg-muted text-muted-foreground' :
+              isDepoisJanela && sessao?.status !== 'encerrada' ? 'bg-destructive/10 text-destructive' :
+              isJanelaAberta ? 'bg-primary/10 text-primary' : ''
+            }`}>
+              <Timer className="h-3.5 w-3.5" />
+              {janelaStatus.mensagem}
+            </div>
+          )}
+
+          {/* Tela Antes da Janela Abrir */}
+          {isAntesJanela && (!sessao || sessao.status === 'pendente') && (
+            <div className="flex flex-col items-center justify-center p-10 bg-muted/30">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Lock className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-bold text-foreground mb-2">Aguardando Horário</h3>
+              <p className="text-muted-foreground text-center mb-4 max-w-md">
+                A janela de contagem abre às <span className="font-bold">{janelaStatus?.horaInicio}</span>.
+              </p>
+              {janelaStatus?.tempoAteAbrir && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-background rounded-full border-2">
+                  <Timer className="h-4 w-4 text-primary" />
+                  <span className="font-semibold">Abre em {janelaStatus.tempoAteAbrir}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tela Depois da Janela Fechar (sem sessão encerrada) */}
+          {isDepoisJanela && (!sessao || sessao.status === 'pendente') && (
+            <div className="flex flex-col bg-destructive/5">
+              <div className="flex flex-col items-center justify-center p-8">
+                <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mb-3">
+                  <Lock className="h-7 w-7 text-destructive" />
+                </div>
+                <h3 className="text-lg font-bold text-destructive mb-1">
+                  Janela de Contagem Encerrada
+                </h3>
+                <p className="text-muted-foreground text-center text-sm mb-4">
+                  O horário para contagem normal já passou. 
+                  {janelaStatus?.horaFim && ` (encerrou às ${janelaStatus.horaFim})`}
+                </p>
+              </div>
+
+              {/* Seção de Produção Extra - disponível para todos após fechamento */}
+              {itensProducaoExtra && itensProducaoExtra.length > 0 && onSolicitarProducaoExtra && (
+                <div className="border-t-2 border-destructive/20 p-4">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Solicitar Produção Extra
+                    </h4>
+                  </div>
+                  
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {itensProducaoExtra.map((item) => (
+                      <Button
+                        key={item.id}
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSolicitarProducaoExtra(item.id, item.nome);
+                        }}
+                        className="justify-between h-auto py-2.5 px-3 text-left border-2 hover:bg-primary/5 hover:border-primary/30"
+                      >
+                        <span className="font-medium text-sm truncate">{item.nome}</span>
+                        <TrendingUp className="h-4 w-4 text-primary shrink-0 ml-2" />
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tela de Iniciar Sessão (apenas quando janela está aberta) */}
+          {isJanelaAberta && (!sessao || sessao.status === 'pendente') && (
             <div className="flex flex-col items-center justify-center p-10 bg-warning/5">
               <div className="w-16 h-16 rounded-full bg-warning/10 flex items-center justify-center mb-4">
                 <PlayCircle className="h-8 w-8 text-warning" />
@@ -115,6 +227,11 @@ export const LojaContagemSection = ({
                 Clique para iniciar a contagem do dia operacional. 
                 Todos os campos deverão ser preenchidos antes de encerrar.
               </p>
+              {janelaStatus?.tempoAteFechar && (
+                <p className="text-xs text-muted-foreground mb-4">
+                  ⏱ Janela fecha em {janelaStatus.tempoAteFechar}
+                </p>
+              )}
               <Button 
                 onClick={(e) => {
                   e.stopPropagation();
