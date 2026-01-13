@@ -1188,7 +1188,7 @@ const ContagemPorcionados = () => {
             const currentDay = getCurrentDayKey(diaOperacional);
 
             return (
-              <LojaContagemSection
+            <LojaContagemSection
                 key={loja.id}
                 loja={loja}
                 sessao={sessao}
@@ -1200,6 +1200,25 @@ const ContagemPorcionados = () => {
                 itensProducaoExtra={itens.map(i => ({ id: i.id, nome: i.nome }))}
                 onSolicitarProducaoExtra={(itemId, itemNome) => handleOpenProducaoExtra(loja.id, { id: itemId, nome: itemNome })}
                 janelaStatus={getStatusLoja(loja.id)}
+                resumoContagem={
+                  sessao?.status === 'encerrada'
+                    ? itens.map(item => {
+                        const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
+                        const estoqueKey = `${loja.id}-${item.id}`;
+                        const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                        const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                        const finalSobra = contagem?.final_sobra ?? 0;
+                        const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                        
+                        return {
+                          itemId: item.id,
+                          itemNome: item.nome,
+                          finalSobra,
+                          aProduzir,
+                        };
+                      })
+                    : undefined
+                }
               >
                 {/* Itens da Loja */}
                 {itens.map((item) => {
