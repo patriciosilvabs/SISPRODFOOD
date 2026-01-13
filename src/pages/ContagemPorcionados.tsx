@@ -118,7 +118,6 @@ const ContagemPorcionados = () => {
   const [reiniciarDialog, setReiniciarDialog] = useState<{
     open: boolean;
     lojaId: string;
-    aposCutoff: boolean;
   } | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
@@ -138,7 +137,6 @@ const ContagemPorcionados = () => {
     todosItensPreenchidos,
     contarItensPendentes,
     limparCamposTocados,
-    verificarCutoff,
   } = useSessaoContagem({
     organizationId,
     userId: user?.id,
@@ -412,11 +410,9 @@ const ContagemPorcionados = () => {
 
   // Handler para solicitar reinício de sessão
   const handleSolicitarReinicio = async (lojaId: string) => {
-    const cutoffInfo = await verificarCutoff(lojaId);
     setReiniciarDialog({
       open: true,
       lojaId,
-      aposCutoff: cutoffInfo?.passou_cutoff ?? false,
     });
   };
 
@@ -775,14 +771,8 @@ const ContagemPorcionados = () => {
       
       diaOperacional = diaOpData;
 
-      // Verificar se há produção ativa - exibir aviso se sim
+      // Verificar se há produção ativa
       const producaoAtiva = await verificarProducaoAtiva(itemId, diaOperacional);
-      if (producaoAtiva) {
-        toast.warning(
-          `Produção de ${itemData.nome} em andamento. Sua alteração gerará um lote extra.`,
-          { duration: 5000 }
-        );
-      }
 
       const estoqueKey = `${lojaId}-${itemId}`;
       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
@@ -1353,22 +1343,10 @@ const ContagemPorcionados = () => {
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3">
-                  {reiniciarDialog?.aposCutoff ? (
-                    <>
-                      <p className="font-medium text-orange-600">
-                        ⚠️ Atenção: O horário de cutoff já passou!
-                      </p>
-                      <p>
-                        Reiniciar a contagem agora pode gerar demanda adicional para o CPD 
-                        caso os novos valores sejam maiores que os anteriores.
-                      </p>
-                    </>
-                  ) : (
-                    <p>
-                      Isso permitirá preencher todos os itens novamente. 
-                      Os dados anteriores serão substituídos pelos novos valores.
-                    </p>
-                  )}
+                  <p>
+                    Isso permitirá preencher todos os itens novamente. 
+                    Os dados anteriores serão substituídos pelos novos valores.
+                  </p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -1376,10 +1354,7 @@ const ContagemPorcionados = () => {
               <AlertDialogCancel onClick={() => setReiniciarDialog(null)}>
                 Cancelar
               </AlertDialogCancel>
-              <AlertDialogAction 
-                className={reiniciarDialog?.aposCutoff ? "bg-orange-500 hover:bg-orange-600" : ""}
-                onClick={handleConfirmarReinicio}
-              >
+              <AlertDialogAction onClick={handleConfirmarReinicio}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Reiniciar
               </AlertDialogAction>

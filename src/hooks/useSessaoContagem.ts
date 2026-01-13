@@ -11,14 +11,6 @@ export interface SessaoContagem {
   iniciado_por_nome: string | null;
   encerrado_em: string | null;
   encerrado_por_nome: string | null;
-  iniciado_apos_cutoff: boolean;
-}
-
-export interface CutoffInfo {
-  passou_cutoff: boolean;
-  hora_cutoff: string;
-  hora_local: string;
-  fuso_horario: string;
 }
 
 interface UseSessaoContagemProps {
@@ -67,26 +59,11 @@ export const useSessaoContagem = ({
     }
   }, [organizationId, diasOperacionaisPorLoja]);
 
-  // Verificar cutoff de uma loja
-  const verificarCutoff = async (lojaId: string): Promise<CutoffInfo | null> => {
-    try {
-      const { data, error } = await supabase.rpc('verificar_cutoff_loja', {
-        p_loja_id: lojaId,
-      });
-
-      if (error) throw error;
-      return data as unknown as CutoffInfo;
-    } catch (error) {
-      console.error('Erro ao verificar cutoff:', error);
-      return null;
-    }
-  };
-
   // Iniciar sessão de contagem
   const iniciarSessao = async (
     lojaId: string,
     userName: string
-  ): Promise<{ success: boolean; apos_cutoff?: boolean }> => {
+  ): Promise<{ success: boolean }> => {
     if (!organizationId || !userId) {
       toast.error('Sessão inválida. Faça login novamente.');
       return { success: false };
@@ -99,17 +76,6 @@ export const useSessaoContagem = ({
     }
 
     try {
-      // Verificar cutoff
-      const cutoffInfo = await verificarCutoff(lojaId);
-      const apos_cutoff = cutoffInfo?.passou_cutoff || false;
-
-      if (apos_cutoff) {
-        toast.warning(
-          `⚠️ Atenção: O horário de corte (${cutoffInfo?.hora_cutoff}) expirou. Esta contagem gerará uma demanda adicional/incremental para o CPD.`,
-          { duration: 10000 }
-        );
-      }
-
       // Criar/atualizar sessão
       const { error } = await supabase.from('sessoes_contagem').upsert(
         {
@@ -120,7 +86,6 @@ export const useSessaoContagem = ({
           iniciado_em: new Date().toISOString(),
           iniciado_por_id: userId,
           iniciado_por_nome: userName,
-          iniciado_apos_cutoff: apos_cutoff,
         },
         { onConflict: 'loja_id,dia_operacional' }
       );
@@ -139,7 +104,6 @@ export const useSessaoContagem = ({
           iniciado_por_nome: userName,
           encerrado_em: null,
           encerrado_por_nome: null,
-          iniciado_apos_cutoff: apos_cutoff,
         },
       }));
 
@@ -151,7 +115,7 @@ export const useSessaoContagem = ({
       });
 
       toast.success('Sessão de contagem iniciada! Preencha todos os itens.');
-      return { success: true, apos_cutoff };
+      return { success: true };
     } catch (error) {
       console.error('Erro ao iniciar sessão:', error);
       toast.error('Erro ao iniciar sessão de contagem.');
@@ -287,6 +251,5 @@ export const useSessaoContagem = ({
     todosItensPreenchidos,
     contarItensPendentes,
     limparCamposTocados,
-    verificarCutoff,
   };
 };

@@ -26,7 +26,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TimerDisplay } from './TimerDisplay';
-import { DemandaIndicator, PostCutoffBadge } from './DemandaIndicator';
+
 import { useProductionTimer } from '@/hooks/useProductionTimer';
 import { formatarPesoExibicao } from '@/lib/weightUtils';
 
@@ -91,11 +91,6 @@ interface ProducaoRegistro {
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
   codigo_lote?: string;
-  demanda_congelada?: number | null;
-  demanda_incremental?: number | null;
-  demanda_base?: number | null;
-  is_incremental?: boolean;
-  demanda_base_snapshot?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -276,15 +271,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 </span>
               )}
             </div>
-            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {registro.is_incremental && (
-                <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900 dark:text-purple-300 dark:border-purple-700 text-xs">
-                  <Plus className="h-3 w-3 mr-1" />
-                  Extra
-                </Badge>
-              )}
-              <PostCutoffBadge demandaIncremental={registro.demanda_incremental} />
-            </div>
           </div>
 
           {/* Indicador de bloqueio */}
@@ -372,7 +358,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 )}
 
                 {/* Seção: Composição da Demanda */}
-                {(registro.demanda_lojas || registro.demanda_congelada || registro.detalhes_lojas?.length) && (
+                {(registro.demanda_lojas || registro.detalhes_lojas?.length) && (
                   <CollapsibleSection
                     title="Composição"
                     icon={<LayoutList className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
@@ -388,16 +374,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     }
                   >
                     <div className="mt-2">
-                      {registro.demanda_congelada !== null && registro.demanda_congelada !== undefined ? (
-                        <DemandaIndicator
-                          demandaLojas={registro.demanda_lojas}
-                          demandaCongelada={registro.demanda_congelada}
-                          demandaIncremental={registro.demanda_incremental}
-                          demandaBase={registro.demanda_base}
-                          detalhesLojas={registro.detalhes_lojas}
-                        />
-                      ) : (
-                        registro.detalhes_lojas && registro.detalhes_lojas.length > 0 ? (
+                      {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 ? (
                           <div className="space-y-1.5">
                             {registro.detalhes_lojas.map((detalhe, idx) => (
                               <div 
@@ -422,15 +399,12 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                               </div>
                             )}
                           </div>
-                        ) : (
-                          registro.demanda_lojas !== null && registro.demanda_lojas !== undefined && (
-                            <div className="flex justify-between text-xs py-1.5">
-                              <span className="text-muted-foreground">Demanda Lojas:</span>
-                              <span className="font-bold text-blue-700 dark:text-blue-300">{registro.demanda_lojas} un</span>
-                            </div>
-                          )
-                        )
-                      )}
+                        ) : registro.demanda_lojas !== null && registro.demanda_lojas !== undefined ? (
+                          <div className="flex justify-between text-xs py-1.5">
+                            <span className="text-muted-foreground">Demanda Lojas:</span>
+                            <span className="font-bold text-blue-700 dark:text-blue-300">{registro.demanda_lojas} un</span>
+                          </div>
+                        ) : null}
                       
                       {registro.reserva_configurada !== null && registro.reserva_configurada !== undefined && registro.reserva_configurada > 0 && (
                         <div className="flex justify-between text-xs py-1.5 mt-1">

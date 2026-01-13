@@ -23,7 +23,6 @@ interface SessaoContagem {
   iniciado_por_nome?: string;
   encerrado_por_nome?: string;
   encerrado_em?: string;
-  iniciado_apos_cutoff?: boolean;
 }
 
 interface LojaContagemSectionProps {
@@ -150,12 +149,6 @@ export const LojaContagemSection = ({
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Reiniciar Contagem
               </Button>
-              
-              {sessao.iniciado_apos_cutoff && (
-                <p className="text-xs text-warning mt-4 text-center">
-                  Nota: Esta contagem foi iniciada após o cutoff
-                </p>
-              )}
             </div>
           )}
 
