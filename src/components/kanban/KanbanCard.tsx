@@ -418,6 +418,20 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                           <span className="font-medium text-blue-600 dark:text-blue-400">+{registro.sobra_reserva} un</span>
                         </div>
                       )}
+                      
+                      {/* Nota sobre margem de flexibilização */}
+                      {registro.unidade_medida === 'lote_masseira' && 
+                       registro.unidades_estimadas_masseira && 
+                       registro.demanda_lojas && 
+                       registro.unidades_estimadas_masseira < registro.demanda_lojas && (
+                        <div className="flex items-start gap-2 mt-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
+                          <span className="text-amber-600 text-xs">ℹ️</span>
+                          <span className="text-xs text-amber-700 dark:text-amber-300">
+                            Margem de flexibilização aplicada: produção ajustada para{' '}
+                            <strong>~{registro.unidades_estimadas_masseira} un</strong> ({registro.lotes_masseira} lote{registro.lotes_masseira !== 1 ? 's' : ''})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </CollapsibleSection>
                 )}
