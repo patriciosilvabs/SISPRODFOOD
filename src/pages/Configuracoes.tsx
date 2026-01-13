@@ -281,13 +281,7 @@ const Configuracoes = () => {
       
       if (errRomaneios) throw errRomaneios;
       
-      // 5. Deletar demanda congelada (se ainda existir)
-      await supabase
-        .from('demanda_congelada')
-        .delete()
-        .eq('organization_id', organizationId);
-      
-      // 6. Deletar TODAS as produções (todos os status, qualquer data)
+      // 5. Deletar TODAS as produções (todos os status, qualquer data)
       const { error: errProducao } = await supabase
         .from('producao_registros')
         .delete()
@@ -295,7 +289,7 @@ const Configuracoes = () => {
       
       if (errProducao) throw errProducao;
       
-      // 7. Registrar no audit log
+      // 6. Registrar no audit log
       await supabase.from('audit_logs').insert({
         action: 'RESET_CONTAGENS',
         entity_type: 'contagem_porcionados',

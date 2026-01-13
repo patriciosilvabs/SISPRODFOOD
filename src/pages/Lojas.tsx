@@ -39,7 +39,6 @@ interface Loja {
   nome: string;
   responsavel: string;
   fuso_horario: string;
-  cutoff_operacional: string;
   janela_contagem_inicio: string | null;
   janela_contagem_fim: string | null;
   tipo: string | null;
@@ -68,7 +67,6 @@ const Lojas = () => {
     nome: '',
     responsavel: '',
     fuso_horario: 'America/Sao_Paulo',
-    cutoff_operacional: '03:00',
     janela_contagem_inicio: '22:00',
     janela_contagem_fim: '00:00',
   });
@@ -201,7 +199,6 @@ const Lojas = () => {
       nome: loja.nome,
       responsavel: loja.responsavel,
       fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
-      cutoff_operacional: loja.cutoff_operacional?.slice(0, 5) || '03:00',
       janela_contagem_inicio: loja.janela_contagem_inicio?.slice(0, 5) || '22:00',
       janela_contagem_fim: loja.janela_contagem_fim?.slice(0, 5) || '00:00',
     });
@@ -214,7 +211,6 @@ const Lojas = () => {
       nome: '',
       responsavel: '',
       fuso_horario: 'America/Sao_Paulo',
-      cutoff_operacional: '03:00',
       janela_contagem_inicio: '22:00',
       janela_contagem_fim: '00:00',
     });
@@ -316,24 +312,6 @@ const Lojas = () => {
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="cutoff_operacional" className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      Cutoff Operacional
-                    </Label>
-                    <Input
-                      id="cutoff_operacional"
-                      type="time"
-                      value={formData.cutoff_operacional}
-                      onChange={(e) =>
-                        setFormData({ ...formData, cutoff_operacional: e.target.value })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Contagens registradas até {formData.cutoff_operacional || '03:00'} serão consideradas para a produção do dia seguinte.
-                    </p>
-                  </div>
-
                   {/* Janela de Contagem */}
                   <div className="space-y-3 p-3 bg-accent/30 rounded-lg border">
                     <Label className="flex items-center gap-1 font-semibold">
@@ -414,14 +392,13 @@ const Lojas = () => {
                   <TableHead>Responsável</TableHead>
                   <TableHead>Fuso Horário</TableHead>
                   <TableHead>Janela Contagem</TableHead>
-                  <TableHead>Cutoff</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lojas.length === 0 ? (
                 <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       Nenhuma loja cadastrada
                     </TableCell>
                   </TableRow>
@@ -446,7 +423,6 @@ const Lojas = () => {
                         <TableCell className="text-xs font-medium">
                           {loja.janela_contagem_inicio?.slice(0, 5) || '22:00'} - {loja.janela_contagem_fim?.slice(0, 5) || '00:00'}
                         </TableCell>
-                        <TableCell className="text-xs">{loja.cutoff_operacional?.slice(0, 5) || '03:00'}</TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button
                             variant="ghost"
