@@ -287,10 +287,8 @@ export type Database = {
           final_sobra: number
           id: string
           ideal_amanha: number
-          is_incremento: boolean | null
           item_porcionado_id: string
           loja_id: string
-          motivo_incremento: string | null
           organization_id: string | null
           peso_total_g: number | null
           preenchido_na_sessao: boolean | null
@@ -305,10 +303,8 @@ export type Database = {
           final_sobra?: number
           id?: string
           ideal_amanha?: number
-          is_incremento?: boolean | null
           item_porcionado_id: string
           loja_id: string
-          motivo_incremento?: string | null
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
@@ -323,10 +319,8 @@ export type Database = {
           final_sobra?: number
           id?: string
           ideal_amanha?: number
-          is_incremento?: boolean | null
           item_porcionado_id?: string
           loja_id?: string
-          motivo_incremento?: string | null
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
@@ -912,6 +906,73 @@ export type Database = {
           },
           {
             foreignKeyName: "estoques_ideais_semanais_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incrementos_producao: {
+        Row: {
+          created_at: string | null
+          dia_operacional: string
+          id: string
+          item_porcionado_id: string
+          loja_id: string
+          motivo: string
+          observacao: string | null
+          organization_id: string | null
+          quantidade: number
+          status: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          dia_operacional: string
+          id?: string
+          item_porcionado_id: string
+          loja_id: string
+          motivo: string
+          observacao?: string | null
+          organization_id?: string | null
+          quantidade: number
+          status?: string | null
+          usuario_id: string
+          usuario_nome: string
+        }
+        Update: {
+          created_at?: string | null
+          dia_operacional?: string
+          id?: string
+          item_porcionado_id?: string
+          loja_id?: string
+          motivo?: string
+          observacao?: string | null
+          organization_id?: string | null
+          quantidade?: number
+          status?: string | null
+          usuario_id?: string
+          usuario_nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incrementos_producao_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incrementos_producao_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incrementos_producao_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -3259,6 +3320,19 @@ export type Database = {
         Returns: Json
       }
       criar_ou_atualizar_producao_registro:
+        | {
+            Args: {
+              p_farinha_por_lote_kg?: number
+              p_item_id: string
+              p_item_nome: string
+              p_massa_gerada_por_lote_kg?: number
+              p_organization_id: string
+              p_quantidade_por_lote?: number
+              p_usuario_id: string
+              p_usuario_nome: string
+            }
+            Returns: Json
+          }
         | {
             Args: {
               p_item_id: string

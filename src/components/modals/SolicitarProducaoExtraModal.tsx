@@ -83,29 +83,29 @@ export function SolicitarProducaoExtraModal({
         .single();
 
       const usuarioNome = profile?.nome || 'Usuário';
+      const motivoLabel = MOTIVOS_PRODUCAO_EXTRA.find(m => m.value === motivo)?.label || motivo;
 
-      // Registrar a solicitação na tabela contagem_porcionados como incremento
-      const { error: contagemError } = await supabase
-        .from('contagem_porcionados')
-        .upsert({
+      // Registrar a solicitação na tabela incrementos_producao (tabela separada)
+      const { error: incrementoError } = await supabase
+        .from('incrementos_producao')
+        .insert({
           loja_id: loja.id,
           item_porcionado_id: item.id,
           dia_operacional: diaOperacional,
-          final_sobra: 0, // Não altera a sobra, apenas registra o incremento
-          peso_total_g: null,
-          ideal_amanha: novaDemandaTotal,
-          a_produzir: quantidadeExtraNum,
+          quantidade: quantidadeExtraNum,
+          motivo: motivoLabel,
+          observacao: observacao || null,
           usuario_id: userId,
           usuario_nome: usuarioNome,
           organization_id: organizationId,
-          is_incremento: true,
-          motivo_incremento: `${MOTIVOS_PRODUCAO_EXTRA.find(m => m.value === motivo)?.label || motivo}${observacao ? `: ${observacao}` : ''}`,
-        }, {
-          onConflict: 'loja_id,item_porcionado_id,dia_operacional',
+          status: 'pendente',
         });
 
-      if (contagemError) {
-        console.error('Erro ao registrar incremento:', contagemError);
+      if (incrementoError) {
+        console.error('Erro ao registrar incremento:', incrementoError);
+        toast.error('Erro ao registrar solicitação de produção extra');
+        setIsSubmitting(false);
+        return;
       }
 
       // Chamar RPC para criar/atualizar lotes de produção
