@@ -35,6 +35,13 @@ interface JanelaStatus {
   mensagem: string;
 }
 
+interface ResumoItem {
+  itemId: string;
+  itemNome: string;
+  finalSobra: number;
+  aProduzir: number;
+}
+
 interface LojaContagemSectionProps {
   loja: Loja;
   sessao?: SessaoContagem;
@@ -52,6 +59,8 @@ interface LojaContagemSectionProps {
   isAdmin?: boolean;
   // Status da janela de contagem
   janelaStatus?: JanelaStatus;
+  // Resumo da contagem quando encerrada
+  resumoContagem?: ResumoItem[];
 }
 
 const getStatusBadge = (sessao?: SessaoContagem, janelaStatus?: JanelaStatus) => {
@@ -106,6 +115,7 @@ export const LojaContagemSection = ({
   onSolicitarProducaoExtra,
   isAdmin,
   janelaStatus,
+  resumoContagem,
 }: LojaContagemSectionProps) => {
   const isSessaoAtiva = sessao?.status === 'em_andamento';
   const isJanelaAberta = janelaStatus?.status === 'dentro';
@@ -280,6 +290,59 @@ export const LojaContagemSection = ({
                   Reiniciar Contagem
                 </Button>
               </div>
+
+              {/* Resumo da Contagem */}
+              {resumoContagem && resumoContagem.length > 0 && (
+                <div className="border-t-2 border-success/20 p-4">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 text-center">
+                    Resumo da Contagem
+                  </h4>
+                  
+                  {/* Cards de totais */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-card rounded-lg p-3 border text-center">
+                      <p className="text-xs text-muted-foreground">Total Sobras</p>
+                      <p className="text-2xl font-bold text-foreground">
+                        {resumoContagem.reduce((sum, i) => sum + i.finalSobra, 0)}
+                      </p>
+                    </div>
+                    <div className="bg-card rounded-lg p-3 border text-center">
+                      <p className="text-xs text-muted-foreground">Total a Produzir</p>
+                      <p className="text-2xl font-bold text-success">
+                        {resumoContagem.reduce((sum, i) => sum + i.aProduzir, 0)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tabela de itens */}
+                  <div className="bg-card rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-foreground">Item</th>
+                          <th className="text-right px-3 py-2 font-medium text-foreground">Sobra</th>
+                          <th className="text-right px-3 py-2 font-medium text-foreground">A Produzir</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumoContagem.map((item) => (
+                          <tr key={item.itemId} className="border-t border-border">
+                            <td className="px-3 py-2 text-foreground">
+                              {item.itemNome}
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">
+                              {item.finalSobra}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-success">
+                              {item.aProduzir > 0 ? item.aProduzir : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Seção de Produção Extra - apenas para admins */}
               {isAdmin && itensProducaoExtra && itensProducaoExtra.length > 0 && onSolicitarProducaoExtra && (
