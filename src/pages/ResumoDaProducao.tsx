@@ -327,7 +327,7 @@ const ResumoDaProducao = () => {
         .maybeSingle();
       
       if (cpdLoja?.id) {
-        // Usar dia operacional do CPD (respeitando timezone e cutoff)
+        // Usar dia operacional do CPD (respeitando timezone)
         const { data: diaOp } = await supabase.rpc('calcular_dia_operacional', { p_loja_id: cpdLoja.id });
         hoje = diaOp || new Date().toISOString().split('T')[0];
       } else {
