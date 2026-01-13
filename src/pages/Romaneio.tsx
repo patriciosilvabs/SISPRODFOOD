@@ -63,11 +63,11 @@ const PesoInputInlineCompacto = ({ value, onChange }: PesoInputInlineCompactoPro
         onChange={handleChange}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        className="w-24 h-7 text-center text-sm"
+        className="w-32 h-10 text-center text-base font-medium"
       />
       {hasValue && !isFocused && (
         <span 
-          className="text-[10px] text-primary font-medium truncate max-w-24 leading-tight" 
+          className="text-xs text-primary font-medium truncate max-w-32 leading-tight" 
           title={pesoProgressivoToWords(value)}
         >
           {pesoProgressivoToWords(value)}
@@ -343,10 +343,10 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                               type="number"
                               value={item.quantidade || ''}
                               onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-                              className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-16 h-7 text-center text-sm"}
+                              className={layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium"}
                               min={1}
                             />
-                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>un</span>
+                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-base' : 'text-sm'}`}>un</span>
                             <PesoInputInlineCompacto
                               value={item.peso_g}
                               onChange={(valor) => onUpdatePesoItem(demanda.loja_id, item.item_id, valor)}
@@ -355,11 +355,11 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                               type="number"
                               value={item.volumes || ''}
                               onChange={(e) => onUpdateVolumesItem(demanda.loja_id, item.item_id, e.target.value)}
-                              className={layoutExpandido ? "w-20 h-10 text-center text-base font-medium" : "w-14 h-7 text-center text-sm"}
+                              className={layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium"}
                               placeholder="Vol"
                               min={1}
                             />
-                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-sm' : 'text-xs'}`}>vol</span>
+                            <span className={`text-muted-foreground ${layoutExpandido ? 'text-base' : 'text-sm'}`}>vol</span>
                             
                             {/* Botão Salvar */}
                             <Button
@@ -1841,17 +1841,17 @@ const Romaneio = () => {
                                       </div>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 flex-wrap">
+                                    <div className="flex items-center gap-3 flex-wrap">
                                       {/* Quantidade Recebida */}
                                       <div className="flex items-center gap-1">
                                         <Input
                                           type="number"
                                           value={recItem.quantidade_recebida || ''}
                                           onChange={(e) => handleUpdateQuantidadeRecebimento(itemId, parseInt(e.target.value) || 0)}
-                                          className="w-16 h-8 text-center text-sm"
+                                          className="w-24 h-10 text-center text-base font-medium"
                                           min={0}
                                         />
-                                        <span className="text-xs text-muted-foreground">un</span>
+                                        <span className="text-sm text-muted-foreground">un</span>
                                       </div>
                                       
                                       {/* Peso */}
@@ -1867,10 +1867,10 @@ const Romaneio = () => {
                                           value={recItem.volumes || ''}
                                           onChange={(e) => handleUpdateVolumesRecebimento(itemId, e.target.value)}
                                           placeholder="Vol"
-                                          className="w-14 h-8 text-center text-sm"
+                                          className="w-20 h-10 text-center text-base font-medium"
                                           min={1}
                                         />
-                                        <span className="text-xs text-muted-foreground">vol</span>
+                                        <span className="text-sm text-muted-foreground">vol</span>
                                       </div>
                                       
                                       {/* Botão Salvar */}
@@ -2046,7 +2046,7 @@ const Romaneio = () => {
                                         ...prev,
                                         [itemId]: { ...prev[itemId], quantidade_recebida: parseInt(e.target.value) || 0 }
                                       }))}
-                                      className="w-20 h-8"
+                                      className="w-24 h-10 text-center text-base font-medium"
                                       placeholder="Qtd"
                                     />
                                   </div>
