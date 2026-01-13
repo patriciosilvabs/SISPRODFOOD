@@ -1051,20 +1051,7 @@ const ContagemPorcionados = () => {
     return isSessaoAtiva(lojaId) && todosItensPreenchidos(lojaId, itemIds);
   };
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex justify-center items-center min-h-[400px]">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-            <p className="mt-4 text-muted-foreground">Carregando...</p>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Calcular estatísticas para os cards de resumo
+  // Calcular estatísticas para os cards de resumo - ANTES do early return
   const summaryStats = useMemo(() => {
     const activeLojaId = lojaAtualId;
     if (!activeLojaId) return { totalItens: 0, pesoTotalG: 0, itensPendentes: 0, ultimaAtualizacao: undefined };
@@ -1089,6 +1076,19 @@ const ContagemPorcionados = () => {
 
   const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
   const showAdminCols = isAdminUser && showDetails;
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center min-h-[400px]">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+            <p className="mt-4 text-muted-foreground">Carregando...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
