@@ -64,6 +64,7 @@ interface ProducaoRegistro {
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
   codigo_lote?: string;
+  margem_lote_percentual?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
