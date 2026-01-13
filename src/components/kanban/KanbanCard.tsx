@@ -263,9 +263,20 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
           <div className="flex items-start gap-2 pb-2 border-b">
             <Package className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <h4 className="font-bold text-sm leading-tight tracking-tight">
-                {registro.item_nome}
-              </h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-bold text-sm leading-tight tracking-tight">
+                  {registro.item_nome}
+                </h4>
+                {/* Badge do Lote em VERMELHO - destaque */}
+                {registro.sequencia_traco !== undefined && registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
+                  <Badge 
+                    variant="destructive" 
+                    className="font-bold text-xs px-2 py-0.5 bg-red-600 hover:bg-red-600 text-white"
+                  >
+                    LOTE {registro.sequencia_traco}/{registro.total_tracos_lote}
+                  </Badge>
+                )}
+              </div>
               {registro.codigo_lote && (
                 <span className="text-xs font-mono text-muted-foreground bg-muted/80 px-2 py-0.5 rounded-md inline-block mt-1.5">
                   📦 {formatarCodigoLoteComData(registro.codigo_lote)}
