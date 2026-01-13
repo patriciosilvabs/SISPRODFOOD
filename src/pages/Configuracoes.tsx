@@ -265,16 +265,29 @@ const Configuracoes = () => {
       
       if (errSessoes) throw errSessoes;
       
-      // 3. Limpar referências em romaneio_itens antes de deletar produções
-      const { error: errLimparRef } = await supabase
+      // 3. Deletar TODOS os itens de romaneio
+      const { error: errRomaneioItens } = await supabase
         .from('romaneio_itens')
-        .update({ producao_registro_id: null })
-        .eq('organization_id', organizationId)
-        .not('producao_registro_id', 'is', null);
+        .delete()
+        .eq('organization_id', organizationId);
       
-      if (errLimparRef) throw errLimparRef;
+      if (errRomaneioItens) throw errRomaneioItens;
       
-      // 4. Deletar TODAS as produções (todos os status, qualquer data)
+      // 4. Deletar TODOS os romaneios (histórico completo)
+      const { error: errRomaneios } = await supabase
+        .from('romaneios')
+        .delete()
+        .eq('organization_id', organizationId);
+      
+      if (errRomaneios) throw errRomaneios;
+      
+      // 5. Deletar demanda congelada (se ainda existir)
+      await supabase
+        .from('demanda_congelada')
+        .delete()
+        .eq('organization_id', organizationId);
+      
+      // 6. Deletar TODAS as produções (todos os status, qualquer data)
       const { error: errProducao } = await supabase
         .from('producao_registros')
         .delete()
@@ -282,7 +295,7 @@ const Configuracoes = () => {
       
       if (errProducao) throw errProducao;
       
-      // 5. Registrar no audit log
+      // 7. Registrar no audit log
       await supabase.from('audit_logs').insert({
         action: 'RESET_CONTAGENS',
         entity_type: 'contagem_porcionados',
@@ -413,10 +426,11 @@ const Configuracoes = () => {
                 <ul className="list-disc list-inside space-y-1 text-sm">
                   <li>Todas as contagens de <strong>TODAS as lojas</strong> do dia atual</li>
                   <li>Todas as sessões de contagem em andamento</li>
+                  <li><strong>TODOS os romaneios</strong> (histórico completo de envios)</li>
                   <li><strong>TODAS as produções</strong> (qualquer status, qualquer data)</li>
                 </ul>
                 <p className="text-sm text-muted-foreground text-red-600 font-medium">
-                  ⚠️ O painel "Resumo da Produção" ficará completamente vazio.
+                  ⚠️ O painel "Resumo da Produção" e todo o histórico de romaneios serão apagados.
                 </p>
                 <p className="font-semibold pt-2">
                   Digite "CONFIRMAR" para prosseguir:
