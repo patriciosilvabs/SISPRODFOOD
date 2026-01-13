@@ -22,7 +22,9 @@ import {
   MapPin,
   Shield,
   Warehouse,
-  Store
+  Store,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   Sheet,
@@ -32,6 +34,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { getProfileLabel } from '@/lib/page-access-config';
 import { LembretesAudioPlayer } from '@/components/LembretesAudioPlayer';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface LayoutProps {
   children: ReactNode;
@@ -266,6 +269,10 @@ export const Layout = ({ children }: LayoutProps) => {
               <span className="text-muted-foreground">Olá,</span>
               <span className="font-medium">{profile?.nome}</span>
             </div>
+            
+            {/* Toggle de Tema */}
+            <ThemeToggle />
+            
             <Button variant="ghost" size="icon" onClick={signOut}>
               <LogOut className="h-4 w-4" />
             </Button>

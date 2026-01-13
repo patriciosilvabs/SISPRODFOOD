@@ -78,11 +78,11 @@ export default function Onboarding() {
 
   if (modo === 'escolha') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 p-4">
         <div className="w-full max-w-4xl">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold mb-2">Bem-vindo! 🎉</h1>
-            <p className="text-muted-foreground text-lg">
+            <h1 className="text-4xl font-bold mb-2 text-gray-900 dark:text-gray-100">Bem-vindo! 🎉</h1>
+            <p className="text-gray-600 dark:text-gray-400 text-lg">
               Para começar, escolha uma das opções abaixo
             </p>
           </div>
@@ -90,32 +90,32 @@ export default function Onboarding() {
           <div className="grid md:grid-cols-2 gap-6">
             {/* Opção 1: Criar Organização */}
             <Card 
-              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary"
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-blue-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
               onClick={() => setModo('criar')}
             >
               <CardHeader>
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <Building2 className="w-8 h-8 text-primary" />
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                    <Building2 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <CardTitle className="text-2xl">Criar Organização</CardTitle>
+                  <CardTitle className="text-2xl text-gray-900 dark:text-gray-100">Criar Organização</CardTitle>
                 </div>
-                <CardDescription className="text-base">
+                <CardDescription className="text-base text-gray-600 dark:text-gray-400">
                   Crie sua própria organização e comece a gerenciar seu negócio imediatamente
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-2 text-sm text-muted-foreground">
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Você será o administrador
                   </li>
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Acesso completo ao sistema
                   </li>
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Convide membros da sua equipe
                   </li>
                 </ul>
@@ -124,32 +124,32 @@ export default function Onboarding() {
 
             {/* Opção 2: Aguardar Convite */}
             <Card 
-              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary"
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-blue-500 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
               onClick={() => setModo('aguardar')}
             >
               <CardHeader>
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <UserPlus className="w-8 h-8 text-primary" />
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                    <UserPlus className="w-8 h-8 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <CardTitle className="text-2xl">Aguardar Convite</CardTitle>
+                  <CardTitle className="text-2xl text-gray-900 dark:text-gray-100">Aguardar Convite</CardTitle>
                 </div>
-                <CardDescription className="text-base">
+                <CardDescription className="text-base text-gray-600 dark:text-gray-400">
                   Já faz parte de uma organização? Aguarde o convite do administrador
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-2 text-sm text-muted-foreground">
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Peça ao administrador para convidá-lo
                   </li>
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Aguarde a vinculação à organização
                   </li>
                   <li className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
                     Acesso será liberado após aprovação
                   </li>
                 </ul>
@@ -163,16 +163,16 @@ export default function Onboarding() {
 
   if (modo === 'criar') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-        <Card className="w-full max-w-md">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 p-4">
+        <Card className="w-full max-w-md bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
           <CardHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Building2 className="w-8 h-8 text-primary" />
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                <Building2 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <CardTitle className="text-2xl">Criar Organização</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-2xl text-gray-900 dark:text-gray-100">Criar Organização</CardTitle>
+                <CardDescription className="text-gray-600 dark:text-gray-400">
                   Digite o nome da sua organização
                 </CardDescription>
               </div>
@@ -223,29 +223,29 @@ export default function Onboarding() {
 
   // modo === 'aguardar'
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 p-4">
+      <Card className="w-full max-w-md bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
         <CardHeader>
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <UserPlus className="w-8 h-8 text-primary" />
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+              <UserPlus className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <CardTitle className="text-2xl">Aguardar Convite</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-2xl text-gray-900 dark:text-gray-100">Aguardar Convite</CardTitle>
+              <CardDescription className="text-gray-600 dark:text-gray-400">
                 Você será adicionado em breve
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-muted/50 p-4 rounded-lg space-y-3">
-            <p className="text-sm">
+          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-3">
+            <p className="text-sm text-gray-900 dark:text-gray-100">
               <strong>Como funciona:</strong>
             </p>
-            <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+            <ol className="text-sm text-gray-600 dark:text-gray-400 space-y-2 list-decimal list-inside">
               <li>Entre em contato com o administrador da sua organização</li>
-              <li>Informe o email cadastrado: <strong className="text-foreground">{user?.email}</strong></li>
+              <li>Informe o email cadastrado: <strong className="text-gray-900 dark:text-gray-100">{user?.email}</strong></li>
               <li>O administrador irá vinculá-lo à organização</li>
               <li>Após a vinculação, você terá acesso ao sistema</li>
             </ol>

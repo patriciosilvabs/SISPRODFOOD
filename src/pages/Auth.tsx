@@ -117,14 +117,14 @@ const Auth = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-accent/5 to-background p-4">
-      <Card className="w-full max-w-md shadow-xl">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-blue-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 p-4">
+      <Card className="w-full max-w-md shadow-xl bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
         <CardHeader className="text-center space-y-2">
-          <div className="mx-auto w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-2">
-            <Package className="w-8 h-8 text-primary" />
+          <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-xl flex items-center justify-center mb-2">
+            <Package className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
-          <CardTitle className="text-3xl font-bold">Sistema de Estoque</CardTitle>
-          <CardDescription>Controle de Estoque e Produção</CardDescription>
+          <CardTitle className="text-3xl font-bold text-gray-900 dark:text-gray-100">Sistema de Estoque</CardTitle>
+          <CardDescription className="text-gray-600 dark:text-gray-400">Controle de Estoque e Produção</CardDescription>
         </CardHeader>
         
         <CardContent>
@@ -285,7 +285,7 @@ const Auth = () => {
           </Tabs>
         </CardContent>
         
-        <CardFooter className="text-center text-sm text-muted-foreground">
+        <CardFooter className="text-center text-sm text-gray-500 dark:text-gray-400">
           Sistema integrado de gestão
         </CardFooter>
       </Card>

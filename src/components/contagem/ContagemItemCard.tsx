@@ -54,15 +54,15 @@ export const ContagemItemCard = ({
 }: ContagemItemCardProps) => {
   const getCardClasses = () => {
     if (isItemNaoPreenchido) {
-      return 'bg-gray-50 border-l-amber-400 ring-2 ring-amber-200 ring-inset';
+      return 'bg-gray-50 dark:bg-gray-800/50 border-l-amber-400 ring-2 ring-amber-200 dark:ring-amber-800 ring-inset';
     }
     if (isDirty) {
-      return 'bg-gray-50 border-l-amber-400';
+      return 'bg-gray-50 dark:bg-gray-800/50 border-l-amber-400';
     }
     if (campoTocado) {
-      return 'bg-gray-50 border-l-emerald-400';
+      return 'bg-gray-50 dark:bg-gray-800/50 border-l-emerald-400';
     }
-    return 'bg-white border-l-blue-500 hover:shadow-md';
+    return 'bg-white dark:bg-gray-900 border-l-blue-500 hover:shadow-md';
   };
 
   return (
@@ -78,7 +78,7 @@ export const ContagemItemCard = ({
           {campoTocado && (
             <CheckCircle className="h-4 w-4 text-success shrink-0" />
           )}
-          <span className="font-semibold text-sm uppercase tracking-wide text-gray-900 truncate">
+          <span className="font-semibold text-sm uppercase tracking-wide text-gray-900 dark:text-gray-100 truncate">
             {item.nome}
           </span>
         </div>
@@ -104,8 +104,8 @@ export const ContagemItemCard = ({
           </Button>
           <div className={`h-12 w-16 flex items-center justify-center text-xl font-bold border-y-2 ${
             isItemNaoPreenchido 
-              ? 'bg-amber-50 text-amber-600 border-amber-400' 
-              : 'bg-white text-blue-600 border-blue-500'
+              ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
+              : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
           }`}>
             {finalSobra}
           </div>
@@ -136,10 +136,10 @@ export const ContagemItemCard = ({
           <>
             <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
               idealFromConfig === 0 
-                ? 'bg-warning/10 border-warning/50 text-warning' 
-                : 'bg-muted border-input'
+                ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
+                : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
             }`}>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Ideal ({currentDayLabel})
               </span>
               {idealFromConfig === 0 ? (
@@ -148,14 +148,14 @@ export const ContagemItemCard = ({
                   N/C
                 </span>
               ) : (
-                <span className="text-base font-bold">{idealFromConfig}</span>
+                <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
               )}
             </div>
 
             <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[80px] ${
               aProduzir > 0 
-                ? 'bg-warning text-warning-foreground' 
-                : 'bg-muted text-muted-foreground'
+                ? 'bg-amber-500 dark:bg-amber-600 text-white' 
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
             }`}>
               <span className="text-[10px] uppercase tracking-wide opacity-80">A Produzir</span>
               <span className="text-base font-bold">{aProduzir}</span>
