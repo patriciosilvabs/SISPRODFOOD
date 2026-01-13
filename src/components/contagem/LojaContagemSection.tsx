@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { 
   ChevronDown, ChevronUp, PlayCircle, CheckCircle, Clock, 
-  AlertCircle, RefreshCw 
+  AlertCircle, RefreshCw, TrendingUp 
 } from 'lucide-react';
 import {
   Collapsible,
@@ -33,6 +33,13 @@ interface LojaContagemSectionProps {
   onIniciarSessao: () => void;
   onReiniciarSessao: () => void;
   children: React.ReactNode;
+  // Para seção de produção extra quando encerrada
+  itensProducaoExtra?: Array<{
+    id: string;
+    nome: string;
+  }>;
+  onSolicitarProducaoExtra?: (itemId: string, itemNome: string) => void;
+  isAdmin?: boolean;
 }
 
 const getStatusBadge = (sessao?: SessaoContagem) => {
@@ -66,6 +73,9 @@ export const LojaContagemSection = ({
   onIniciarSessao,
   onReiniciarSessao,
   children,
+  itensProducaoExtra,
+  onSolicitarProducaoExtra,
+  isAdmin,
 }: LojaContagemSectionProps) => {
   const isSessaoAtiva = sessao?.status === 'em_andamento';
 
@@ -121,34 +131,68 @@ export const LojaContagemSection = ({
 
           {/* Sessão Encerrada */}
           {sessao?.status === 'encerrada' && (
-            <div className="flex flex-col items-center justify-center p-10 bg-success/5">
-              <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mb-4">
-                <CheckCircle className="h-8 w-8 text-success" />
-              </div>
-              <h3 className="text-lg font-bold text-success mb-2">
-                Contagem Encerrada
-              </h3>
-              <p className="text-muted-foreground text-center mb-2">
-                Encerrada por: <span className="font-medium">{sessao.encerrado_por_nome}</span>
-              </p>
-              {sessao.encerrado_em && (
-                <p className="text-sm text-muted-foreground mb-4">
-                  {format(new Date(sessao.encerrado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+            <div className="flex flex-col bg-success/5">
+              {/* Mensagem de encerramento */}
+              <div className="flex flex-col items-center justify-center p-8">
+                <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mb-3">
+                  <CheckCircle className="h-7 w-7 text-success" />
+                </div>
+                <h3 className="text-lg font-bold text-success mb-1">
+                  Contagem Encerrada
+                </h3>
+                <p className="text-muted-foreground text-center text-sm mb-1">
+                  Encerrada por: <span className="font-medium">{sessao.encerrado_por_nome}</span>
                 </p>
+                {sessao.encerrado_em && (
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {format(new Date(sessao.encerrado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                )}
+                
+                {/* Botão para reiniciar contagem */}
+                <Button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReiniciarSessao();
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="border-2 border-warning text-warning hover:bg-warning/10 rounded-xl"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Reiniciar Contagem
+                </Button>
+              </div>
+
+              {/* Seção de Produção Extra - apenas para admins */}
+              {isAdmin && itensProducaoExtra && itensProducaoExtra.length > 0 && onSolicitarProducaoExtra && (
+                <div className="border-t-2 border-success/20 p-4">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Solicitar Produção Extra
+                    </h4>
+                  </div>
+                  
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {itensProducaoExtra.map((item) => (
+                      <Button
+                        key={item.id}
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSolicitarProducaoExtra(item.id, item.nome);
+                        }}
+                        className="justify-between h-auto py-2.5 px-3 text-left border-2 hover:bg-primary/5 hover:border-primary/30"
+                      >
+                        <span className="font-medium text-sm truncate">{item.nome}</span>
+                        <TrendingUp className="h-4 w-4 text-primary shrink-0 ml-2" />
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               )}
-              
-              {/* Botão para reiniciar contagem */}
-              <Button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReiniciarSessao();
-                }}
-                variant="outline"
-                className="mt-2 border-2 border-warning text-warning hover:bg-warning/10 rounded-xl"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Reiniciar Contagem
-              </Button>
             </div>
           )}
 

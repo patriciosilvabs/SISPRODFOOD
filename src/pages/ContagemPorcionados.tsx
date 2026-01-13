@@ -1188,6 +1188,9 @@ const ContagemPorcionados = () => {
                 onToggle={() => toggleLoja(loja.id)}
                 onIniciarSessao={() => handleIniciarSessao(loja.id)}
                 onReiniciarSessao={() => handleSolicitarReinicio(loja.id)}
+                isAdmin={isAdminUser}
+                itensProducaoExtra={itens.map(i => ({ id: i.id, nome: i.nome }))}
+                onSolicitarProducaoExtra={(itemId, itemNome) => handleOpenProducaoExtra(loja.id, { id: itemId, nome: itemNome })}
               >
                 {/* Itens da Loja */}
                 {itens.map((item) => {
