@@ -1214,6 +1214,7 @@ const ContagemPorcionados = () => {
                           itemId: item.id,
                           itemNome: item.nome,
                           finalSobra,
+                          idealDoDia: idealFromConfig,
                           aProduzir,
                         };
                       })

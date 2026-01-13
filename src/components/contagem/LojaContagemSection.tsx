@@ -39,6 +39,7 @@ interface ResumoItem {
   itemId: string;
   itemNome: string;
   finalSobra: number;
+  idealDoDia: number;
   aProduzir: number;
 }
 
@@ -298,49 +299,59 @@ export const LojaContagemSection = ({
                     Resumo da Contagem
                   </h4>
                   
-                  {/* Cards de totais */}
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-card rounded-lg p-3 border text-center">
-                      <p className="text-xs text-muted-foreground">Total Sobras</p>
-                      <p className="text-2xl font-bold text-foreground">
-                        {resumoContagem.reduce((sum, i) => sum + i.finalSobra, 0)}
-                      </p>
-                    </div>
-                    <div className="bg-card rounded-lg p-3 border text-center">
-                      <p className="text-xs text-muted-foreground">Total a Produzir</p>
-                      <p className="text-2xl font-bold text-success">
-                        {resumoContagem.reduce((sum, i) => sum + i.aProduzir, 0)}
-                      </p>
-                    </div>
+                {/* Cards de totais */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="bg-card rounded-lg p-3 border text-center">
+                    <p className="text-xs text-muted-foreground">Total Ideal</p>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {resumoContagem.reduce((sum, i) => sum + i.idealDoDia, 0)}
+                    </p>
                   </div>
+                  <div className="bg-card rounded-lg p-3 border text-center">
+                    <p className="text-xs text-muted-foreground">Total Sobras</p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {resumoContagem.reduce((sum, i) => sum + i.finalSobra, 0)}
+                    </p>
+                  </div>
+                  <div className="bg-card rounded-lg p-3 border text-center">
+                    <p className="text-xs text-muted-foreground">Total a Produzir</p>
+                    <p className="text-2xl font-bold text-success">
+                      {resumoContagem.reduce((sum, i) => sum + i.aProduzir, 0)}
+                    </p>
+                  </div>
+                </div>
 
-                  {/* Tabela de itens */}
-                  <div className="bg-card rounded-lg border overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="text-left px-3 py-2 font-medium text-foreground">Item</th>
-                          <th className="text-right px-3 py-2 font-medium text-foreground">Sobra</th>
-                          <th className="text-right px-3 py-2 font-medium text-foreground">A Produzir</th>
+                {/* Tabela de itens */}
+                <div className="bg-card rounded-lg border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-foreground">Item</th>
+                        <th className="text-right px-3 py-2 font-medium text-foreground">Ideal</th>
+                        <th className="text-right px-3 py-2 font-medium text-foreground">Sobra</th>
+                        <th className="text-right px-3 py-2 font-medium text-foreground">A Produzir</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resumoContagem.map((item) => (
+                        <tr key={item.itemId} className="border-t border-border">
+                          <td className="px-3 py-2 text-foreground">
+                            {item.itemNome}
+                          </td>
+                          <td className="px-3 py-2 text-right text-blue-600 font-medium">
+                            {item.idealDoDia}
+                          </td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">
+                            {item.finalSobra}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-success">
+                            {item.aProduzir > 0 ? item.aProduzir : '-'}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {resumoContagem.map((item) => (
-                          <tr key={item.itemId} className="border-t border-border">
-                            <td className="px-3 py-2 text-foreground">
-                              {item.itemNome}
-                            </td>
-                            <td className="px-3 py-2 text-right text-muted-foreground">
-                              {item.finalSobra}
-                            </td>
-                            <td className="px-3 py-2 text-right font-semibold text-success">
-                              {item.aProduzir > 0 ? item.aProduzir : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 </div>
               )}
 
