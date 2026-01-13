@@ -365,6 +365,7 @@ export type Database = {
           mensagem_erro: string | null
           operacao: string
           organization_id: string | null
+          origem_lote: string | null
           status: string
           tentativas: number | null
           usuario_id: string
@@ -385,6 +386,7 @@ export type Database = {
           mensagem_erro?: string | null
           operacao: string
           organization_id?: string | null
+          origem_lote?: string | null
           status: string
           tentativas?: number | null
           usuario_id: string
@@ -405,6 +407,7 @@ export type Database = {
           mensagem_erro?: string | null
           operacao?: string
           organization_id?: string | null
+          origem_lote?: string | null
           status?: string
           tentativas?: number | null
           usuario_id?: string
@@ -2154,10 +2157,12 @@ export type Database = {
           data_inicio_porcionamento: string | null
           data_inicio_preparo: string | null
           data_referencia: string | null
+          demanda_base_snapshot: number | null
           demanda_lojas: number | null
           detalhes_lojas: Json | null
           farinha_consumida_kg: number | null
           id: string
+          is_incremental: boolean | null
           item_id: string
           item_nome: string
           lote_producao_id: string | null
@@ -2194,10 +2199,12 @@ export type Database = {
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
           data_referencia?: string | null
+          demanda_base_snapshot?: number | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           farinha_consumida_kg?: number | null
           id?: string
+          is_incremental?: boolean | null
           item_id: string
           item_nome: string
           lote_producao_id?: string | null
@@ -2234,10 +2241,12 @@ export type Database = {
           data_inicio_porcionamento?: string | null
           data_inicio_preparo?: string | null
           data_referencia?: string | null
+          demanda_base_snapshot?: number | null
           demanda_lojas?: number | null
           detalhes_lojas?: Json | null
           farinha_consumida_kg?: number | null
           id?: string
+          is_incremental?: boolean | null
           item_id?: string
           item_nome?: string
           lote_producao_id?: string | null
