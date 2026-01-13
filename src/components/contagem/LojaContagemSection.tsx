@@ -355,8 +355,8 @@ export const LojaContagemSection = ({
                 </div>
               )}
 
-              {/* Seção de Produção Extra - apenas para admins */}
-              {isAdmin && itensProducaoExtra && itensProducaoExtra.length > 0 && onSolicitarProducaoExtra && (
+                  {/* Seção de Produção Extra - disponível para todos após encerramento */}
+                  {itensProducaoExtra && itensProducaoExtra.length > 0 && onSolicitarProducaoExtra && (
                 <div className="border-t-2 border-success/20 p-4">
                   <div className="flex items-center justify-center gap-2 mb-4">
                     <TrendingUp className="h-4 w-4 text-primary" />
