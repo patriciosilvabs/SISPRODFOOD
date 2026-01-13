@@ -1035,6 +1035,42 @@ const Romaneio = () => {
           }, { onConflict: 'item_porcionado_id' });
       }
 
+      // Verificar se produção foi totalmente expedida e atualizar status
+      const producaoIds = itens
+        .map(item => item.producao_registro_id)
+        .filter((id): id is string => !!id);
+      
+      if (producaoIds.length > 0) {
+        // Para cada registro de produção vinculado, verificar se demanda foi atendida
+        for (const producaoId of [...new Set(producaoIds)]) {
+          // Buscar demanda do registro de produção
+          const { data: registro } = await supabase
+            .from('producao_registros')
+            .select('demanda_lojas, unidades_programadas')
+            .eq('id', producaoId)
+            .single();
+          
+          if (registro) {
+            // Buscar total enviado via romaneios para este registro de produção
+            const { data: romaneioItens } = await supabase
+              .from('romaneio_itens')
+              .select('quantidade')
+              .eq('producao_registro_id', producaoId);
+            
+            const qtdTotalEnviada = romaneioItens?.reduce((acc, ri) => acc + (ri.quantidade || 0), 0) || 0;
+            const demandaTotal = registro.demanda_lojas || registro.unidades_programadas || 0;
+            
+            // Se toda a demanda foi atendida, marcar como expedido
+            if (demandaTotal > 0 && qtdTotalEnviada >= demandaTotal) {
+              await supabase
+                .from('producao_registros')
+                .update({ status: 'expedido' })
+                .eq('id', producaoId);
+            }
+          }
+        }
+      }
+
       toast.success(`Romaneio enviado para ${loja?.nome}!`);
       
       // Atualizar dados

@@ -352,6 +352,7 @@ const ResumoDaProducao = () => {
         .from('producao_registros')
         .select('*')
         .or(`data_referencia.gte.${ontemStr},status.neq.finalizado`)
+        .neq('status', 'expedido') // Ocultar itens já expedidos via romaneio
         .order('data_inicio', { ascending: false });
 
       if (error) throw error;
