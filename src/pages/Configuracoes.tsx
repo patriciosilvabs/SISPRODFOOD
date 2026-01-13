@@ -265,7 +265,16 @@ const Configuracoes = () => {
       
       if (errSessoes) throw errSessoes;
       
-      // 3. Deletar TODAS as produções (todos os status, qualquer data)
+      // 3. Limpar referências em romaneio_itens antes de deletar produções
+      const { error: errLimparRef } = await supabase
+        .from('romaneio_itens')
+        .update({ producao_registro_id: null })
+        .eq('organization_id', organizationId)
+        .not('producao_registro_id', 'is', null);
+      
+      if (errLimparRef) throw errLimparRef;
+      
+      // 4. Deletar TODAS as produções (todos os status, qualquer data)
       const { error: errProducao } = await supabase
         .from('producao_registros')
         .delete()
@@ -273,7 +282,7 @@ const Configuracoes = () => {
       
       if (errProducao) throw errProducao;
       
-      // 4. Registrar no audit log
+      // 5. Registrar no audit log
       await supabase.from('audit_logs').insert({
         action: 'RESET_CONTAGENS',
         entity_type: 'contagem_porcionados',
