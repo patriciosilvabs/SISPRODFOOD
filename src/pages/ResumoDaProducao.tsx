@@ -92,6 +92,8 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   // Código único do lote para rastreabilidade
   codigo_lote?: string;
+  // Campo para cálculo correto da mensagem de flexibilização
+  margem_lote_percentual?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -357,7 +359,7 @@ const ResumoDaProducao = () => {
         .select(`id, unidade_medida, equivalencia_traco, insumo_vinculado_id, timer_ativo, tempo_timer_minutos, 
           usa_embalagem_por_porcao, insumo_embalagem_id, unidade_embalagem, fator_consumo_embalagem_por_porcao,
           farinha_por_lote_kg, massa_gerada_por_lote_kg, peso_minimo_bolinha_g, peso_maximo_bolinha_g, 
-          peso_alvo_bolinha_g, peso_medio_operacional_bolinha_g`)
+          peso_alvo_bolinha_g, peso_medio_operacional_bolinha_g, margem_lote_percentual`)
         .in('id', itemIds);
 
       const itensMap = new Map(itensData?.map(i => [i.id, i]) || []);
@@ -540,6 +542,8 @@ const ResumoDaProducao = () => {
             itemInfo?.peso_medio_operacional_bolinha_g
               ? Math.floor(registro.lotes_masseira * itemInfo.massa_gerada_por_lote_kg / (itemInfo.peso_medio_operacional_bolinha_g / 1000))
               : undefined,
+          // Margem de flexibilização para cálculo correto da mensagem
+          margem_lote_percentual: itemInfo?.margem_lote_percentual,
         };
         
         organizedColumns[targetColumn].push(registroTyped);

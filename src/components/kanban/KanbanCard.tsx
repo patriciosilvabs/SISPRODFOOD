@@ -91,6 +91,7 @@ interface ProducaoRegistro {
   peso_medio_real_bolinha_g?: number;
   status_calibracao?: string;
   codigo_lote?: string;
+  margem_lote_percentual?: number | null;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -419,11 +420,25 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         </div>
                       )}
                       
-                      {/* Nota sobre margem de flexibilização */}
+                      {/* Nota sobre margem de flexibilização - só mostrar quando realmente aplicada */}
                       {registro.unidade_medida === 'lote_masseira' && 
                        registro.unidades_estimadas_masseira && 
                        registro.demanda_lojas && 
-                       registro.unidades_estimadas_masseira < registro.demanda_lojas && (
+                       registro.lotes_masseira &&
+                       (() => {
+                         // Calcular se a margem foi realmente aplicada
+                         const unidadesPorLote = registro.unidades_estimadas_masseira / registro.lotes_masseira;
+                         const margem = registro.margem_lote_percentual || 0;
+                         const capacidadeComMargem = unidadesPorLote * (1 + margem / 100);
+                         
+                         // Margem aplicada = demanda cabe na capacidade com margem, 
+                         // mas NÃO caberia sem a margem (reduziu número de lotes)
+                         const lotesNecessariosSemMargem = Math.ceil(registro.demanda_lojas / unidadesPorLote);
+                         const lotesNecessariosComMargem = Math.ceil(registro.demanda_lojas / capacidadeComMargem);
+                         
+                         // Margem só foi aplicada se reduziu o número de lotes
+                         return lotesNecessariosComMargem < lotesNecessariosSemMargem;
+                       })() && (
                         <div className="flex items-start gap-2 mt-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
                           <span className="text-amber-600 text-xs">ℹ️</span>
                           <span className="text-xs text-amber-700 dark:text-amber-300">
