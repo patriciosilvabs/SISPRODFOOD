@@ -489,9 +489,15 @@ const ResumoDaProducao = () => {
         if (itemInfo?.usa_embalagem_por_porcao && itemInfo.insumo_embalagem_id && registro.unidades_programadas) {
           const fator = itemInfo.fator_consumo_embalagem_por_porcao || 1;
           
-          // Para LOTE_MASSEIRA, usar demanda real das lojas (não unidades arredondadas da masseira)
-          if (itemInfo.unidade_medida === 'lote_masseira' && registro.demanda_lojas) {
-            quantidadeEmbalagem = registro.demanda_lojas * fator;
+          // Para LOTE_MASSEIRA, usar unidades estimadas (o que realmente será produzido)
+          if (itemInfo.unidade_medida === 'lote_masseira') {
+            const unidadesEstimadas = registro.lotes_masseira && 
+              itemInfo.massa_gerada_por_lote_kg && 
+              itemInfo.peso_medio_operacional_bolinha_g
+                ? Math.floor(registro.lotes_masseira * itemInfo.massa_gerada_por_lote_kg / (itemInfo.peso_medio_operacional_bolinha_g / 1000))
+                : registro.unidades_programadas || 0;
+            
+            quantidadeEmbalagem = unidadesEstimadas * fator;
           } else {
             quantidadeEmbalagem = registro.unidades_programadas * fator;
           }
