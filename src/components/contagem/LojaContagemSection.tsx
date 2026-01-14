@@ -43,6 +43,12 @@ interface ResumoItem {
   aProduzir: number;
 }
 
+interface UltimaSessaoInfo {
+  dia_operacional: string;
+  encerrado_em?: string;
+  encerrado_por_nome?: string;
+}
+
 interface LojaContagemSectionProps {
   loja: Loja;
   sessao?: SessaoContagem;
@@ -62,6 +68,9 @@ interface LojaContagemSectionProps {
   janelaStatus?: JanelaStatus;
   // Resumo da contagem quando encerrada
   resumoContagem?: ResumoItem[];
+  // Resumo da última contagem (para exibir quando não há sessão do dia)
+  resumoUltimaContagem?: ResumoItem[];
+  ultimaSessaoInfo?: UltimaSessaoInfo;
 }
 
 const getStatusBadge = (sessao?: SessaoContagem, janelaStatus?: JanelaStatus) => {
@@ -117,6 +126,8 @@ export const LojaContagemSection = ({
   isAdmin,
   janelaStatus,
   resumoContagem,
+  resumoUltimaContagem,
+  ultimaSessaoInfo,
 }: LojaContagemSectionProps) => {
   const isSessaoAtiva = sessao?.status === 'em_andamento';
   const isJanelaAberta = janelaStatus?.status === 'dentro';
@@ -229,31 +240,107 @@ export const LojaContagemSection = ({
 
           {/* Tela de Iniciar Sessão (apenas quando janela está aberta) */}
           {isJanelaAberta && (!sessao || sessao.status === 'pendente') && (
-            <div className="flex flex-col items-center justify-center p-10 bg-warning/5">
-              <div className="w-16 h-16 rounded-full bg-warning/10 flex items-center justify-center mb-4">
-                <PlayCircle className="h-8 w-8 text-warning" />
-              </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">Contagem não iniciada</h3>
-              <p className="text-muted-foreground text-center mb-6 max-w-md">
-                Clique para iniciar a contagem do dia operacional. 
-                Todos os campos deverão ser preenchidos antes de encerrar.
-              </p>
-              {janelaStatus?.tempoAteFechar && (
-                <p className="text-xs text-muted-foreground mb-4">
-                  ⏱ Janela fecha em {janelaStatus.tempoAteFechar}
+            <div className="flex flex-col">
+              {/* Botão para iniciar contagem */}
+              <div className="flex flex-col items-center justify-center p-10 bg-warning/5">
+                <div className="w-16 h-16 rounded-full bg-warning/10 flex items-center justify-center mb-4">
+                  <PlayCircle className="h-8 w-8 text-warning" />
+                </div>
+                <h3 className="text-lg font-bold text-foreground mb-2">Contagem não iniciada</h3>
+                <p className="text-muted-foreground text-center mb-6 max-w-md">
+                  Clique para iniciar a contagem do dia operacional. 
+                  Todos os campos deverão ser preenchidos antes de encerrar.
                 </p>
+                {janelaStatus?.tempoAteFechar && (
+                  <p className="text-xs text-muted-foreground mb-4">
+                    ⏱ Janela fecha em {janelaStatus.tempoAteFechar}
+                  </p>
+                )}
+                <Button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onIniciarSessao();
+                  }}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground h-12 px-6 rounded-xl shadow-md"
+                  size="lg"
+                >
+                  <PlayCircle className="h-5 w-5 mr-2" />
+                  Iniciar Contagem de Hoje
+                </Button>
+              </div>
+
+              {/* Resumo da Última Contagem (referência) */}
+              {resumoUltimaContagem && resumoUltimaContagem.length > 0 && ultimaSessaoInfo && (
+                <div className="border-t-2 border-muted p-4 bg-muted/10">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Última Contagem ({format(new Date(ultimaSessaoInfo.dia_operacional + 'T12:00:00'), "dd/MM", { locale: ptBR })})
+                    </h4>
+                  </div>
+                  
+                  {ultimaSessaoInfo.encerrado_por_nome && ultimaSessaoInfo.encerrado_em && (
+                    <p className="text-xs text-center text-muted-foreground mb-3">
+                      Encerrada por {ultimaSessaoInfo.encerrado_por_nome} em{' '}
+                      {format(new Date(ultimaSessaoInfo.encerrado_em), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                    </p>
+                  )}
+
+                  {/* Cards de totais */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-card rounded-lg p-3 border text-center">
+                      <p className="text-xs text-muted-foreground">Total Ideal</p>
+                      <p className="text-xl font-bold text-blue-600">
+                        {resumoUltimaContagem.reduce((sum, i) => sum + i.idealDoDia, 0)}
+                      </p>
+                    </div>
+                    <div className="bg-card rounded-lg p-3 border text-center">
+                      <p className="text-xs text-muted-foreground">Total Sobras</p>
+                      <p className="text-xl font-bold text-foreground">
+                        {resumoUltimaContagem.reduce((sum, i) => sum + i.finalSobra, 0)}
+                      </p>
+                    </div>
+                    <div className="bg-card rounded-lg p-3 border text-center">
+                      <p className="text-xs text-muted-foreground">A Produzir</p>
+                      <p className="text-xl font-bold text-success">
+                        {resumoUltimaContagem.reduce((sum, i) => sum + i.aProduzir, 0)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tabela de itens */}
+                  <div className="bg-card rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-foreground">Item</th>
+                          <th className="text-right px-3 py-2 font-medium text-foreground">Ideal</th>
+                          <th className="text-right px-3 py-2 font-medium text-foreground">Sobra</th>
+                          <th className="text-right px-3 py-2 font-medium text-foreground">Prod.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumoUltimaContagem.map((item) => (
+                          <tr key={item.itemId} className="border-t border-border">
+                            <td className="px-3 py-2 text-foreground truncate max-w-[120px]">
+                              {item.itemNome}
+                            </td>
+                            <td className="px-3 py-2 text-right text-blue-600 font-medium">
+                              {item.idealDoDia}
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">
+                              {item.finalSobra}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-success">
+                              {item.aProduzir > 0 ? item.aProduzir : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
-              <Button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onIniciarSessao();
-                }}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground h-12 px-6 rounded-xl shadow-md"
-                size="lg"
-              >
-                <PlayCircle className="h-5 w-5 mr-2" />
-                Iniciar Contagem de Hoje
-              </Button>
             </div>
           )}
 

@@ -25,6 +25,7 @@ export const useSessaoContagem = ({
   diasOperacionaisPorLoja,
 }: UseSessaoContagemProps) => {
   const [sessoes, setSessoes] = useState<Record<string, SessaoContagem>>({});
+  const [ultimaSessaoEncerrada, setUltimaSessaoEncerrada] = useState<Record<string, SessaoContagem>>({});
   const [camposTocados, setCamposTocados] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
 
@@ -58,6 +59,41 @@ export const useSessaoContagem = ({
       setLoading(false);
     }
   }, [organizationId, diasOperacionaisPorLoja]);
+
+  // Carregar a última sessão encerrada de cada loja (independente do dia)
+  const loadUltimaSessaoEncerrada = useCallback(async (lojaIds: string[]) => {
+    if (!organizationId || lojaIds.length === 0) return;
+
+    try {
+      // Para cada loja, buscar a última sessão encerrada
+      const promises = lojaIds.map(async (lojaId) => {
+        const { data } = await supabase
+          .from('sessoes_contagem')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('loja_id', lojaId)
+          .eq('status', 'encerrada')
+          .order('dia_operacional', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        return { lojaId, sessao: data };
+      });
+
+      const results = await Promise.all(promises);
+      const ultimasMap: Record<string, SessaoContagem> = {};
+      
+      results.forEach(({ lojaId, sessao }) => {
+        if (sessao) {
+          ultimasMap[lojaId] = sessao as SessaoContagem;
+        }
+      });
+
+      setUltimaSessaoEncerrada(ultimasMap);
+    } catch (error) {
+      console.error('Erro ao buscar última sessão encerrada:', error);
+    }
+  }, [organizationId]);
 
   // Iniciar sessão de contagem
   const iniciarSessao = async (
@@ -241,9 +277,11 @@ export const useSessaoContagem = ({
 
   return {
     sessoes,
+    ultimaSessaoEncerrada,
     camposTocados,
     loading,
     loadSessoes,
+    loadUltimaSessaoEncerrada,
     iniciarSessao,
     encerrarSessao,
     marcarCampoTocado,

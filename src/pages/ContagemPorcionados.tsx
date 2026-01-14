@@ -141,7 +141,9 @@ const ContagemPorcionados = () => {
   // Hook de sessão de contagem
   const {
     sessoes,
+    ultimaSessaoEncerrada,
     loadSessoes,
+    loadUltimaSessaoEncerrada,
     iniciarSessao,
     encerrarSessao,
     marcarCampoTocado,
@@ -175,8 +177,41 @@ const ContagemPorcionados = () => {
   useEffect(() => {
     if (lojas.length > 0 && Object.keys(diasOperacionaisPorLoja).length > 0) {
       loadSessoes(lojas.map(l => l.id));
+      loadUltimaSessaoEncerrada(lojas.map(l => l.id));
     }
-  }, [lojas, diasOperacionaisPorLoja, loadSessoes]);
+  }, [lojas, diasOperacionaisPorLoja, loadSessoes, loadUltimaSessaoEncerrada]);
+
+  // Estado para contagens da última sessão encerrada
+  const [contagensUltimaSessao, setContagensUltimaSessao] = useState<Record<string, Contagem[]>>({});
+
+  // Carregar contagens da última sessão encerrada de cada loja
+  useEffect(() => {
+    const loadContagensUltimaSessao = async () => {
+      const newContagens: Record<string, Contagem[]> = {};
+      
+      for (const lojaId of Object.keys(ultimaSessaoEncerrada)) {
+        const sessao = ultimaSessaoEncerrada[lojaId];
+        // Só carregar se não é do dia atual (já temos nas contagens normais)
+        if (sessao && sessao.dia_operacional !== diasOperacionaisPorLoja[lojaId]) {
+          const { data } = await supabase
+            .from('contagem_porcionados')
+            .select('*')
+            .eq('loja_id', lojaId)
+            .eq('dia_operacional', sessao.dia_operacional);
+          
+          if (data) {
+            newContagens[lojaId] = data;
+          }
+        }
+      }
+      
+      setContagensUltimaSessao(newContagens);
+    };
+
+    if (Object.keys(ultimaSessaoEncerrada).length > 0) {
+      loadContagensUltimaSessao();
+    }
+  }, [ultimaSessaoEncerrada, diasOperacionaisPorLoja]);
 
   const loadData = async () => {
     try {
@@ -1186,6 +1221,17 @@ const ContagemPorcionados = () => {
             const sessaoAtiva = isSessaoAtiva(loja.id);
             const diaOperacional = diasOperacionaisPorLoja[loja.id];
             const currentDay = getCurrentDayKey(diaOperacional);
+            
+            // Dados da última sessão encerrada (para mostrar como referência)
+            const ultimaSessao = ultimaSessaoEncerrada[loja.id];
+            const contagensUltima = contagensUltimaSessao[loja.id] || [];
+            const ultimaSessaoDiaOpKey = ultimaSessao?.dia_operacional ? getCurrentDayKey(ultimaSessao.dia_operacional) : currentDay;
+            
+            // Verificar se deve mostrar resumo da última contagem
+            // Mostrar quando: não há sessão do dia OU sessão do dia ainda não iniciada/pendente
+            const deveMostrarUltimaContagem = ultimaSessao && 
+              ultimaSessao.dia_operacional !== diaOperacional &&
+              (!sessao || sessao.status === 'pendente');
 
             return (
             <LojaContagemSection
@@ -1218,6 +1264,35 @@ const ContagemPorcionados = () => {
                           aProduzir,
                         };
                       })
+                    : undefined
+                }
+                resumoUltimaContagem={
+                  deveMostrarUltimaContagem
+                    ? itens.map(item => {
+                        const contagem = contagensUltima.find(c => c.item_porcionado_id === item.id);
+                        const estoqueKey = `${loja.id}-${item.id}`;
+                        const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                        const idealFromConfig = estoqueSemanal?.[ultimaSessaoDiaOpKey] ?? 0;
+                        const finalSobra = contagem?.final_sobra ?? 0;
+                        const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                        
+                        return {
+                          itemId: item.id,
+                          itemNome: item.nome,
+                          finalSobra,
+                          idealDoDia: idealFromConfig,
+                          aProduzir,
+                        };
+                      })
+                    : undefined
+                }
+                ultimaSessaoInfo={
+                  deveMostrarUltimaContagem && ultimaSessao
+                    ? {
+                        dia_operacional: ultimaSessao.dia_operacional,
+                        encerrado_em: ultimaSessao.encerrado_em || undefined,
+                        encerrado_por_nome: ultimaSessao.encerrado_por_nome || undefined,
+                      }
                     : undefined
                 }
               >
