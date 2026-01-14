@@ -12,6 +12,7 @@ import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
 import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
+import { EstoqueInsuficienteModal } from '@/components/modals/EstoqueInsuficienteModal';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
@@ -94,6 +95,17 @@ interface ProducaoRegistro {
   codigo_lote?: string;
   // Campo para cálculo correto da mensagem de flexibilização
   margem_lote_percentual?: number | null;
+  // Campo para identificar registro pendente (produção parcial)
+  is_incremental?: boolean;
+}
+
+// Interface para insumo limitante (estoque insuficiente)
+interface InsumoLimitante {
+  nome: string;
+  quantidadeNecessaria: number;
+  estoqueDisponivel: number;
+  consumoPorUnidade: number;
+  unidade: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -132,6 +144,12 @@ const ResumoDaProducao = () => {
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [modalCancelar, setModalCancelar] = useState(false);
   const [modalPerda, setModalPerda] = useState(false);
+  const [modalEstoqueInsuficiente, setModalEstoqueInsuficiente] = useState(false);
+  const [dadosEstoqueInsuficiente, setDadosEstoqueInsuficiente] = useState<{
+    registro: ProducaoRegistro;
+    insumoLimitante: InsumoLimitante;
+    unidadesProduziveis: number;
+  } | null>(null);
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
 
@@ -559,6 +577,146 @@ const ResumoDaProducao = () => {
     }
   };
 
+  // Função para encontrar insumo limitante (com estoque insuficiente)
+  const encontrarInsumoLimitante = (registro: ProducaoRegistro): InsumoLimitante | null => {
+    const unidadesProgramadas = registro.unidades_programadas || 0;
+    if (unidadesProgramadas <= 0) return null;
+    
+    // Verificar insumos extras (que incluem o principal)
+    if (registro.insumosExtras && registro.insumosExtras.length > 0) {
+      // Encontrar o insumo mais limitante (que permite produzir menos unidades)
+      let insumoMaisLimitante: InsumoLimitante | null = null;
+      let menorUnidadesProduziveis = Infinity;
+      
+      for (const extra of registro.insumosExtras) {
+        if (!extra.estoque_suficiente) {
+          // Converter para mesma unidade se necessário
+          let estoqueDisponivelNormalizado = extra.estoque_disponivel;
+          let quantidadeNecessariaNormalizada = extra.quantidade_necessaria;
+          
+          // Se o estoque está em kg e a necessidade em g, converter
+          if (extra.unidade === 'g') {
+            estoqueDisponivelNormalizado = extra.estoque_disponivel * 1000; // kg -> g
+          }
+          
+          const consumoPorUnidade = quantidadeNecessariaNormalizada / unidadesProgramadas;
+          const unidadesProduziveis = Math.floor(estoqueDisponivelNormalizado / consumoPorUnidade);
+          
+          if (unidadesProduziveis < menorUnidadesProduziveis) {
+            menorUnidadesProduziveis = unidadesProduziveis;
+            insumoMaisLimitante = {
+              nome: extra.nome,
+              quantidadeNecessaria: extra.quantidade_necessaria,
+              estoqueDisponivel: estoqueDisponivelNormalizado,
+              consumoPorUnidade,
+              unidade: extra.unidade,
+            };
+          }
+        }
+      }
+      
+      if (insumoMaisLimitante) return insumoMaisLimitante;
+    }
+    
+    // Verificar insumo principal separadamente (fallback para estrutura antiga)
+    if (registro.peso_programado_kg && 
+        registro.insumo_principal_estoque_kg !== undefined && 
+        registro.peso_programado_kg > registro.insumo_principal_estoque_kg) {
+      const consumoPorUnidade = (registro.peso_programado_kg * 1000) / unidadesProgramadas; // em gramas
+      return {
+        nome: registro.insumo_principal_nome || 'Insumo Principal',
+        quantidadeNecessaria: registro.peso_programado_kg * 1000, // em gramas
+        estoqueDisponivel: registro.insumo_principal_estoque_kg * 1000, // em gramas
+        consumoPorUnidade,
+        unidade: 'g',
+      };
+    }
+    
+    return null; // Estoque OK
+  };
+
+  // Função para dividir produção quando estoque é insuficiente
+  const handleDividirProducao = async (unidadesAgora: number, unidadesPendentes: number) => {
+    if (!dadosEstoqueInsuficiente || !user) return;
+    
+    const registro = dadosEstoqueInsuficiente.registro;
+    const unidadesProgramadas = registro.unidades_programadas || 0;
+    
+    try {
+      // Calcular proporcionalidades
+      const proporcaoAgora = unidadesAgora / unidadesProgramadas;
+      const pesoProgramadoAgora = (registro.peso_programado_kg || 0) * proporcaoAgora;
+      const pesoProgramadoPendente = (registro.peso_programado_kg || 0) * (1 - proporcaoAgora);
+      
+      // 1. Atualizar registro atual com quantidade parcial
+      const { error: updateError } = await supabase
+        .from('producao_registros')
+        .update({
+          unidades_programadas: unidadesAgora,
+          peso_programado_kg: pesoProgramadoAgora,
+          // Recalcular campos de LOTE_MASSEIRA se aplicável
+          ...(registro.unidade_medida === 'lote_masseira' && registro.lotes_masseira ? {
+            lotes_masseira: Math.ceil(unidadesAgora / ((registro.unidades_estimadas_masseira || unidadesProgramadas) / registro.lotes_masseira)),
+          } : {}),
+        })
+        .eq('id', registro.id);
+      
+      if (updateError) throw updateError;
+      
+      // 2. Criar novo registro pendente
+      const { error: insertError } = await supabase
+        .from('producao_registros')
+        .insert({
+          item_id: registro.item_id,
+          item_nome: registro.item_nome,
+          usuario_id: user.id,
+          usuario_nome: profile?.nome || user.email || 'Sistema',
+          organization_id: organizationId,
+          status: 'a_produzir',
+          unidades_programadas: unidadesPendentes,
+          peso_programado_kg: pesoProgramadoPendente,
+          data_referencia: registro.data_referencia,
+          is_incremental: true, // Marca como registro pendente
+          demanda_lojas: registro.demanda_lojas ? Math.round((registro.demanda_lojas * unidadesPendentes) / unidadesProgramadas) : null,
+          // Copiar campos de LOTE_MASSEIRA se aplicável
+          ...(registro.unidade_medida === 'lote_masseira' && registro.lotes_masseira ? {
+            lotes_masseira: Math.max(1, Math.floor((registro.lotes_masseira * unidadesPendentes) / (registro.unidades_estimadas_masseira || unidadesProgramadas))),
+          } : {}),
+        });
+      
+      if (insertError) throw insertError;
+      
+      // 3. Registrar auditoria
+      await log(
+        'user.update' as const,
+        'user',
+        registro.id,
+        {
+          target_name: registro.item_nome,
+          unidades_originais: String(unidadesProgramadas),
+          unidades_agora: String(unidadesAgora),
+          unidades_pendentes: String(unidadesPendentes),
+          motivo: `Divisão produção - Estoque insuficiente de ${dadosEstoqueInsuficiente.insumoLimitante.nome}`,
+        }
+      );
+      
+      // 4. Iniciar preparo do registro atual (agora com quantidade reduzida)
+      await transitionToPreparo(registro.id, {
+        ...registro,
+        unidades_programadas: unidadesAgora,
+        peso_programado_kg: pesoProgramadoAgora,
+      });
+      
+      toast.success(`Produção dividida: ${unidadesAgora} agora, ${unidadesPendentes} pendentes`);
+    } catch (error) {
+      console.error('Erro ao dividir produção:', error);
+      toast.error('Erro ao dividir produção');
+    } finally {
+      setModalEstoqueInsuficiente(false);
+      setDadosEstoqueInsuficiente(null);
+    }
+  };
+
   const handleCardAction = async (registro: ProducaoRegistro, columnId: StatusColumn) => {
     setSelectedRegistro(registro);
 
@@ -585,7 +743,31 @@ const ResumoDaProducao = () => {
         }
       }
 
-      // Transição direta para EM PREPARO (com registro completo)
+      // NOVA VERIFICAÇÃO: Estoque suficiente?
+      const insumoLimitante = encontrarInsumoLimitante(registro);
+      
+      if (insumoLimitante) {
+        // Calcular quantidade máxima produzível
+        const unidadesProduziveis = Math.floor(
+          insumoLimitante.estoqueDisponivel / insumoLimitante.consumoPorUnidade
+        );
+        
+        // Só abrir modal se der pra produzir algo
+        if (unidadesProduziveis > 0) {
+          setDadosEstoqueInsuficiente({
+            registro,
+            insumoLimitante,
+            unidadesProduziveis
+          });
+          setModalEstoqueInsuficiente(true);
+          return;
+        } else {
+          toast.error(`❌ Estoque de ${insumoLimitante.nome} insuficiente para produzir qualquer unidade`);
+          return;
+        }
+      }
+
+      // Se estoque OK, continua normalmente
       await transitionToPreparo(registro.id, registro);
     } else if (columnId === 'em_preparo') {
       // Parar alarme IMEDIATAMENTE ao clicar no botão
@@ -1339,6 +1521,22 @@ const ResumoDaProducao = () => {
             onConfirm={handleRegistrarPerda}
           />
         </>
+      )}
+
+      {/* Modal de Estoque Insuficiente */}
+      {dadosEstoqueInsuficiente && (
+        <EstoqueInsuficienteModal
+          open={modalEstoqueInsuficiente}
+          onOpenChange={(open) => {
+            setModalEstoqueInsuficiente(open);
+            if (!open) setDadosEstoqueInsuficiente(null);
+          }}
+          onConfirm={handleDividirProducao}
+          itemNome={dadosEstoqueInsuficiente.registro.item_nome}
+          unidadesProgramadas={dadosEstoqueInsuficiente.registro.unidades_programadas || 0}
+          unidadesProduziveis={dadosEstoqueInsuficiente.unidadesProduziveis}
+          insumoLimitante={dadosEstoqueInsuficiente.insumoLimitante}
+        />
       )}
     </Layout>
   );

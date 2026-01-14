@@ -92,6 +92,8 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   codigo_lote?: string;
   margem_lote_percentual?: number | null;
+  // Campo para identificar registro pendente (produção parcial)
+  is_incremental?: boolean;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
@@ -268,6 +270,15 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 <h4 className="font-bold text-sm leading-tight tracking-tight">
                   {registro.item_nome}
                 </h4>
+                {/* Badge PENDENTE para registros de produção parcial */}
+                {registro.is_incremental && (
+                  <Badge 
+                    variant="outline" 
+                    className="text-[10px] bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700"
+                  >
+                    PENDENTE
+                  </Badge>
+                )}
                 {/* Badge do Lote em VERMELHO - destaque */}
                 {registro.sequencia_traco !== undefined && registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
                   <Badge 
