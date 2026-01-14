@@ -134,20 +134,6 @@ export function ProductGroupedStacks({
     <div className="space-y-6">
       {groupedByItem.map((group) => (
         <div key={group.itemId} className="animate-fade-in">
-          {/* Header do grupo (nome do produto) */}
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <span className="font-semibold text-sm text-foreground truncate">
-              {group.itemNome}
-            </span>
-            {group.isStack && (
-              <Badge variant="secondary" className="flex items-center gap-1 shrink-0">
-                <Layers className="h-3 w-3" />
-                {group.registros.length} lotes
-              </Badge>
-            )}
-          </div>
-          
-          {/* Renderização condicional: Pilha ou Card Individual */}
           {group.isStack ? (
             <CardStack
               registros={group.registros}
