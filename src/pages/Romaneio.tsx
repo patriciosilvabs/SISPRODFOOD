@@ -1645,9 +1645,9 @@ const Romaneio = () => {
             <CardDescription>Gestão de remessas de itens porcionados do CPD para as lojas</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue={isRestrictedUser ? 'receber' : 'enviar'} className="space-y-4">
-              <TabsList className={`grid w-full ${isRestrictedUser ? 'grid-cols-3' : 'grid-cols-4'}`}>
-                {!isRestrictedUser && <TabsTrigger value="enviar">Enviar</TabsTrigger>}
+            <Tabs defaultValue={canManageProduction ? 'enviar' : 'receber'} className="space-y-4">
+              <TabsList className={`grid w-full ${canManageProduction ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                {canManageProduction && <TabsTrigger value="enviar">Enviar</TabsTrigger>}
                 <TabsTrigger value="receber">Receber</TabsTrigger>
                 <TabsTrigger value="historico">Histórico</TabsTrigger>
                 <TabsTrigger value="avulso">
@@ -1657,7 +1657,7 @@ const Romaneio = () => {
               </TabsList>
 
               {/* TAB: ENVIAR - SEÇÕES INDEPENDENTES POR LOJA */}
-              {!isRestrictedUser && (
+              {canManageProduction && (
                 <TabsContent value="enviar" className="space-y-4">
                   {/* Botão de Atualizar */}
                   <div className="flex justify-end">
