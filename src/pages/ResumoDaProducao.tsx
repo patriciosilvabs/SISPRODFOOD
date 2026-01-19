@@ -354,17 +354,13 @@ const ResumoDaProducao = () => {
         hoje = dataServidor || new Date().toISOString().split('T')[0];
       }
       
-      // Calcular ontem para incluir produções finalizadas recentes
-      const ontemDate = new Date(hoje);
-      ontemDate.setDate(ontemDate.getDate() - 1);
-      const ontemStr = ontemDate.toISOString().split('T')[0];
-      
-      // Buscar produções do dia atual e ontem OU produções não finalizadas de dias anteriores
-      // Isso garante que produções finalizadas recentemente apareçam na coluna FINALIZADO
+      // Buscar:
+      // 1) Produções NÃO finalizadas de qualquer dia (para não perder produções em andamento)
+      // 2) Produções FINALIZADAS apenas do dia operacional atual (limpeza após 00:00)
       const { data, error } = await supabase
         .from('producao_registros')
         .select('*')
-        .or(`data_referencia.gte.${ontemStr},status.neq.finalizado`)
+        .or(`status.neq.finalizado,and(status.eq.finalizado,data_referencia.eq.${hoje})`)
         .neq('status', 'expedido') // Ocultar itens já expedidos via romaneio
         .order('data_inicio', { ascending: false });
 
