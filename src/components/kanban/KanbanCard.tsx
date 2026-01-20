@@ -21,7 +21,8 @@ import {
   Factory,
   LayoutList,
   Package2,
-  Building2
+  Building2,
+  ClipboardList
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -177,6 +178,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   const [producaoOpen, setProducaoOpen] = useState(true);
   const [composicaoOpen, setComposicaoOpen] = useState(false);
   const [insumosOpen, setInsumosOpen] = useState(false);
+  const [insumosConferenciaOpen, setInsumosConferenciaOpen] = useState(false);
 
   const timerState = useProductionTimer(
     registro.id,
@@ -624,6 +626,52 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     </span>
                   </div>
                 )}
+
+                {/* Seção de Conferência de Insumos - Somente Leitura */}
+                {(registro.insumosExtras?.length || registro.insumo_principal_nome) && (
+                  <CollapsibleSection
+                    title="Insumos Utilizados"
+                    icon={<ClipboardList className="h-4 w-4 text-slate-500" />}
+                    isOpen={insumosConferenciaOpen}
+                    onToggle={() => setInsumosConferenciaOpen(!insumosConferenciaOpen)}
+                    variant="slate"
+                  >
+                    <div className="space-y-1.5 mt-2">
+                      {/* Insumo Principal */}
+                      {registro.insumo_principal_nome && registro.peso_programado_kg && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">{registro.peso_programado_kg} kg</span>
+                        </div>
+                      )}
+                      
+                      {/* Insumos Extras */}
+                      {registro.insumosExtras?.map((extra, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{extra.nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {extra.unidade === 'g' 
+                              ? formatarPesoExibicao(extra.quantidade_necessaria)
+                              : extra.unidade === 'unidade'
+                                ? `${extra.quantidade_necessaria % 1 === 0 ? extra.quantidade_necessaria.toFixed(0) : extra.quantidade_necessaria.toFixed(2)} un`
+                                : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                            }
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Embalagem */}
+                      {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50 mt-1 border-t border-slate-200 dark:border-slate-700">
+                          <span className="text-xs font-medium">🎁 {registro.insumo_embalagem_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {registro.quantidade_embalagem % 1 === 0 ? registro.quantidade_embalagem.toFixed(0) : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
+                )}
               </div>
             )}
 
@@ -660,6 +708,47 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       Desde {format(new Date(registro.data_inicio_porcionamento), 'HH:mm', { locale: ptBR })}
                     </span>
                   </div>
+                )}
+
+                {/* Seção de Conferência de Insumos - Somente Leitura */}
+                {(registro.insumosExtras?.length || registro.insumo_principal_nome) && (
+                  <CollapsibleSection
+                    title="Insumos Utilizados"
+                    icon={<ClipboardList className="h-4 w-4 text-slate-500" />}
+                    isOpen={insumosConferenciaOpen}
+                    onToggle={() => setInsumosConferenciaOpen(!insumosConferenciaOpen)}
+                    variant="slate"
+                  >
+                    <div className="space-y-1.5 mt-2">
+                      {registro.insumo_principal_nome && registro.peso_programado_kg && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">{registro.peso_programado_kg} kg</span>
+                        </div>
+                      )}
+                      {registro.insumosExtras?.map((extra, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{extra.nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {extra.unidade === 'g' 
+                              ? formatarPesoExibicao(extra.quantidade_necessaria)
+                              : extra.unidade === 'unidade'
+                                ? `${extra.quantidade_necessaria % 1 === 0 ? extra.quantidade_necessaria.toFixed(0) : extra.quantidade_necessaria.toFixed(2)} un`
+                                : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                            }
+                          </span>
+                        </div>
+                      ))}
+                      {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50 mt-1 border-t border-slate-200 dark:border-slate-700">
+                          <span className="text-xs font-medium">🎁 {registro.insumo_embalagem_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {registro.quantidade_embalagem % 1 === 0 ? registro.quantidade_embalagem.toFixed(0) : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
                 )}
               </div>
             )}
@@ -722,6 +811,47 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       Finalizado às {format(new Date(registro.data_fim), 'HH:mm', { locale: ptBR })}
                     </span>
                   </div>
+                )}
+
+                {/* Seção de Conferência de Insumos - Somente Leitura */}
+                {(registro.insumosExtras?.length || registro.insumo_principal_nome) && (
+                  <CollapsibleSection
+                    title="Insumos Utilizados"
+                    icon={<ClipboardList className="h-4 w-4 text-slate-500" />}
+                    isOpen={insumosConferenciaOpen}
+                    onToggle={() => setInsumosConferenciaOpen(!insumosConferenciaOpen)}
+                    variant="slate"
+                  >
+                    <div className="space-y-1.5 mt-2">
+                      {registro.insumo_principal_nome && registro.peso_programado_kg && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">{registro.peso_programado_kg} kg</span>
+                        </div>
+                      )}
+                      {registro.insumosExtras?.map((extra, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50">
+                          <span className="text-xs font-medium">{extra.nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {extra.unidade === 'g' 
+                              ? formatarPesoExibicao(extra.quantidade_necessaria)
+                              : extra.unidade === 'unidade'
+                                ? `${extra.quantidade_necessaria % 1 === 0 ? extra.quantidade_necessaria.toFixed(0) : extra.quantidade_necessaria.toFixed(2)} un`
+                                : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                            }
+                          </span>
+                        </div>
+                      ))}
+                      {registro.usa_embalagem_por_porcao && registro.quantidade_embalagem && registro.insumo_embalagem_nome && (
+                        <div className="flex items-center justify-between py-1.5 px-2 rounded-md bg-slate-100/80 dark:bg-slate-800/50 mt-1 border-t border-slate-200 dark:border-slate-700">
+                          <span className="text-xs font-medium">🎁 {registro.insumo_embalagem_nome}</span>
+                          <span className="text-xs font-bold tabular-nums">
+                            {registro.quantidade_embalagem % 1 === 0 ? registro.quantidade_embalagem.toFixed(0) : registro.quantidade_embalagem.toFixed(1)} {registro.unidade_embalagem || 'un'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
                 )}
               </div>
             )}
