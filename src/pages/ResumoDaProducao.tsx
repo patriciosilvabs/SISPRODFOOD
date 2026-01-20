@@ -462,10 +462,10 @@ const ResumoDaProducao = () => {
         // Buscar insumo principal da tabela unificada
         const insumoPrincipal = insumoPrincipalMap.get(registro.item_id);
         
-        // Calcular insumos vinculados necessários (apenas para "a_produzir")
+        // Calcular insumos vinculados necessários (para todas as colunas - conferência)
         // Agora todos os insumos (incluindo principal) estão na tabela insumos_extras
         let insumosExtras: InsumoExtraComEstoque[] | undefined;
-        if (targetColumn === 'a_produzir' && registro.unidades_programadas) {
+        if (registro.unidades_programadas) {
           const insumosDoItem = insumosVinculadosData?.filter(e => e.item_porcionado_id === registro.item_id) || [];
           
           insumosExtras = insumosDoItem.map(insumoVinculado => {
