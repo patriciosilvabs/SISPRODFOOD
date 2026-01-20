@@ -15,6 +15,7 @@ interface JanelaStatus {
   tempoAteAbrir?: string;
   tempoAteFechar?: string;
   mensagem: string;
+  diaAtivo: boolean;
 }
 
 export const useJanelaContagem = (lojaIds: string[]) => {
@@ -89,6 +90,7 @@ export const useJanelaContagem = (lojaIds: string[]) => {
     }
 
     try {
+      // Buscar dados básicos das lojas
       const { data: lojas, error } = await supabase
         .from('lojas')
         .select('id, janela_contagem_inicio, janela_contagem_fim, fuso_horario')
@@ -96,21 +98,75 @@ export const useJanelaContagem = (lojaIds: string[]) => {
 
       if (error) throw error;
 
+      // Buscar janelas por dia da semana
+      const { data: janelasDia, error: errorDia } = await supabase
+        .from('janelas_contagem_por_dia')
+        .select('*')
+        .in('loja_id', lojaIds);
+
+      if (errorDia) {
+        console.warn('Erro ao buscar janelas por dia:', errorDia);
+      }
+
       const newStatus: Record<string, JanelaStatus> = {};
 
       for (const loja of lojas || []) {
-        const horaInicio = formatTime(loja.janela_contagem_inicio);
-        const horaFim = formatTime(loja.janela_contagem_fim);
-        
-        // Obter hora atual no fuso horário da loja
+        // Obter hora e dia atual no fuso horário da loja
         const now = new Date();
+        const fusoHorario = loja.fuso_horario || 'America/Sao_Paulo';
+        
         const options: Intl.DateTimeFormatOptions = {
           hour: '2-digit',
           minute: '2-digit',
           hour12: false,
-          timeZone: loja.fuso_horario || 'America/Sao_Paulo',
+          timeZone: fusoHorario,
         };
         const horaAtual = now.toLocaleTimeString('pt-BR', options);
+        
+        // Obter dia da semana no fuso horário da loja
+        const diaOptions: Intl.DateTimeFormatOptions = {
+          weekday: 'short',
+          timeZone: fusoHorario,
+        };
+        const diaStr = now.toLocaleDateString('pt-BR', diaOptions);
+        
+        // Mapear para número (0=domingo, 6=sábado)
+        const diaMap: Record<string, number> = {
+          'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sáb': 6
+        };
+        const diaAtual = diaMap[diaStr.toLowerCase().replace('.', '')] ?? new Date().getDay();
+        
+        // Buscar janela específica do dia
+        const janelaDia = janelasDia?.find(
+          (j) => j.loja_id === loja.id && j.dia_semana === diaAtual
+        );
+
+        // Se há janela configurada para o dia, usar; senão, fallback para loja
+        let horaInicio: string;
+        let horaFim: string;
+        let diaAtivo = true;
+
+        if (janelaDia) {
+          horaInicio = formatTime(janelaDia.janela_inicio);
+          horaFim = formatTime(janelaDia.janela_fim);
+          diaAtivo = janelaDia.ativo ?? true;
+        } else {
+          horaInicio = formatTime(loja.janela_contagem_inicio);
+          horaFim = formatTime(loja.janela_contagem_fim);
+        }
+
+        // Se o dia não está ativo, considerar como "depois" (fechado)
+        if (!diaAtivo) {
+          newStatus[loja.id] = {
+            status: 'depois',
+            horaInicio,
+            horaFim,
+            horaAtual,
+            mensagem: `Janela de contagem desativada para hoje. Apenas Produção Extra disponível.`,
+            diaAtivo: false,
+          };
+          continue;
+        }
         
         const status = verificarPosicaoNaJanela(horaAtual, horaInicio, horaFim);
         
@@ -140,6 +196,7 @@ export const useJanelaContagem = (lojaIds: string[]) => {
           tempoAteAbrir,
           tempoAteFechar,
           mensagem,
+          diaAtivo: true,
         };
       }
 

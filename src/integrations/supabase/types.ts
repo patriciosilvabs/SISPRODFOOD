@@ -1357,6 +1357,54 @@ export type Database = {
           },
         ]
       }
+      janelas_contagem_por_dia: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          dia_semana: number
+          id: string
+          janela_fim: string
+          janela_inicio: string
+          loja_id: string
+          organization_id: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          dia_semana: number
+          id?: string
+          janela_fim?: string
+          janela_inicio?: string
+          loja_id: string
+          organization_id?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          dia_semana?: number
+          id?: string
+          janela_fim?: string
+          janela_inicio?: string
+          loja_id?: string
+          organization_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "janelas_contagem_por_dia_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "janelas_contagem_por_dia_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lembretes_audio: {
         Row: {
           ativo: boolean | null
