@@ -318,7 +318,7 @@ const Lojas = () => {
                   </div>
 
                   {/* Janela de Contagem por Dia */}
-                  {editingLoja && editingLoja.tipo !== 'cpd' && (
+                  {editingLoja && (
                     <JanelaContagemDias
                       lojaId={editingLoja.id}
                       organizationId={organizationId || ''}
