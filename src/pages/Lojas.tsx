@@ -41,6 +41,7 @@ interface Loja {
   fuso_horario: string;
   janela_contagem_inicio: string | null;
   janela_contagem_fim: string | null;
+  horario_limpeza_finalizado: string | null;
   tipo: string | null;
 }
 
@@ -69,6 +70,7 @@ const Lojas = () => {
     fuso_horario: 'America/Sao_Paulo',
     janela_contagem_inicio: '22:00',
     janela_contagem_fim: '00:00',
+    horario_limpeza_finalizado: '08:30',
   });
 
   useEffect(() => {
@@ -201,6 +203,7 @@ const Lojas = () => {
       fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
       janela_contagem_inicio: loja.janela_contagem_inicio?.slice(0, 5) || '22:00',
       janela_contagem_fim: loja.janela_contagem_fim?.slice(0, 5) || '00:00',
+      horario_limpeza_finalizado: loja.horario_limpeza_finalizado?.slice(0, 5) || '08:30',
     });
     setDialogOpen(true);
   };
@@ -213,6 +216,7 @@ const Lojas = () => {
       fuso_horario: 'America/Sao_Paulo',
       janela_contagem_inicio: '22:00',
       janela_contagem_fim: '00:00',
+      horario_limpeza_finalizado: '08:30',
     });
   };
 
@@ -357,6 +361,35 @@ const Lojas = () => {
                       )}
                     </p>
                   </div>
+
+                  {/* Horário de Limpeza do Kanban - Apenas para CPD */}
+                  {editingLoja?.tipo === 'cpd' && (
+                    <div className="space-y-3 p-3 bg-orange-500/10 rounded-lg border border-orange-500/30">
+                      <Label className="flex items-center gap-1 font-semibold text-orange-700 dark:text-orange-400">
+                        🧹 Limpeza do Kanban (CPD)
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Horário em que a coluna "FINALIZADO" será limpa diariamente. Itens finalizados do dia anterior serão ocultados após este horário.
+                      </p>
+                      <div className="space-y-1">
+                        <Label htmlFor="horario_limpeza_finalizado" className="text-xs">
+                          Horário de Limpeza
+                        </Label>
+                        <Input
+                          id="horario_limpeza_finalizado"
+                          type="time"
+                          value={formData.horario_limpeza_finalizado}
+                          onChange={(e) =>
+                            setFormData({ ...formData, horario_limpeza_finalizado: e.target.value })
+                          }
+                          className="w-32"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground italic">
+                        Atual: {formData.horario_limpeza_finalizado || '08:30'}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter className="mt-6">
