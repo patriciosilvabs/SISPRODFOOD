@@ -13,6 +13,7 @@ import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoMod
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
 import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
 import { EstoqueInsuficienteModal } from '@/components/modals/EstoqueInsuficienteModal';
+import { ConfirmarSeparacaoInsumosModal, InsumoParaConfirmar } from '@/components/modals/ConfirmarSeparacaoInsumosModal';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
@@ -152,6 +153,8 @@ const ResumoDaProducao = () => {
   } | null>(null);
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
+  const [modalConfirmarSeparacao, setModalConfirmarSeparacao] = useState(false);
+  const [registroParaIniciar, setRegistroParaIniciar] = useState<ProducaoRegistro | null>(null);
 
   const handleStopAlarm = () => {
     stopAlarm();
@@ -783,8 +786,9 @@ const ResumoDaProducao = () => {
         }
       }
 
-      // Se estoque OK, continua normalmente
-      await transitionToPreparo(registro.id, registro);
+      // Se estoque OK, abrir modal de confirmação de separação
+      setRegistroParaIniciar(registro);
+      setModalConfirmarSeparacao(true);
     } else if (columnId === 'em_preparo') {
       // Parar alarme IMEDIATAMENTE ao clicar no botão
       if (alarmPlaying) {
@@ -803,6 +807,44 @@ const ResumoDaProducao = () => {
       // Abrir modal de finalização
       setModalFinalizar(true);
     }
+  };
+
+  // Função para montar lista de insumos para confirmação
+  const montarListaInsumos = (registro: ProducaoRegistro | null): InsumoParaConfirmar[] => {
+    if (!registro) return [];
+    
+    const insumos: InsumoParaConfirmar[] = [];
+    
+    // Insumo principal
+    if (registro.insumo_principal_nome && registro.peso_programado_kg) {
+      insumos.push({
+        nome: registro.insumo_principal_nome,
+        quantidade: registro.peso_programado_kg,
+        unidade: 'kg'
+      });
+    }
+    
+    // Insumos extras
+    if (registro.insumosExtras) {
+      for (const extra of registro.insumosExtras) {
+        insumos.push({
+          nome: extra.nome,
+          quantidade: extra.quantidade_necessaria,
+          unidade: extra.unidade
+        });
+      }
+    }
+    
+    return insumos;
+  };
+
+  // Handler para confirmação da separação de insumos
+  const handleConfirmarSeparacao = async () => {
+    if (!registroParaIniciar) return;
+    
+    setModalConfirmarSeparacao(false);
+    await transitionToPreparo(registroParaIniciar.id, registroParaIniciar);
+    setRegistroParaIniciar(null);
   };
 
   const transitionToPreparo = async (registroId: string, registro: ProducaoRegistro) => {
@@ -1554,6 +1596,18 @@ const ResumoDaProducao = () => {
           insumoLimitante={dadosEstoqueInsuficiente.insumoLimitante}
         />
       )}
+
+      {/* Modal de Confirmação de Separação de Insumos */}
+      <ConfirmarSeparacaoInsumosModal
+        open={modalConfirmarSeparacao}
+        onClose={() => {
+          setModalConfirmarSeparacao(false);
+          setRegistroParaIniciar(null);
+        }}
+        onConfirm={handleConfirmarSeparacao}
+        itemNome={registroParaIniciar?.item_nome || ''}
+        insumos={montarListaInsumos(registroParaIniciar)}
+      />
     </Layout>
   );
 };
