@@ -339,7 +339,7 @@ const ResumoDaProducao = () => {
       // Buscar loja CPD da organização
       const { data: cpdLoja } = await supabase
         .from('lojas')
-        .select('id')
+        .select('id, horario_limpeza_finalizado, fuso_horario')
         .eq('tipo', 'cpd')
         .eq('organization_id', organizationId)
         .maybeSingle();
@@ -354,15 +354,35 @@ const ResumoDaProducao = () => {
         hoje = dataServidor || new Date().toISOString().split('T')[0];
       }
       
+      // Verificar se já passou do horário de limpeza configurado no CPD
+      const { data: jaPassouHorarioLimpeza } = await supabase.rpc('verificar_limpeza_finalizado', { 
+        p_organization_id: organizationId 
+      });
+      
+      // Calcular ontem para uso quando ainda não passou do horário de limpeza
+      const ontemDate = new Date(hoje);
+      ontemDate.setDate(ontemDate.getDate() - 1);
+      const ontemStr = ontemDate.toISOString().split('T')[0];
+      
       // Buscar:
       // 1) Produções NÃO finalizadas de qualquer dia (para não perder produções em andamento)
-      // 2) Produções FINALIZADAS apenas do dia operacional atual (limpeza após 00:00)
-      const { data, error } = await supabase
+      // 2) Produções FINALIZADAS:
+      //    - Se já passou do horário de limpeza: apenas do dia atual
+      //    - Se ainda não passou: do dia atual E do dia anterior
+      let query = supabase
         .from('producao_registros')
         .select('*')
-        .or(`status.neq.finalizado,and(status.eq.finalizado,data_referencia.eq.${hoje})`)
-        .neq('status', 'expedido') // Ocultar itens já expedidos via romaneio
-        .order('data_inicio', { ascending: false });
+        .neq('status', 'expedido'); // Ocultar itens já expedidos via romaneio
+      
+      if (jaPassouHorarioLimpeza) {
+        // Já passou do horário: mostrar apenas finalizados de HOJE
+        query = query.or(`status.neq.finalizado,and(status.eq.finalizado,data_referencia.eq.${hoje})`);
+      } else {
+        // Ainda não passou: mostrar finalizados de HOJE e ONTEM
+        query = query.or(`status.neq.finalizado,and(status.eq.finalizado,data_referencia.gte.${ontemStr})`);
+      }
+      
+      const { data, error } = await query.order('data_inicio', { ascending: false });
 
       if (error) throw error;
 

@@ -1411,6 +1411,7 @@ export type Database = {
         Row: {
           created_at: string | null
           fuso_horario: string
+          horario_limpeza_finalizado: string | null
           id: string
           janela_contagem_fim: string | null
           janela_contagem_inicio: string | null
@@ -1422,6 +1423,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           fuso_horario?: string
+          horario_limpeza_finalizado?: string | null
           id?: string
           janela_contagem_fim?: string | null
           janela_contagem_inicio?: string | null
@@ -1433,6 +1435,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           fuso_horario?: string
+          horario_limpeza_finalizado?: string | null
           id?: string
           janela_contagem_fim?: string | null
           janela_contagem_inicio?: string | null
@@ -3345,6 +3348,10 @@ export type Database = {
           p_usuario_nome: string
         }
         Returns: Json
+      }
+      verificar_limpeza_finalizado: {
+        Args: { p_organization_id: string }
+        Returns: boolean
       }
     }
     Enums: {
