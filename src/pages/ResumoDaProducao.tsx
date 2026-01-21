@@ -382,7 +382,7 @@ const ResumoDaProducao = () => {
       let query = supabase
         .from('producao_registros')
         .select('*')
-        .neq('status', 'expedido'); // Ocultar itens já expedidos via romaneio
+        .not('status', 'in', '("expedido","cancelado")'); // Ocultar expedidos e cancelados
       
       if (jaPassouHorarioLimpeza) {
         // Já passou do horário: mostrar apenas finalizados de HOJE
