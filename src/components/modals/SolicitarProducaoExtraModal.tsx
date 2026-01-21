@@ -108,13 +108,14 @@ export function SolicitarProducaoExtraModal({
         return;
       }
 
-      // Chamar RPC para criar/atualizar lotes de produção
+      // Chamar RPC para criar/atualizar lotes de produção (INCREMENTAL = criar card adicional)
       const { data: rpcResult, error: rpcError } = await supabase.rpc('criar_ou_atualizar_producao_registro', {
         p_item_id: item.id,
         p_organization_id: organizationId,
         p_usuario_id: userId,
         p_usuario_nome: usuarioNome,
         p_dia_operacional: diaOperacional,
+        p_is_incremental: true, // Produção extra = criar card adicional
       });
 
       if (rpcError) {

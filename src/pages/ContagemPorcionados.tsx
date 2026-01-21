@@ -582,6 +582,7 @@ const ContagemPorcionados = () => {
             p_usuario_id: user!.id,
             p_usuario_nome: profile?.nome || user?.email || 'Usuário',
             p_dia_operacional: diaOperacional,
+            p_is_incremental: false, // Contagem normal = substituir cards existentes
           });
         }
 
@@ -890,6 +891,7 @@ const ContagemPorcionados = () => {
         p_usuario_id: user.id,
         p_usuario_nome: dataToSave.usuario_nome,
         p_dia_operacional: diaOperacional,
+        p_is_incremental: false, // Contagem normal = substituir cards existentes
       });
 
       if (rpcError) {
