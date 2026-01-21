@@ -33,6 +33,7 @@ interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
   unidade: string;
+  unidade_estoque: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
 }
@@ -508,6 +509,7 @@ const ResumoDaProducao = () => {
               nome: insumoVinculado.nome,
               quantidade_necessaria: quantidadeNecessaria,
               unidade: insumoVinculado.unidade,
+              unidade_estoque: insumoVinculado.insumos.unidade_medida || 'kg',
               estoque_disponivel: estoqueDisponivelKg,
               estoque_suficiente: quantidadeNecessariaKg <= estoqueDisponivelKg
             };
