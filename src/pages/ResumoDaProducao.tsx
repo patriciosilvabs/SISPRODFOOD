@@ -997,15 +997,14 @@ const ResumoDaProducao = () => {
       // Buscar dados do item para verificar configurações
       const itemData = await getItemInsumoData(selectedRegistro.item_id);
       
-      // Verificar se deve debitar insumos (apenas no primeiro lote da sequência)
-      const deveDebitarInsumosEEmbalagem = 
+      // CORREÇÃO: Insumos devem ser debitados em CADA lote (cada lote tem lotes_masseira=1)
+      // Embalagem só debita no Lote 1 (usa demanda_lojas total)
+      const deveDebitarEmbalagem = 
         selectedRegistro.sequencia_traco === 1 || 
         selectedRegistro.sequencia_traco === undefined || 
         selectedRegistro.sequencia_traco === null;
 
-      if (!deveDebitarInsumosEEmbalagem) {
-        console.log(`[SKIP DÉBITO] Lote ${selectedRegistro.sequencia_traco} - insumos/embalagem já debitados no Lote 1`);
-      }
+      console.log(`[DÉBITO LOTE] Processando lote ${selectedRegistro.sequencia_traco || 'único'} com ${selectedRegistro.lotes_masseira || 1} masseira(s). Embalagem: ${deveDebitarEmbalagem ? 'SIM' : 'NÃO'}`);
 
       // Buscar TODOS os insumos vinculados (agora unificados na tabela insumos_extras)
       const { data: insumosVinculados, error: insumosError } = await supabase
@@ -1015,7 +1014,8 @@ const ResumoDaProducao = () => {
 
       if (insumosError) {
         console.error('Erro ao buscar insumos vinculados:', insumosError);
-      } else if (deveDebitarInsumosEEmbalagem && insumosVinculados && insumosVinculados.length > 0) {
+      } else if (insumosVinculados && insumosVinculados.length > 0) {
+        // SEMPRE debitar insumos - cada lote debita sua própria quantidade
         // Debitar cada insumo vinculado
         for (const insumoVinculado of insumosVinculados) {
           let quantidadeTotal = 0;
@@ -1110,8 +1110,8 @@ const ResumoDaProducao = () => {
         }
       }
 
-      // === DÉBITO DE EMBALAGEM (apenas no Lote 1) ===
-      if (deveDebitarInsumosEEmbalagem) {
+      // === DÉBITO DE EMBALAGEM (apenas no Lote 1 - usa demanda total) ===
+      if (deveDebitarEmbalagem) {
         console.log('[DEBUG EMBALAGEM]', {
           usaEmbalagem: itemData?.usa_embalagem_por_porcao,
           insumoEmbalagemId: itemData?.insumo_embalagem_id,
@@ -1122,7 +1122,7 @@ const ResumoDaProducao = () => {
         });
       }
 
-      if (deveDebitarInsumosEEmbalagem && itemData?.usa_embalagem_por_porcao && itemData.insumo_embalagem_id) {
+      if (deveDebitarEmbalagem && itemData?.usa_embalagem_por_porcao && itemData.insumo_embalagem_id) {
         const fator = itemData.fator_consumo_embalagem_por_porcao || 1;
         const hasLotesMasseiraEmb = selectedRegistro.lotes_masseira && selectedRegistro.lotes_masseira > 0;
         
