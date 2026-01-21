@@ -303,31 +303,47 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                 <p className="text-xs">Os insumos aparecerão aqui quando houver produções</p>
               </div>
             ) : isMobile ? (
-              /* Mobile: Card list view */
-              <div className="space-y-2">
+              /* Mobile: Row-based list view */
+              <div className="space-y-1">
+                {/* Cabeçalho */}
+                <div className="grid grid-cols-[1fr_80px_80px] gap-1 px-2 py-1 text-xs text-muted-foreground font-medium">
+                  <div>Insumo</div>
+                  <div className="text-center">Estoque</div>
+                  <div className="text-center">Consumo Prev.</div>
+                </div>
+                
+                {/* Linhas de dados */}
                 {necessidades.map((item) => (
-                  <Card 
-                    key={item.insumo_id} 
-                    className={`p-3 border ${getRowClass(item.status)}`}
+                  <div 
+                    key={item.insumo_id}
+                    className={`grid grid-cols-[1fr_80px_80px] gap-1 items-center px-2 py-2 rounded-md border-l-4 ${
+                      item.status === 'critico' ? 'border-l-destructive bg-destructive/10' :
+                      item.status === 'alerta' ? 'border-l-amber-500 bg-amber-500/10' :
+                      'border-l-green-500 bg-green-500/10'
+                    }`}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">{item.insumo_nome}</p>
-                        <p className="text-xs text-muted-foreground">{item.unidade}</p>
-                      </div>
-                      {getStatusBadge(item.status)}
+                    {/* Nome do Insumo */}
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{item.insumo_nome}</p>
+                      <p className="text-xs text-muted-foreground">{item.unidade}</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Estoque</p>
-                        <p className="font-mono font-semibold text-base">{formatarValor(item.estoque_atual, item.unidade)}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Consumo Prev.</p>
-                        <p className="font-mono font-semibold text-base text-amber-600">{formatarValor(item.consumo_previsto, item.unidade)}</p>
-                      </div>
+                    
+                    {/* Estoque */}
+                    <div className="text-center bg-background rounded px-1 py-1 shadow-sm border">
+                      <p className="text-[10px] text-muted-foreground">Estoque</p>
+                      <p className="font-mono font-bold text-base">
+                        {formatarValor(item.estoque_atual, item.unidade)}
+                      </p>
                     </div>
-                  </Card>
+                    
+                    {/* Consumo Previsto */}
+                    <div className="text-center bg-background rounded px-1 py-1 shadow-sm border">
+                      <p className="text-[10px] text-amber-600">Consumo</p>
+                      <p className="font-mono font-bold text-base text-amber-600">
+                        {formatarValor(item.consumo_previsto, item.unidade)}
+                      </p>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
