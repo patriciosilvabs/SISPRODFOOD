@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { ResumoNecessidadeCompra } from '@/components/relatorios/ResumoNecessidadeCompra';
 
 interface MovimentacaoInsumo {
   id: string;
@@ -536,6 +537,12 @@ const RelatorioInsumos = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Resumo de Necessidade de Compra */}
+            <ResumoNecessidadeCompra 
+              insumos={estoqueAtual}
+              organizationId={organizationId}
+            />
           </TabsContent>
         </Tabs>
       </div>
