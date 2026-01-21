@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ShoppingCart, CheckCircle, AlertTriangle, XCircle, ChevronDown, RefreshCw, Info } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface InsumoAtual {
   id: string;
@@ -30,6 +31,7 @@ interface ResumoNecessidadeCompraProps {
 }
 
 export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNecessidadeCompraProps) => {
+  const { isMobile } = useIsMobile();
   const [isOpen, setIsOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [necessidades, setNecessidades] = useState<NecessidadeInsumo[]>([]);
@@ -219,22 +221,25 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
   return (
     <Card className="border-dashed border-2 border-muted-foreground/30">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 px-3 md:px-6">
           <CollapsibleTrigger asChild>
             <div className="flex items-center justify-between cursor-pointer">
-              <div className="flex items-center gap-3">
-                <ShoppingCart className="h-5 w-5 text-primary" />
+              <div className="flex items-center gap-2 md:gap-3">
+                <ShoppingCart className="h-4 w-4 md:h-5 md:w-5 text-primary" />
                 <div>
-                  <CardTitle className="text-lg">Resumo de Necessidade de Compra</CardTitle>
-                  <CardDescription className="text-xs">
+                  <CardTitle className="text-sm md:text-lg">
+                    {isMobile ? 'Necessidade de Compra' : 'Resumo de Necessidade de Compra'}
+                  </CardTitle>
+                  <CardDescription className="text-xs hidden sm:block">
                     Consumo previsto baseado nas produções ativas
                   </CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 md:gap-2">
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="h-8 w-8"
                   onClick={(e) => {
                     e.stopPropagation();
                     calcularNecessidades();
@@ -243,61 +248,90 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
-                <ChevronDown className={`h-5 w-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-4 w-4 md:h-5 md:w-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </div>
             </div>
           </CollapsibleTrigger>
         </CardHeader>
 
         <CollapsibleContent>
-          <CardContent className="space-y-4">
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+          <CardContent className="space-y-3 md:space-y-4 px-3 md:px-6">
+            {/* Cards de Resumo - Grid 2x2 no mobile */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+              <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-muted/50">
+                <ShoppingCart className="h-4 w-4 md:h-5 md:w-5 text-muted-foreground" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Total Analisado</p>
-                  <p className="text-lg font-bold">{resumo.total}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                  <p className="text-base md:text-lg font-bold">{resumo.total}</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+              <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-green-500/10">
+                <CheckCircle className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Suficiente</p>
-                  <p className="text-lg font-bold text-green-600">{resumo.ok}</p>
+                  <p className="text-base md:text-lg font-bold text-green-600">{resumo.ok}</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-amber-500/10">
+                <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 text-amber-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Atenção</p>
-                  <p className="text-lg font-bold text-amber-600">{resumo.alerta}</p>
+                  <p className="text-base md:text-lg font-bold text-amber-600">{resumo.alerta}</p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/10">
-                <XCircle className="h-5 w-5 text-destructive" />
+              <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-destructive/10">
+                <XCircle className="h-4 w-4 md:h-5 md:w-5 text-destructive" />
                 <div>
                   <p className="text-xs text-muted-foreground">Insuficiente</p>
-                  <p className="text-lg font-bold text-destructive">{resumo.critico}</p>
+                  <p className="text-base md:text-lg font-bold text-destructive">{resumo.critico}</p>
                 </div>
               </div>
             </div>
 
-            {/* Tabela de Necessidades */}
+            {/* Tabela/Cards de Necessidades */}
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : necessidades.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>Nenhuma produção ativa encontrada</p>
-                <p className="text-sm">Os insumos aparecerão aqui quando houver produções em andamento</p>
+              <div className="text-center py-6 md:py-8 text-muted-foreground">
+                <ShoppingCart className="h-10 w-10 md:h-12 md:w-12 mx-auto mb-2 opacity-20" />
+                <p className="text-sm">Nenhuma produção ativa encontrada</p>
+                <p className="text-xs">Os insumos aparecerão aqui quando houver produções</p>
+              </div>
+            ) : isMobile ? (
+              /* Mobile: Card list view */
+              <div className="space-y-2 max-h-[300px] overflow-auto">
+                {necessidades.map((item) => (
+                  <Card 
+                    key={item.insumo_id} 
+                    className={`p-3 border ${getRowClass(item.status)}`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{item.insumo_nome}</p>
+                        <p className="text-xs text-muted-foreground">{item.unidade}</p>
+                      </div>
+                      {getStatusBadge(item.status)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Estoque</p>
+                        <p className="font-mono font-semibold">{formatarValor(item.estoque_atual, item.unidade)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Consumo Prev.</p>
+                        <p className="font-mono font-semibold text-amber-600">{formatarValor(item.consumo_previsto, item.unidade)}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
               </div>
             ) : (
+              /* Desktop: Table view */
               <div className="max-h-[400px] overflow-auto rounded-lg border">
                 <Table>
                   <TableHeader>
@@ -331,10 +365,13 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             )}
 
             {/* Nota de rodapé */}
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2 p-2 md:p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
               <Info className="h-4 w-4 mt-0.5 shrink-0" />
               <p>
-                Este resumo é <strong>apenas demonstrativo</strong> e mostra o consumo previsto baseado nos registros de produção ativos no Kanban.
+                {isMobile 
+                  ? 'Consumo previsto baseado nas produções ativas.'
+                  : 'Este resumo é apenas demonstrativo e mostra o consumo previsto baseado nos registros de produção ativos no Kanban.'
+                }
               </p>
             </div>
           </CardContent>

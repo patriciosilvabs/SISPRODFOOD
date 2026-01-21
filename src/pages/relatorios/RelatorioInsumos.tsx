@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { ResumoNecessidadeCompra } from '@/components/relatorios/ResumoNecessidadeCompra';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface MovimentacaoInsumo {
   id: string;
@@ -53,6 +54,7 @@ const TIPOS_MOVIMENTACAO: Record<string, { label: string; isEntrada: boolean; co
 
 const RelatorioInsumos = () => {
   const { organizationId } = useOrganization();
+  const { isMobile } = useIsMobile();
   const [movimentacoes, setMovimentacoes] = useState<MovimentacaoInsumo[]>([]);
   const [estoqueAtual, setEstoqueAtual] = useState<InsumoAtual[]>([]);
   const [loading, setLoading] = useState(true);
@@ -268,138 +270,179 @@ const RelatorioInsumos = () => {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4 md:space-y-6">
+        {/* Header Responsivo */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold">Relatório de Insumos</h1>
-            <p className="text-muted-foreground">Entradas, saídas e estoque atual de insumos do CPD</p>
+            <h1 className="text-2xl sm:text-3xl font-bold">Relatório de Insumos</h1>
+            <p className="text-sm text-muted-foreground">
+              {isMobile ? 'Insumos do CPD' : 'Entradas, saídas e estoque atual de insumos do CPD'}
+            </p>
           </div>
           <div className="flex gap-2">
             <Button onClick={loadData} variant="outline" size="icon">
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button onClick={handlePrintAuditoria} variant="outline" className="gap-2">
+            <Button onClick={handlePrintAuditoria} variant="outline" size={isMobile ? "icon" : "default"}>
               <Printer className="h-4 w-4" />
-              Imprimir Auditoria
+              {!isMobile && <span className="ml-2">Imprimir Auditoria</span>}
             </Button>
           </div>
         </div>
 
         <Tabs defaultValue="movimentacoes" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="movimentacoes">Histórico de Movimentações</TabsTrigger>
-            <TabsTrigger value="estoque">Estoque Atual</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="movimentacoes" className="text-xs sm:text-sm">
+              {isMobile ? 'Histórico' : 'Histórico de Movimentações'}
+            </TabsTrigger>
+            <TabsTrigger value="estoque" className="text-xs sm:text-sm">
+              {isMobile ? 'Estoque' : 'Estoque Atual'}
+            </TabsTrigger>
           </TabsList>
 
           {/* Aba de Movimentações */}
           <TabsContent value="movimentacoes" className="space-y-4">
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card>
-                <CardContent className="pt-6">
+            {/* Cards de Resumo - Grid 2x2 no mobile */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Total de Movimentos</p>
-                      <p className="text-2xl font-bold">{stats.totalMovimentos}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Total Movimentos</p>
+                      <p className="text-lg md:text-2xl font-bold">{stats.totalMovimentos}</p>
                     </div>
-                    <Package className="h-8 w-8 text-primary" />
+                    <Package className="h-5 w-5 md:h-8 md:w-8 text-primary" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Total Entradas</p>
-                      <p className="text-2xl font-bold text-green-600">{stats.totalEntradas.toFixed(2)}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Entradas</p>
+                      <p className="text-lg md:text-2xl font-bold text-green-600">{stats.totalEntradas.toFixed(2)}</p>
                     </div>
-                    <TrendingUp className="h-8 w-8 text-green-600" />
+                    <TrendingUp className="h-5 w-5 md:h-8 md:w-8 text-green-600" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Total Saídas</p>
-                      <p className="text-2xl font-bold text-destructive">{stats.totalSaidas.toFixed(2)}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Saídas</p>
+                      <p className="text-lg md:text-2xl font-bold text-destructive">{stats.totalSaidas.toFixed(2)}</p>
                     </div>
-                    <TrendingDown className="h-8 w-8 text-destructive" />
+                    <TrendingDown className="h-5 w-5 md:h-8 md:w-8 text-destructive" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Saldo</p>
-                      <p className={`text-2xl font-bold ${stats.saldo >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                      <p className="text-xs md:text-sm text-muted-foreground">Saldo</p>
+                      <p className={`text-lg md:text-2xl font-bold ${stats.saldo >= 0 ? 'text-green-600' : 'text-destructive'}`}>
                         {stats.saldo.toFixed(2)}
                       </p>
                     </div>
-                    <Package className={`h-8 w-8 ${stats.saldo >= 0 ? 'text-green-600' : 'text-destructive'}`} />
+                    <Package className={`h-5 w-5 md:h-8 md:w-8 ${stats.saldo >= 0 ? 'text-green-600' : 'text-destructive'}`} />
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Filtros */}
+            {/* Filtros - Full width no mobile */}
             <Card>
-              <CardContent className="pt-6">
-                <div className="flex gap-4">
-                  <Select value={tipoFilter} onValueChange={setTipoFilter}>
-                    <SelectTrigger className="w-[250px]">
-                      <SelectValue placeholder="Filtrar por tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos os Tipos</SelectItem>
-                      <SelectItem value="entradas">📈 Apenas Entradas</SelectItem>
-                      <SelectItem value="saidas">📉 Apenas Saídas</SelectItem>
-                      <SelectItem value="compra">Compra</SelectItem>
-                      <SelectItem value="consumo_producao">Consumo Produção</SelectItem>
-                      <SelectItem value="ajuste_positivo">Ajuste Positivo</SelectItem>
-                      <SelectItem value="ajuste_negativo">Ajuste Negativo</SelectItem>
-                      <SelectItem value="perda">Perda</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <CardContent className="pt-4 md:pt-6">
+                <Select value={tipoFilter} onValueChange={setTipoFilter}>
+                  <SelectTrigger className="w-full md:w-[250px]">
+                    <SelectValue placeholder="Filtrar por tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os Tipos</SelectItem>
+                    <SelectItem value="entradas">📈 Apenas Entradas</SelectItem>
+                    <SelectItem value="saidas">📉 Apenas Saídas</SelectItem>
+                    <SelectItem value="compra">Compra</SelectItem>
+                    <SelectItem value="consumo_producao">Consumo Produção</SelectItem>
+                    <SelectItem value="ajuste_positivo">Ajuste Positivo</SelectItem>
+                    <SelectItem value="ajuste_negativo">Ajuste Negativo</SelectItem>
+                    <SelectItem value="perda">Perda</SelectItem>
+                  </SelectContent>
+                </Select>
               </CardContent>
             </Card>
 
-            {/* Tabela de Movimentações */}
+            {/* Tabela/Cards de Movimentações */}
             <Card>
-              <CardHeader>
-                <CardTitle>Histórico de Movimentações ({movimentacoesFiltradas.length})</CardTitle>
+              <CardHeader className="py-3 md:py-6">
+                <CardTitle className="text-base md:text-lg">
+                  Histórico ({movimentacoesFiltradas.length})
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="max-h-[500px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Data/Hora</TableHead>
-                        <TableHead>Insumo</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead className="text-right">Quantidade</TableHead>
-                        <TableHead className="text-right">Est. Anterior</TableHead>
-                        <TableHead className="text-right">Est. Resultante</TableHead>
-                        <TableHead>Usuário</TableHead>
-                        <TableHead>Observação</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {movimentacoesFiltradas.length === 0 ? (
+              <CardContent className="p-3 md:p-6 pt-0">
+                {movimentacoesFiltradas.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Package className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>Nenhuma movimentação encontrada</p>
+                    <p className="text-sm">As movimentações de insumos aparecerão aqui</p>
+                  </div>
+                ) : isMobile ? (
+                  /* Mobile: Card list view */
+                  <div className="space-y-3 max-h-[60vh] overflow-auto">
+                    {movimentacoesFiltradas.map((mov) => (
+                      <Card key={mov.id} className="p-3 border">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm truncate">{mov.entidade_nome}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(mov.created_at), 'dd/MM/yy HH:mm', { locale: ptBR })}
+                            </p>
+                          </div>
+                          {renderBadgeTipo(mov.tipo_movimentacao)}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <p className="text-muted-foreground">Anterior</p>
+                            <p className="font-mono">{Number(mov.estoque_anterior).toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Qtd</p>
+                            <p className="font-mono font-semibold">{Number(mov.quantidade).toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Resultado</p>
+                            <p className="font-mono font-semibold">{Number(mov.estoque_resultante).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        {mov.observacao && (
+                          <p className="text-xs text-muted-foreground mt-2 truncate">{mov.observacao}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">por {mov.usuario_nome}</p>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  /* Desktop: Table view */
+                  <div className="max-h-[500px] overflow-auto">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                            <Package className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                            <p>Nenhuma movimentação encontrada</p>
-                            <p className="text-sm">As movimentações de insumos aparecerão aqui</p>
-                          </TableCell>
+                          <TableHead>Data/Hora</TableHead>
+                          <TableHead>Insumo</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead className="text-right">Quantidade</TableHead>
+                          <TableHead className="text-right">Est. Anterior</TableHead>
+                          <TableHead className="text-right">Est. Resultante</TableHead>
+                          <TableHead>Usuário</TableHead>
+                          <TableHead>Observação</TableHead>
                         </TableRow>
-                      ) : (
-                        movimentacoesFiltradas.map((mov) => (
+                      </TableHeader>
+                      <TableBody>
+                        {movimentacoesFiltradas.map((mov) => (
                           <TableRow key={mov.id}>
                             <TableCell className="whitespace-nowrap">
                               {format(new Date(mov.created_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
@@ -420,84 +463,130 @@ const RelatorioInsumos = () => {
                               {mov.observacao || '-'}
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* Aba de Estoque Atual */}
           <TabsContent value="estoque" className="space-y-4">
-            {/* Cards de Resumo do Estoque */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card>
-                <CardContent className="pt-6">
+            {/* Cards de Resumo do Estoque - Grid adaptativo */}
+            <div className="grid grid-cols-3 gap-2 md:gap-4">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Total de Insumos</p>
-                      <p className="text-2xl font-bold">{statsEstoque.totalItens}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Total</p>
+                      <p className="text-lg md:text-2xl font-bold">{statsEstoque.totalItens}</p>
                     </div>
-                    <Package className="h-8 w-8 text-primary" />
+                    <Package className="h-5 w-5 md:h-8 md:w-8 text-primary" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Estoque OK</p>
-                      <p className="text-2xl font-bold text-green-600">{statsEstoque.itensOk}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">OK</p>
+                      <p className="text-lg md:text-2xl font-bold text-green-600">{statsEstoque.itensOk}</p>
                     </div>
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <CheckCircle className="h-5 w-5 md:h-8 md:w-8 text-green-600" />
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
+              <Card className="p-0">
+                <CardContent className="p-3 md:pt-6 md:p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Abaixo do Mínimo</p>
-                      <p className="text-2xl font-bold text-destructive">{statsEstoque.itensAbaixoMinimo}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Baixo</p>
+                      <p className="text-lg md:text-2xl font-bold text-destructive">{statsEstoque.itensAbaixoMinimo}</p>
                     </div>
-                    <AlertTriangle className="h-8 w-8 text-destructive" />
+                    <AlertTriangle className="h-5 w-5 md:h-8 md:w-8 text-destructive" />
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Tabela de Estoque Atual */}
+            {/* Tabela/Cards de Estoque Atual */}
             <Card>
-              <CardHeader>
-                <CardTitle>Estoque Atual de Insumos</CardTitle>
+              <CardHeader className="py-3 md:py-6">
+                <CardTitle className="text-base md:text-lg">Estoque Atual de Insumos</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="max-h-[500px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Insumo</TableHead>
-                        <TableHead>Unidade</TableHead>
-                        <TableHead className="text-right">Estoque Atual</TableHead>
-                        <TableHead className="text-right">Estoque Mínimo</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Última Movimentação</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {estoqueAtual.length === 0 ? (
+              <CardContent className="p-3 md:p-6 pt-0">
+                {estoqueAtual.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Package className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                    <p>Nenhum insumo cadastrado</p>
+                  </div>
+                ) : isMobile ? (
+                  /* Mobile: Card list view */
+                  <div className="space-y-3 max-h-[60vh] overflow-auto">
+                    {estoqueAtual.map((insumo) => {
+                      const abaixoMinimo = insumo.estoque_minimo != null && 
+                        (insumo.quantidade_em_estoque || 0) <= insumo.estoque_minimo;
+                      return (
+                        <Card 
+                          key={insumo.id} 
+                          className={`p-3 border ${abaixoMinimo ? 'border-destructive/50 bg-destructive/5' : ''}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm truncate">{insumo.nome}</p>
+                              <p className="text-xs text-muted-foreground">{insumo.unidade_medida}</p>
+                            </div>
+                            {abaixoMinimo ? (
+                              <Badge variant="destructive" className="gap-1 text-xs">
+                                <AlertTriangle className="h-3 w-3" />
+                                Baixo
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-green-600 gap-1 text-xs">
+                                <CheckCircle className="h-3 w-3" />
+                                OK
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Estoque Atual</p>
+                              <p className="font-mono font-bold">{Number(insumo.quantidade_em_estoque || 0).toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Estoque Mínimo</p>
+                              <p className="font-mono">{insumo.estoque_minimo?.toFixed(2) || '-'}</p>
+                            </div>
+                          </div>
+                          {insumo.data_ultima_movimentacao && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Última mov.: {format(new Date(insumo.data_ultima_movimentacao), 'dd/MM/yy HH:mm', { locale: ptBR })}
+                            </p>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Desktop: Table view */
+                  <div className="max-h-[500px] overflow-auto">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                            <Package className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                            <p>Nenhum insumo cadastrado</p>
-                          </TableCell>
+                          <TableHead>Insumo</TableHead>
+                          <TableHead>Unidade</TableHead>
+                          <TableHead className="text-right">Estoque Atual</TableHead>
+                          <TableHead className="text-right">Estoque Mínimo</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Última Movimentação</TableHead>
                         </TableRow>
-                      ) : (
-                        estoqueAtual.map((insumo) => {
+                      </TableHeader>
+                      <TableBody>
+                        {estoqueAtual.map((insumo) => {
                           const abaixoMinimo = insumo.estoque_minimo != null && 
                             (insumo.quantidade_em_estoque || 0) <= insumo.estoque_minimo;
                           return (
@@ -530,11 +619,11 @@ const RelatorioInsumos = () => {
                               </TableCell>
                             </TableRow>
                           );
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
