@@ -23,6 +23,7 @@ interface NecessidadeInsumo {
   estoque_atual: number;
   consumo_previsto: number;
   status: 'ok' | 'alerta' | 'critico';
+  ultima_atualizacao_item: Date | null;
 }
 
 interface ResumoNecessidadeCompraProps {
@@ -46,14 +47,46 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
       // 1. Buscar registros de produção ATIVOS (não finalizados/cancelados)
       const { data: registrosProducao, error: registrosError } = await supabase
         .from('producao_registros')
-        .select('item_id, unidades_programadas')
+        .select('item_id, unidades_programadas, data_inicio')
         .eq('organization_id', organizationId)
         .not('status', 'in', '("finalizado","concluido","expedido","cancelado")')
         .gt('unidades_programadas', 0);
 
       if (registrosError) throw registrosError;
 
-      // 2. Agrupar demandas por item_id
+      // 2. Buscar últimos registros finalizados para obter data_fim
+      const { data: registrosFinalizados } = await supabase
+        .from('producao_registros')
+        .select('item_id, data_fim')
+        .eq('organization_id', organizationId)
+        .in('status', ['finalizado', 'concluido', 'expedido'])
+        .not('data_fim', 'is', null)
+        .order('data_fim', { ascending: false });
+
+      // Mapa: item_id -> última data de atualização
+      const ultimaAtualizacaoPorItem: Record<string, Date> = {};
+      
+      // Primeiro, registros ativos (data_inicio)
+      (registrosProducao || []).forEach(r => {
+        if (r.item_id && r.data_inicio) {
+          const dataAtual = new Date(r.data_inicio);
+          if (!ultimaAtualizacaoPorItem[r.item_id] || dataAtual > ultimaAtualizacaoPorItem[r.item_id]) {
+            ultimaAtualizacaoPorItem[r.item_id] = dataAtual;
+          }
+        }
+      });
+
+      // Depois, registros finalizados (data_fim) - sobrescreve se mais recente
+      (registrosFinalizados || []).forEach(r => {
+        if (r.item_id && r.data_fim) {
+          const dataFim = new Date(r.data_fim);
+          if (!ultimaAtualizacaoPorItem[r.item_id] || dataFim > ultimaAtualizacaoPorItem[r.item_id]) {
+            ultimaAtualizacaoPorItem[r.item_id] = dataFim;
+          }
+        }
+      });
+
+      // 3. Agrupar demandas por item_id
       const demandasPorItem: Record<string, number> = {};
       (registrosProducao || []).forEach(r => {
         if (r.item_id && r.unidades_programadas) {
@@ -71,7 +104,8 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
           unidade: ins.unidade_medida,
           estoque_atual: Number(ins.quantidade_em_estoque) || 0,
           consumo_previsto: 0,
-          status: 'ok' as const
+          status: 'ok' as const,
+          ultima_atualizacao_item: null
         }));
         setNecessidades(listaVazia);
         setUltimaAtualizacao(new Date());
@@ -79,7 +113,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         return;
       }
 
-      // 3. Buscar vínculos insumos_extras para os itens em produção
+      // 4. Buscar vínculos insumos_extras para os itens em produção
       const { data: insumosExtras, error: extrasError } = await supabase
         .from('insumos_extras')
         .select('item_porcionado_id, insumo_id, quantidade, unidade, escala_configuracao')
@@ -88,7 +122,20 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
 
       if (extrasError) throw extrasError;
 
-      // 4. Buscar dados dos itens porcionados para equivalência de traço/lote
+      // Mapear quais itens afetam cada insumo
+      const itensQueAfetamInsumo: Record<string, string[]> = {};
+      (insumosExtras || []).forEach(ext => {
+        if (ext.insumo_id && ext.item_porcionado_id) {
+          if (!itensQueAfetamInsumo[ext.insumo_id]) {
+            itensQueAfetamInsumo[ext.insumo_id] = [];
+          }
+          if (!itensQueAfetamInsumo[ext.insumo_id].includes(ext.item_porcionado_id)) {
+            itensQueAfetamInsumo[ext.insumo_id].push(ext.item_porcionado_id);
+          }
+        }
+      });
+
+      // 5. Buscar dados dos itens porcionados para equivalência de traço/lote
       const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
         .select('id, equivalencia_traco, quantidade_por_lote')
@@ -104,7 +151,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         };
       });
 
-      // 5. Calcular consumo previsto por insumo (mesma lógica do ResumoDaProducao)
+      // 6. Calcular consumo previsto por insumo (mesma lógica do ResumoDaProducao)
       const consumoPorInsumo: Record<string, number> = {};
       
       (insumosExtras || []).forEach(ext => {
@@ -139,7 +186,22 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         consumoPorInsumo[ext.insumo_id] = (consumoPorInsumo[ext.insumo_id] || 0) + quantidadeNecessaria;
       });
 
-      // 6. Mapear para lista de necessidades (TODOS os insumos, não filtrar)
+      // Função auxiliar para obter última atualização de um insumo
+      const getUltimaAtualizacaoInsumo = (insumoId: string): Date | null => {
+        const itensVinculados = itensQueAfetamInsumo[insumoId] || [];
+        let maisRecente: Date | null = null;
+        
+        itensVinculados.forEach(itemId => {
+          const dataItem = ultimaAtualizacaoPorItem[itemId];
+          if (dataItem && (!maisRecente || dataItem > maisRecente)) {
+            maisRecente = dataItem;
+          }
+        });
+        
+        return maisRecente;
+      };
+
+      // 7. Mapear para lista de necessidades (TODOS os insumos, não filtrar)
       const listaFinal: NecessidadeInsumo[] = insumos
         .map(ins => {
           const estoqueAtual = Number(ins.quantidade_em_estoque) || 0;
@@ -155,13 +217,17 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             }
           }
 
+          // Obter última atualização individual deste insumo
+          const ultimaAtualizacaoItem = getUltimaAtualizacaoInsumo(ins.id);
+
           return {
             insumo_id: ins.id,
             insumo_nome: ins.nome,
             unidade: ins.unidade_medida,
             estoque_atual: estoqueAtual,
             consumo_previsto: consumoPrevisto,
-            status
+            status,
+            ultima_atualizacao_item: ultimaAtualizacaoItem
           };
         })
         .sort((a, b) => {
@@ -406,9 +472,9 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{item.insumo_nome}</p>
                       <p className="text-xs text-muted-foreground">{item.unidade}</p>
-                      {ultimaAtualizacao && (
+                      {item.ultima_atualizacao_item && (
                         <p className="text-[10px] text-muted-foreground/60">
-                          Atualizado às {formatarHorario(ultimaAtualizacao)}
+                          Atualizado às {formatarHorario(item.ultima_atualizacao_item)}
                         </p>
                       )}
                     </div>
@@ -447,7 +513,16 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                   <TableBody>
                     {necessidades.map((item) => (
                       <TableRow key={item.insumo_id} className={getRowClass(item.status)}>
-                        <TableCell className="font-medium">{item.insumo_nome}</TableCell>
+                        <TableCell className="font-medium">
+                          <div>
+                            <span>{item.insumo_nome}</span>
+                            {item.ultima_atualizacao_item && (
+                              <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                                Atualizado às {formatarHorario(item.ultima_atualizacao_item)}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{item.unidade}</TableCell>
                         <TableCell className="text-right font-mono">
                           {formatarValor(item.estoque_atual, item.unidade)}
