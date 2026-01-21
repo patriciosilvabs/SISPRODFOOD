@@ -64,7 +64,17 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
 
       const itemIds = Object.keys(demandasPorItem);
       if (itemIds.length === 0) {
-        setNecessidades([]);
+        // Não há produções ativas, mas ainda mostra todos os insumos com consumo = 0
+        const listaVazia: NecessidadeInsumo[] = insumos.map(ins => ({
+          insumo_id: ins.id,
+          insumo_nome: ins.nome,
+          unidade: ins.unidade_medida,
+          estoque_atual: Number(ins.quantidade_em_estoque) || 0,
+          consumo_previsto: 0,
+          status: 'ok' as const
+        }));
+        setNecessidades(listaVazia);
+        setUltimaAtualizacao(new Date());
         setLoading(false);
         return;
       }
@@ -129,19 +139,20 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         consumoPorInsumo[ext.insumo_id] = (consumoPorInsumo[ext.insumo_id] || 0) + quantidadeNecessaria;
       });
 
-      // 6. Mapear para lista de necessidades
+      // 6. Mapear para lista de necessidades (TODOS os insumos, não filtrar)
       const listaFinal: NecessidadeInsumo[] = insumos
-        .filter(ins => consumoPorInsumo[ins.id] !== undefined)
         .map(ins => {
           const estoqueAtual = Number(ins.quantidade_em_estoque) || 0;
           const consumoPrevisto = consumoPorInsumo[ins.id] || 0;
           
-          // Status baseado apenas em: consumo > estoque
+          // Status baseado apenas em: consumo > estoque (só calcula se há consumo previsto)
           let status: 'ok' | 'alerta' | 'critico' = 'ok';
-          if (consumoPrevisto > estoqueAtual) {
-            status = 'critico';
-          } else if (consumoPrevisto > estoqueAtual * 0.8) {
-            status = 'alerta';
+          if (consumoPrevisto > 0) {
+            if (consumoPrevisto > estoqueAtual) {
+              status = 'critico';
+            } else if (consumoPrevisto > estoqueAtual * 0.8) {
+              status = 'alerta';
+            }
           }
 
           return {
@@ -154,7 +165,11 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
           };
         })
         .sort((a, b) => {
-          // Ordenar: crítico primeiro, depois alerta, depois ok
+          // Primeiro: itens COM consumo previsto no topo
+          if (a.consumo_previsto > 0 && b.consumo_previsto === 0) return -1;
+          if (a.consumo_previsto === 0 && b.consumo_previsto > 0) return 1;
+          
+          // Segundo: ordenar por status (crítico primeiro)
           const ordem = { critico: 0, alerta: 1, ok: 2 };
           return ordem[a.status] - ordem[b.status];
         });
