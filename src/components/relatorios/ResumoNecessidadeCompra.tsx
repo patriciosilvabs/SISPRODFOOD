@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ShoppingCart, CheckCircle, AlertTriangle, XCircle, ChevronDown, RefreshCw, Info } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useIsMobile } from '@/hooks/use-mobile';
-
+import { format } from 'date-fns';
 interface InsumoAtual {
   id: string;
   nome: string;
@@ -35,8 +35,10 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
   const [isOpen, setIsOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [necessidades, setNecessidades] = useState<NecessidadeInsumo[]>([]);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  const calcularNecessidades = async () => {
+  const calcularNecessidades = useCallback(async () => {
     if (!organizationId || insumos.length === 0) return;
     
     setLoading(true);
@@ -158,16 +160,76 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         });
 
       setNecessidades(listaFinal);
+      setUltimaAtualizacao(new Date());
     } catch (error) {
       console.error('Erro ao calcular necessidades:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [organizationId, insumos]);
 
+  // Função com debounce para evitar múltiplas chamadas
+  const calcularComDebounce = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      calcularNecessidades();
+    }, 500);
+  }, [calcularNecessidades]);
+
+  // Carregar dados iniciais
   useEffect(() => {
     calcularNecessidades();
-  }, [organizationId, insumos]);
+  }, [calcularNecessidades]);
+
+  // Realtime subscriptions
+  useEffect(() => {
+    if (!organizationId) return;
+
+    // Canal para producao_registros
+    const channelProducao = supabase
+      .channel('producao-necessidades-compra')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'producao_registros',
+          filter: `organization_id=eq.${organizationId}`
+        },
+        () => calcularComDebounce()
+      )
+      .subscribe();
+
+    // Canal para insumos (estoque atualizado)
+    const channelInsumos = supabase
+      .channel('insumos-necessidades-compra')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'insumos',
+          filter: `organization_id=eq.${organizationId}`
+        },
+        () => calcularComDebounce()
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      supabase.removeChannel(channelProducao);
+      supabase.removeChannel(channelInsumos);
+    };
+  }, [organizationId, calcularComDebounce]);
+
+  // Formatar horário
+  const formatarHorario = (data: Date) => {
+    return format(data, 'HH:mm:ss');
+  };
 
   // Estatísticas resumidas
   const resumo = useMemo(() => {
@@ -230,8 +292,11 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                   <CardTitle className="text-sm md:text-lg">
                     {isMobile ? 'Necessidade de Compra' : 'Resumo de Necessidade de Compra'}
                   </CardTitle>
-                  <CardDescription className="text-xs hidden sm:block">
-                    Consumo previsto baseado nas produções ativas
+                  <CardDescription className="text-xs">
+                    {isMobile && ultimaAtualizacao 
+                      ? `Atualizado às ${formatarHorario(ultimaAtualizacao)}`
+                      : 'Consumo previsto baseado nas produções ativas'
+                    }
                   </CardDescription>
                 </div>
               </div>
