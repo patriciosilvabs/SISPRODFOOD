@@ -14,6 +14,7 @@ interface InsumoAtual {
   quantidade_em_estoque: number | null;
   unidade_medida: string;
   estoque_minimo: number | null;
+  data_ultima_movimentacao?: string | null;
 }
 
 interface NecessidadeInsumo {
@@ -187,16 +188,22 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
       });
 
       // Função auxiliar para obter última atualização de um insumo
-      const getUltimaAtualizacaoInsumo = (insumoId: string): Date | null => {
+      const getUltimaAtualizacaoInsumo = (insumoId: string, insumoData?: InsumoAtual): Date | null => {
         const itensVinculados = itensQueAfetamInsumo[insumoId] || [];
         let maisRecente: Date | null = null;
         
+        // Primeiro, verificar vínculos com produção ativa
         itensVinculados.forEach(itemId => {
           const dataItem = ultimaAtualizacaoPorItem[itemId];
           if (dataItem && (!maisRecente || dataItem > maisRecente)) {
             maisRecente = dataItem;
           }
         });
+        
+        // FALLBACK: se não tem vínculo com produção, usar data_ultima_movimentacao do próprio insumo
+        if (!maisRecente && insumoData?.data_ultima_movimentacao) {
+          maisRecente = new Date(insumoData.data_ultima_movimentacao);
+        }
         
         return maisRecente;
       };
@@ -217,8 +224,8 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             }
           }
 
-          // Obter última atualização individual deste insumo
-          const ultimaAtualizacaoItem = getUltimaAtualizacaoInsumo(ins.id);
+          // Obter última atualização individual deste insumo (com fallback para data_ultima_movimentacao)
+          const ultimaAtualizacaoItem = getUltimaAtualizacaoInsumo(ins.id, ins);
 
           return {
             insumo_id: ins.id,
