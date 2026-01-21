@@ -448,12 +448,19 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             {/* Nota de rodapé */}
             <div className="flex items-start gap-2 p-2 md:p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
               <Info className="h-4 w-4 mt-0.5 shrink-0" />
-              <p>
-                {isMobile 
-                  ? 'Consumo previsto baseado nas produções ativas.'
-                  : 'Este resumo é apenas demonstrativo e mostra o consumo previsto baseado nos registros de produção ativos no Kanban.'
-                }
-              </p>
+              <div className="flex-1">
+                <p>
+                  {isMobile 
+                    ? 'Consumo previsto baseado nas produções ativas.'
+                    : 'Este resumo é apenas demonstrativo e mostra o consumo previsto baseado nos registros de produção ativos no Kanban.'
+                  }
+                </p>
+                {ultimaAtualizacao && (
+                  <p className="mt-1 font-medium text-foreground/70">
+                    Atualizado às {formatarHorario(ultimaAtualizacao)}
+                  </p>
+                )}
+              </div>
             </div>
           </CardContent>
         </CollapsibleContent>
