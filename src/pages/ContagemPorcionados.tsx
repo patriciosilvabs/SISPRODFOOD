@@ -522,6 +522,14 @@ const ContagemPorcionados = () => {
       return;
     }
 
+    // CRÍTICO: Usar dia operacional TRAVADO da sessão
+    const sessaoAtiva = sessoes[lojaId];
+    if (!sessaoAtiva) {
+      toast.error('Sessão não encontrada.');
+      return;
+    }
+    const diaOperacionalTravado = sessaoAtiva.dia_operacional;
+
     setSavingAll(true);
 
     try {
@@ -532,13 +540,12 @@ const ContagemPorcionados = () => {
         await executeSave(row.lojaId, row.itemId);
       }
 
-      // 2. Verificar se todos foram salvos corretamente
-      const diaOperacional = diasOperacionaisPorLoja[lojaId];
+      // 2. Verificar se todos foram salvos corretamente usando dia operacional TRAVADO
       const { data: verificacao, error: verifyError } = await supabase
         .from('contagem_porcionados')
         .select('id, item_porcionado_id, final_sobra, peso_total_g')
         .eq('loja_id', lojaId)
-        .eq('dia_operacional', diaOperacional);
+        .eq('dia_operacional', diaOperacionalTravado);
 
       if (verifyError) {
         toast.error('Falha na verificação dos dados salvos.');
@@ -572,8 +579,8 @@ const ContagemPorcionados = () => {
       const success = await encerrarSessao(lojaId, profile?.nome || user?.email || 'Usuário');
 
       if (success) {
-        // 5. Disparar atualização de produção
-        const sessao = sessoes[lojaId];
+        // 5. Disparar atualização de produção com dia operacional TRAVADO
+        console.log(`[handleEncerrarSessao] Atualizando produção com dia operacional TRAVADO: ${diaOperacionalTravado}`);
         
         for (const item of itens) {
           await supabase.rpc('criar_ou_atualizar_producao_registro', {
@@ -581,7 +588,7 @@ const ContagemPorcionados = () => {
             p_organization_id: organizationId,
             p_usuario_id: user!.id,
             p_usuario_nome: profile?.nome || user?.email || 'Usuário',
-            p_dia_operacional: diaOperacional,
+            p_dia_operacional: diaOperacionalTravado,
             p_is_incremental: false, // Contagem normal = substituir cards existentes
           });
         }
@@ -778,6 +785,14 @@ const ContagemPorcionados = () => {
       return;
     }
 
+    // CRÍTICO: Usar dia operacional TRAVADO da sessão ativa
+    const sessaoAtiva = sessoes[lojaId];
+    if (!sessaoAtiva || sessaoAtiva.status !== 'em_andamento') {
+      toast.error('Sessão de contagem não está ativa. Inicie a contagem primeiro.', { id: toastId });
+      setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
+      return;
+    }
+
     const finalSobra = parseInt(values?.final_sobra);
     if (isNaN(finalSobra) || finalSobra < 0) {
       toast.error('Valor de Sobra inválido. Insira um número válido (≥ 0).', { id: toastId });
@@ -785,7 +800,8 @@ const ContagemPorcionados = () => {
       return;
     }
 
-    let diaOperacional: string = '';
+    // Usar dia operacional da sessão (TRAVADO no início)
+    let diaOperacional: string = sessaoAtiva.dia_operacional;
     let idealAmanha = 0;
     let aProduzir = 0;
     let dataToSave: any = null;
@@ -814,17 +830,8 @@ const ContagemPorcionados = () => {
         return;
       }
 
-      const { data: diaOpData, error: diaOpError } = await supabase
-        .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
-      
-      if (diaOpError || !diaOpData) {
-        toast.error('Erro ao calcular dia operacional. Tente novamente.', { id: toastId });
-        await logAudit(lojaId, itemId, '', finalSobra, 0, 0, 'ERRO', undefined, 'Falha ao calcular dia operacional');
-        setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
-        return;
-      }
-      
-      diaOperacional = diaOpData;
+      // NÃO recalcular dia operacional aqui - usar o valor travado da sessão
+      console.log(`[executeSave] Usando dia operacional TRAVADO da sessão: ${diaOperacional}`);
 
       // Verificar se há produção ativa
       const producaoAtiva = await verificarProducaoAtiva(itemId, diaOperacional);
