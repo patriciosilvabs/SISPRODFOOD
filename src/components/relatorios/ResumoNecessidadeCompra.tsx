@@ -43,12 +43,17 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
     setLoading(true);
     try {
       // 1. Buscar demandas de produção (a_produzir) das contagens
-      const hoje = new Date().toISOString().split('T')[0];
+      // Incluir ontem e hoje para capturar demandas pendentes
+      const hoje = new Date();
+      const ontem = new Date(hoje);
+      ontem.setDate(ontem.getDate() - 1);
+      const dataInicio = ontem.toISOString().split('T')[0];
+      
       const { data: contagens, error: contagemError } = await supabase
         .from('contagem_porcionados')
         .select('item_porcionado_id, a_produzir')
         .eq('organization_id', organizationId)
-        .gte('dia_operacional', hoje)
+        .gte('dia_operacional', dataInicio)
         .gt('a_produzir', 0);
 
       if (contagemError) throw contagemError;
