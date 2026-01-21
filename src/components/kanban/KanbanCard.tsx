@@ -94,6 +94,7 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   codigo_lote?: string;
   margem_lote_percentual?: number | null;
+  data_referencia?: string;
   // Campo para identificar registro pendente (produção parcial)
   is_incremental?: boolean;
 }
@@ -273,6 +274,26 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 <h4 className="font-bold text-sm leading-tight tracking-tight">
                   {registro.item_nome}
                 </h4>
+                {/* Badge de Data de Referência */}
+                {registro.data_referencia && (() => {
+                  const dataRef = new Date(registro.data_referencia + 'T00:00:00');
+                  const hoje = new Date();
+                  hoje.setHours(0, 0, 0, 0);
+                  const isAntiga = dataRef < hoje;
+                  
+                  return (
+                    <Badge 
+                      variant="outline"
+                      className={`text-[10px] font-medium ${
+                        isAntiga 
+                          ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700 animate-pulse" 
+                          : "bg-muted text-muted-foreground border-border"
+                      }`}
+                    >
+                      {isAntiga ? '⚠️' : '📅'} {format(dataRef, 'dd/MM', { locale: ptBR })}
+                    </Badge>
+                  );
+                })()}
                 {/* Badge PENDENTE para registros de produção parcial */}
                 {registro.is_incremental && (
                   <Badge 

@@ -74,6 +74,7 @@ interface ProducaoRegistro {
   status_calibracao?: string;
   codigo_lote?: string;
   margem_lote_percentual?: number | null;
+  data_referencia?: string;
 }
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
