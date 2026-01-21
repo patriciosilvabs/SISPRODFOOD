@@ -304,7 +304,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
               </div>
             ) : isMobile ? (
               /* Mobile: Card list view */
-              <div className="space-y-2 max-h-[300px] overflow-auto">
+              <div className="space-y-2">
                 {necessidades.map((item) => (
                   <Card 
                     key={item.insumo_id} 
@@ -332,7 +332,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
               </div>
             ) : (
               /* Desktop: Table view */
-              <div className="max-h-[400px] overflow-auto rounded-lg border">
+              <div className="rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
