@@ -20,11 +20,8 @@ interface NecessidadeInsumo {
   insumo_nome: string;
   unidade: string;
   estoque_atual: number;
-  estoque_minimo: number;
   consumo_previsto: number;
-  saldo_apos_producao: number;
   status: 'ok' | 'alerta' | 'critico';
-  quantidade_comprar: number;
 }
 
 interface ResumoNecessidadeCompraProps {
@@ -42,28 +39,22 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
     
     setLoading(true);
     try {
-      // 1. Buscar demandas de produção (a_produzir) das contagens
-      // Incluir ontem e hoje para capturar demandas pendentes
-      const hoje = new Date();
-      const ontem = new Date(hoje);
-      ontem.setDate(ontem.getDate() - 1);
-      const dataInicio = ontem.toISOString().split('T')[0];
-      
-      const { data: contagens, error: contagemError } = await supabase
-        .from('contagem_porcionados')
-        .select('item_porcionado_id, a_produzir')
+      // 1. Buscar registros de produção ATIVOS (não finalizados/cancelados)
+      const { data: registrosProducao, error: registrosError } = await supabase
+        .from('producao_registros')
+        .select('item_id, unidades_programadas')
         .eq('organization_id', organizationId)
-        .gte('dia_operacional', dataInicio)
-        .gt('a_produzir', 0);
+        .not('status', 'in', '("finalizado","concluido","expedido","cancelado")')
+        .gt('unidades_programadas', 0);
 
-      if (contagemError) throw contagemError;
+      if (registrosError) throw registrosError;
 
-      // 2. Agrupar demandas por item_porcionado_id
+      // 2. Agrupar demandas por item_id
       const demandasPorItem: Record<string, number> = {};
-      (contagens || []).forEach(c => {
-        if (c.item_porcionado_id && c.a_produzir) {
-          demandasPorItem[c.item_porcionado_id] = 
-            (demandasPorItem[c.item_porcionado_id] || 0) + c.a_produzir;
+      (registrosProducao || []).forEach(r => {
+        if (r.item_id && r.unidades_programadas) {
+          demandasPorItem[r.item_id] = 
+            (demandasPorItem[r.item_id] || 0) + r.unidades_programadas;
         }
       });
 
@@ -74,16 +65,16 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         return;
       }
 
-      // 3. Buscar vínculos insumos_extras e itens_porcionados
+      // 3. Buscar vínculos insumos_extras para os itens em produção
       const { data: insumosExtras, error: extrasError } = await supabase
         .from('insumos_extras')
-        .select('item_porcionado_id, insumo_id, quantidade, escala_configuracao')
+        .select('item_porcionado_id, insumo_id, quantidade, unidade, escala_configuracao')
         .eq('organization_id', organizationId)
         .in('item_porcionado_id', itemIds);
 
       if (extrasError) throw extrasError;
 
-      // 4. Buscar dados dos itens porcionados para equivalência de traço
+      // 4. Buscar dados dos itens porcionados para equivalência de traço/lote
       const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
         .select('id, equivalencia_traco, quantidade_por_lote')
@@ -99,7 +90,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         };
       });
 
-      // 5. Calcular consumo previsto por insumo
+      // 5. Calcular consumo previsto por insumo (mesma lógica do ResumoDaProducao)
       const consumoPorInsumo: Record<string, number> = {};
       
       (insumosExtras || []).forEach(ext => {
@@ -110,25 +101,28 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         
         const itemConfig = itensMap[ext.item_porcionado_id];
         const quantidade = Number(ext.quantidade) || 0;
-        // A quantidade no insumos_extras está em gramas, 
-        // mas o estoque está em kg, então dividimos por 1000
-        const quantidadeEmKg = quantidade / 1000;
-        let consumo = 0;
+        const escalaInsumo = ext.escala_configuracao || 'por_unidade';
+        const unidadeInsumo = (ext.unidade || 'kg').toLowerCase();
+        
+        let quantidadeNecessaria = 0;
 
-        if (ext.escala_configuracao === 'por_unidade') {
-          // Consumo por unidade produzida
-          consumo = demanda * quantidadeEmKg;
-        } else if (ext.escala_configuracao === 'por_lote') {
-          // Consumo por lote - precisa calcular quantos lotes
+        if (escalaInsumo === 'por_lote' || escalaInsumo === 'por_traco') {
+          // Insumo configurado para consumir por lote/traço
           const unidadesPorLote = itemConfig?.equivalencia_traco || itemConfig?.quantidade_por_lote || 1;
           const lotes = Math.ceil(demanda / unidadesPorLote);
-          consumo = lotes * quantidadeEmKg;
+          quantidadeNecessaria = lotes * quantidade;
         } else {
-          // Default: por unidade
-          consumo = demanda * quantidadeEmKg;
+          // por_unidade: cada unidade produzida consome a quantidade configurada
+          quantidadeNecessaria = demanda * quantidade;
         }
 
-        consumoPorInsumo[ext.insumo_id] = (consumoPorInsumo[ext.insumo_id] || 0) + consumo;
+        // Converter gramas para kg se a unidade da receita for gramas
+        // O estoque sempre está em kg
+        if (unidadeInsumo === 'g') {
+          quantidadeNecessaria = quantidadeNecessaria / 1000;
+        }
+
+        consumoPorInsumo[ext.insumo_id] = (consumoPorInsumo[ext.insumo_id] || 0) + quantidadeNecessaria;
       });
 
       // 6. Mapear para lista de necessidades
@@ -136,19 +130,14 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         .filter(ins => consumoPorInsumo[ins.id] !== undefined)
         .map(ins => {
           const estoqueAtual = Number(ins.quantidade_em_estoque) || 0;
-          const estoqueMinimo = Number(ins.estoque_minimo) || 0;
           const consumoPrevisto = consumoPorInsumo[ins.id] || 0;
-          const saldoAposProducao = estoqueAtual - consumoPrevisto;
           
+          // Status baseado apenas em: consumo > estoque
           let status: 'ok' | 'alerta' | 'critico' = 'ok';
-          let quantidadeComprar = 0;
-
-          if (saldoAposProducao <= 0) {
+          if (consumoPrevisto > estoqueAtual) {
             status = 'critico';
-            quantidadeComprar = Math.abs(saldoAposProducao) + estoqueMinimo;
-          } else if (saldoAposProducao <= estoqueMinimo) {
+          } else if (consumoPrevisto > estoqueAtual * 0.8) {
             status = 'alerta';
-            quantidadeComprar = estoqueMinimo - saldoAposProducao;
           }
 
           return {
@@ -156,11 +145,8 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             insumo_nome: ins.nome,
             unidade: ins.unidade_medida,
             estoque_atual: estoqueAtual,
-            estoque_minimo: estoqueMinimo,
             consumo_previsto: consumoPrevisto,
-            saldo_apos_producao: saldoAposProducao,
-            status,
-            quantidade_comprar: quantidadeComprar
+            status
           };
         })
         .sort((a, b) => {
@@ -191,12 +177,12 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
     };
   }, [necessidades]);
 
-  const getStatusBadge = (status: 'ok' | 'alerta' | 'critico', quantidadeComprar: number, unidade: string) => {
+  const getStatusBadge = (status: 'ok' | 'alerta' | 'critico') => {
     if (status === 'critico') {
       return (
         <Badge variant="destructive" className="gap-1">
           <XCircle className="h-3 w-3" />
-          COMPRAR {quantidadeComprar.toFixed(2)} {unidade}
+          Insuficiente
         </Badge>
       );
     }
@@ -204,7 +190,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
       return (
         <Badge className="bg-amber-500 text-white gap-1">
           <AlertTriangle className="h-3 w-3" />
-          Repor {quantidadeComprar.toFixed(2)} {unidade}
+          Atenção
         </Badge>
       );
     }
@@ -222,6 +208,14 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
     return '';
   };
 
+  const formatarValor = (valor: number, unidade: string) => {
+    const unidadeLower = unidade.toLowerCase();
+    if (unidadeLower === 'unidade' || unidadeLower === 'un') {
+      return valor % 1 === 0 ? valor.toFixed(0) : valor.toFixed(2);
+    }
+    return valor.toFixed(2);
+  };
+
   return (
     <Card className="border-dashed border-2 border-muted-foreground/30">
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -233,7 +227,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                 <div>
                   <CardTitle className="text-lg">Resumo de Necessidade de Compra</CardTitle>
                   <CardDescription className="text-xs">
-                    Baseado na demanda de produção das lojas (a_produzir)
+                    Consumo previsto baseado nas produções ativas
                   </CardDescription>
                 </div>
               </div>
@@ -278,7 +272,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
               <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10">
                 <AlertTriangle className="h-5 w-5 text-amber-600" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Alerta</p>
+                  <p className="text-xs text-muted-foreground">Atenção</p>
                   <p className="text-lg font-bold text-amber-600">{resumo.alerta}</p>
                 </div>
               </div>
@@ -286,7 +280,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
               <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/10">
                 <XCircle className="h-5 w-5 text-destructive" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Crítico</p>
+                  <p className="text-xs text-muted-foreground">Insuficiente</p>
                   <p className="text-lg font-bold text-destructive">{resumo.critico}</p>
                 </div>
               </div>
@@ -300,8 +294,8 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             ) : necessidades.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>Nenhuma demanda de produção encontrada</p>
-                <p className="text-sm">As contagens das lojas aparecerão aqui quando houver "a_produzir" preenchido</p>
+                <p>Nenhuma produção ativa encontrada</p>
+                <p className="text-sm">Os insumos aparecerão aqui quando houver produções em andamento</p>
               </div>
             ) : (
               <div className="max-h-[400px] overflow-auto rounded-lg border">
@@ -312,8 +306,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                       <TableHead>Unid.</TableHead>
                       <TableHead className="text-right">Estoque Atual</TableHead>
                       <TableHead className="text-right">Consumo Previsto</TableHead>
-                      <TableHead className="text-right">Saldo Após Produção</TableHead>
-                      <TableHead>Ação</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -322,20 +315,13 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                         <TableCell className="font-medium">{item.insumo_nome}</TableCell>
                         <TableCell>{item.unidade}</TableCell>
                         <TableCell className="text-right font-mono">
-                          {item.estoque_atual.toFixed(2)}
+                          {formatarValor(item.estoque_atual, item.unidade)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-amber-600">
-                          -{item.consumo_previsto.toFixed(2)}
-                        </TableCell>
-                        <TableCell className={`text-right font-mono font-semibold ${
-                          item.saldo_apos_producao < 0 ? 'text-destructive' : 
-                          item.saldo_apos_producao <= item.estoque_minimo ? 'text-amber-600' : 
-                          'text-green-600'
-                        }`}>
-                          {item.saldo_apos_producao.toFixed(2)}
+                        <TableCell className="text-right font-mono text-amber-600 font-semibold">
+                          {formatarValor(item.consumo_previsto, item.unidade)}
                         </TableCell>
                         <TableCell>
-                          {getStatusBadge(item.status, item.quantidade_comprar, item.unidade)}
+                          {getStatusBadge(item.status)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -348,8 +334,7 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
             <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
               <Info className="h-4 w-4 mt-0.5 shrink-0" />
               <p>
-                Este resumo é <strong>apenas demonstrativo</strong> e não influencia nenhuma função do sistema. 
-                Os cálculos são baseados nos valores de "a_produzir" das contagens das lojas e nos vínculos de insumos configurados.
+                Este resumo é <strong>apenas demonstrativo</strong> e mostra o consumo previsto baseado nos registros de produção ativos no Kanban.
               </p>
             </div>
           </CardContent>
