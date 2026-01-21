@@ -14,12 +14,12 @@ import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
 import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
 import { EstoqueInsuficienteModal } from '@/components/modals/EstoqueInsuficienteModal';
 import { ConfirmarSeparacaoInsumosModal, InsumoParaConfirmar } from '@/components/modals/ConfirmarSeparacaoInsumosModal';
-import { CancelarProducoesAntigasModal } from '@/components/modals/CancelarProducoesAntigasModal';
+
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
 
@@ -157,7 +157,7 @@ const ResumoDaProducao = () => {
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
   const [modalConfirmarSeparacao, setModalConfirmarSeparacao] = useState(false);
   const [registroParaIniciar, setRegistroParaIniciar] = useState<ProducaoRegistro | null>(null);
-  const [modalCancelarAntigos, setModalCancelarAntigos] = useState(false);
+  
   const [diaOperacionalAtual, setDiaOperacionalAtual] = useState<string>('');
 
   const handleStopAlarm = () => {
@@ -604,55 +604,6 @@ const ResumoDaProducao = () => {
     }
   };
 
-  // Calcular registros antigos (dias anteriores ao dia operacional)
-  const registrosAntigos = useMemo(() => {
-    if (!diaOperacionalAtual) return [];
-    return columns.a_produzir.filter(r => 
-      r.data_referencia && r.data_referencia < diaOperacionalAtual
-    );
-  }, [columns.a_produzir, diaOperacionalAtual]);
-
-  // Handler para cancelar produções antigas em lote
-  const handleCancelarProducoesAntigas = async (observacao: string) => {
-    if (registrosAntigos.length === 0) return;
-    
-    try {
-      const ids = registrosAntigos.map(r => r.id);
-      const motivoBase = 'Produção não realizada no dia programado';
-      const observacaoFinal = observacao 
-        ? `[CANCELADO EM LOTE] ${motivoBase}. Obs: ${observacao}`
-        : `[CANCELADO EM LOTE] ${motivoBase}`;
-      
-      const { error } = await supabase
-        .from('producao_registros')
-        .update({
-          status: 'cancelado',
-          data_fim: new Date().toISOString(),
-          observacao_porcionamento: observacaoFinal
-        })
-        .in('id', ids);
-      
-      if (error) throw error;
-      
-      // Registrar auditoria
-      await log('user.update', 'producao_registro' as any, 'batch', {
-        action: 'cancelamento_lote_producoes_antigas',
-        quantidade_cancelada: ids.length,
-        datas_referencia_canceladas: [...new Set(registrosAntigos.map(r => r.data_referencia))].join(', '),
-        observacao: observacao || null,
-      } as any);
-      
-      toast.success(`${ids.length} produções antigas canceladas com sucesso!`);
-      
-      // Recarregar dados
-      await loadProducaoRegistros();
-      setModalCancelarAntigos(false);
-      
-    } catch (error) {
-      console.error('Erro ao cancelar produções antigas:', error);
-      toast.error('Erro ao cancelar produções antigas');
-    }
-  };
 
   // Função para encontrar insumo limitante (com estoque insuficiente)
   const encontrarInsumoLimitante = (registro: ProducaoRegistro): InsumoLimitante | null => {
@@ -1528,29 +1479,11 @@ const ResumoDaProducao = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Badge de alerta para produções antigas */}
-            {registrosAntigos.length > 0 && (
-              <Badge variant="destructive" className="animate-pulse">
-                {registrosAntigos.length} {registrosAntigos.length === 1 ? 'produção' : 'produções'} de dias anteriores
-              </Badge>
-            )}
             {isRefreshing && (
               <Badge variant="outline" className="animate-pulse text-muted-foreground">
                 <div className="inline-block h-3 w-3 mr-2 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
                 Sincronizando...
               </Badge>
-            )}
-            {/* Botão para limpar produções antigas */}
-            {registrosAntigos.length > 0 && (
-              <Button 
-                size="sm" 
-                variant="outline"
-                onClick={() => setModalCancelarAntigos(true)}
-                className="border-destructive text-destructive hover:bg-destructive/10"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Limpar antigas
-              </Button>
             )}
             <Button size="sm" onClick={() => loadProducaoRegistros()} disabled={isRefreshing} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -1685,13 +1618,6 @@ const ResumoDaProducao = () => {
         insumos={montarListaInsumos(registroParaIniciar)}
       />
 
-      {/* Modal de Cancelar Produções Antigas em Lote */}
-      <CancelarProducoesAntigasModal
-        open={modalCancelarAntigos}
-        onOpenChange={setModalCancelarAntigos}
-        registrosAntigos={registrosAntigos}
-        onConfirm={handleCancelarProducoesAntigas}
-      />
     </Layout>
   );
 };
