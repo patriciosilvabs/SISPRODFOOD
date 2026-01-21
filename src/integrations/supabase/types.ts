@@ -3345,6 +3345,17 @@ export type Database = {
             }
             Returns: Json
           }
+        | {
+            Args: {
+              p_dia_operacional?: string
+              p_is_incremental?: boolean
+              p_item_id: string
+              p_organization_id: string
+              p_usuario_id: string
+              p_usuario_nome: string
+            }
+            Returns: Json
+          }
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
