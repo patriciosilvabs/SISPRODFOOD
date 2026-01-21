@@ -86,6 +86,32 @@ const Insumos = () => {
     fetchInsumos();
   }, []);
 
+  // Realtime subscription para sincronização automática entre usuários/dispositivos
+  useEffect(() => {
+    if (!organizationId) return;
+
+    const channel = supabase
+      .channel('insumos-estoque-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'insumos',
+          filter: `organization_id=eq.${organizationId}`
+        },
+        (payload) => {
+          console.log('[Insumos] Estoque atualizado via realtime:', payload);
+          fetchInsumos();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [organizationId]);
+
   const fetchInsumos = async () => {
     try {
       const { data, error } = await supabase
