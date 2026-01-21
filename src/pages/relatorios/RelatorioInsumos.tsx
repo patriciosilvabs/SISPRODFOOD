@@ -66,6 +66,50 @@ const RelatorioInsumos = () => {
     }
   }, [organizationId]);
 
+  // Realtime subscription para manter os dados sincronizados
+  useEffect(() => {
+    if (!organizationId) return;
+
+    // Canal para insumos - atualiza quando estoque muda
+    const channelInsumos = supabase
+      .channel('insumos-relatorio-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'insumos',
+          filter: `organization_id=eq.${organizationId}`
+        },
+        () => {
+          loadEstoqueAtual();
+        }
+      )
+      .subscribe();
+
+    // Canal para movimentações - atualiza histórico
+    const channelMovimentacoes = supabase
+      .channel('movimentacoes-relatorio-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'movimentacoes_estoque_log',
+          filter: `organization_id=eq.${organizationId}`
+        },
+        () => {
+          loadMovimentacoes();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channelInsumos);
+      supabase.removeChannel(channelMovimentacoes);
+    };
+  }, [organizationId]);
+
   const loadData = async () => {
     setLoading(true);
     await Promise.all([loadMovimentacoes(), loadEstoqueAtual()]);
