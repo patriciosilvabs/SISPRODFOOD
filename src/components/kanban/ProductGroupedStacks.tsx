@@ -8,6 +8,7 @@ interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
   unidade: string;
+  unidade_estoque: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
 }

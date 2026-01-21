@@ -35,6 +35,7 @@ interface InsumoExtraComEstoque {
   nome: string;
   quantidade_necessaria: number;
   unidade: string;
+  unidade_estoque: string;
   estoque_disponivel: number;
   estoque_suficiente: boolean;
 }
@@ -560,13 +561,15 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                           </div>
                           <div className="flex justify-end mt-1">
                             <span className={`text-[10px] tabular-nums ${!extra.estoque_suficiente ? 'text-destructive' : 'text-muted-foreground'}`}>
-                              Estoque: {extra.unidade === 'g' 
-                                ? formatarPesoExibicao(extra.estoque_disponivel)
-                                : extra.unidade === 'unidade'
-                                  ? `${extra.estoque_disponivel % 1 === 0 
-                                      ? extra.estoque_disponivel.toFixed(0) 
-                                      : extra.estoque_disponivel.toFixed(2)} un`
-                                  : `${extra.estoque_disponivel.toFixed(2)} ${extra.unidade}`
+                              Estoque: {extra.unidade_estoque === 'kg' 
+                                ? `${extra.estoque_disponivel.toFixed(2)} kg`
+                                : extra.unidade_estoque === 'g'
+                                  ? formatarPesoExibicao(extra.estoque_disponivel)
+                                  : extra.unidade_estoque === 'unidade'
+                                    ? `${extra.estoque_disponivel % 1 === 0 
+                                        ? extra.estoque_disponivel.toFixed(0) 
+                                        : extra.estoque_disponivel.toFixed(2)} un`
+                                    : `${extra.estoque_disponivel.toFixed(2)} ${extra.unidade_estoque}`
                               }
                             </span>
                           </div>
