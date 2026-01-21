@@ -291,12 +291,15 @@ const RelatorioInsumos = () => {
         </div>
 
         <Tabs defaultValue="movimentacoes" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="movimentacoes" className="text-xs sm:text-sm">
               {isMobile ? 'Histórico' : 'Histórico de Movimentações'}
             </TabsTrigger>
             <TabsTrigger value="estoque" className="text-xs sm:text-sm">
               {isMobile ? 'Estoque' : 'Estoque Atual'}
+            </TabsTrigger>
+            <TabsTrigger value="compras" className="text-xs sm:text-sm">
+              {isMobile ? 'Compras' : 'Necessidade de Compra'}
             </TabsTrigger>
           </TabsList>
 
@@ -627,7 +630,10 @@ const RelatorioInsumos = () => {
               </CardContent>
             </Card>
 
-            {/* Resumo de Necessidade de Compra */}
+          </TabsContent>
+
+          {/* Aba de Necessidade de Compra */}
+          <TabsContent value="compras" className="space-y-4">
             <ResumoNecessidadeCompra 
               insumos={estoqueAtual}
               organizationId={organizationId}
