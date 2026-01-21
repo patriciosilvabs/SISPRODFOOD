@@ -96,27 +96,35 @@ export const useSessaoContagem = ({
   }, [organizationId]);
 
   // Iniciar sessão de contagem
+  // IMPORTANTE: Calcula e TRAVA o dia_operacional no momento de início
+  // Todas as operações subsequentes usarão este valor para consistência
   const iniciarSessao = async (
     lojaId: string,
     userName: string
-  ): Promise<{ success: boolean }> => {
+  ): Promise<{ success: boolean; diaOperacional?: string }> => {
     if (!organizationId || !userId) {
       toast.error('Sessão inválida. Faça login novamente.');
       return { success: false };
     }
 
-    const diaOperacional = diasOperacionaisPorLoja[lojaId];
-    if (!diaOperacional) {
-      toast.error('Dia operacional não encontrado para esta loja.');
-      return { success: false };
-    }
-
     try {
-      // Criar/atualizar sessão
+      // CRÍTICO: Calcular dia operacional AGORA e TRAVAR para toda a sessão
+      const { data: diaOpCalculado, error: diaOpError } = await supabase
+        .rpc('calcular_dia_operacional', { p_loja_id: lojaId });
+
+      if (diaOpError || !diaOpCalculado) {
+        console.error('Erro ao calcular dia operacional:', diaOpError);
+        toast.error('Erro ao calcular dia operacional. Tente novamente.');
+        return { success: false };
+      }
+
+      const diaOperacionalTravado = diaOpCalculado;
+
+      // Criar/atualizar sessão com dia operacional TRAVADO
       const { error } = await supabase.from('sessoes_contagem').upsert(
         {
           loja_id: lojaId,
-          dia_operacional: diaOperacional,
+          dia_operacional: diaOperacionalTravado,
           organization_id: organizationId,
           status: 'em_andamento',
           iniciado_em: new Date().toISOString(),
@@ -128,13 +136,13 @@ export const useSessaoContagem = ({
 
       if (error) throw error;
 
-      // Atualizar estado local
+      // Atualizar estado local com dia operacional TRAVADO
       setSessoes((prev) => ({
         ...prev,
         [lojaId]: {
           id: '', // Será preenchido pelo realtime ou reload
           loja_id: lojaId,
-          dia_operacional: diaOperacional,
+          dia_operacional: diaOperacionalTravado,
           status: 'em_andamento',
           iniciado_em: new Date().toISOString(),
           iniciado_por_nome: userName,
@@ -151,7 +159,7 @@ export const useSessaoContagem = ({
       });
 
       toast.success('Sessão de contagem iniciada! Preencha todos os itens.');
-      return { success: true };
+      return { success: true, diaOperacional: diaOperacionalTravado };
     } catch (error) {
       console.error('Erro ao iniciar sessão:', error);
       toast.error('Erro ao iniciar sessão de contagem.');
