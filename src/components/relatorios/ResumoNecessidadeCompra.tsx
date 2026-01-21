@@ -110,19 +110,22 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
         
         const itemConfig = itensMap[ext.item_porcionado_id];
         const quantidade = Number(ext.quantidade) || 0;
+        // A quantidade no insumos_extras está em gramas, 
+        // mas o estoque está em kg, então dividimos por 1000
+        const quantidadeEmKg = quantidade / 1000;
         let consumo = 0;
 
         if (ext.escala_configuracao === 'por_unidade') {
           // Consumo por unidade produzida
-          consumo = demanda * quantidade;
+          consumo = demanda * quantidadeEmKg;
         } else if (ext.escala_configuracao === 'por_lote') {
           // Consumo por lote - precisa calcular quantos lotes
           const unidadesPorLote = itemConfig?.equivalencia_traco || itemConfig?.quantidade_por_lote || 1;
           const lotes = Math.ceil(demanda / unidadesPorLote);
-          consumo = lotes * quantidade;
+          consumo = lotes * quantidadeEmKg;
         } else {
           // Default: por unidade
-          consumo = demanda * quantidade;
+          consumo = demanda * quantidadeEmKg;
         }
 
         consumoPorInsumo[ext.insumo_id] = (consumoPorInsumo[ext.insumo_id] || 0) + consumo;
