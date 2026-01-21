@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { ResumoNecessidadeCompra } from '@/components/relatorios/ResumoNecessidadeCompra';
+import { ConferenciaProducaoTab } from '@/components/relatorios/ConferenciaProducaoTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface MovimentacaoInsumo {
@@ -335,7 +336,7 @@ const RelatorioInsumos = () => {
         </div>
 
         <Tabs defaultValue="movimentacoes" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="movimentacoes" className="text-xs sm:text-sm">
               {isMobile ? 'Histórico' : 'Histórico de Movimentações'}
             </TabsTrigger>
@@ -344,6 +345,9 @@ const RelatorioInsumos = () => {
             </TabsTrigger>
             <TabsTrigger value="compras" className="text-xs sm:text-sm">
               {isMobile ? 'Compras' : 'Necessidade de Compra'}
+            </TabsTrigger>
+            <TabsTrigger value="conferencia" className="text-xs sm:text-sm">
+              {isMobile ? 'Conferência' : 'Conferência de Produção'}
             </TabsTrigger>
           </TabsList>
 
@@ -682,6 +686,11 @@ const RelatorioInsumos = () => {
               insumos={estoqueAtual}
               organizationId={organizationId}
             />
+          </TabsContent>
+
+          {/* Aba de Conferência de Produção */}
+          <TabsContent value="conferencia" className="space-y-4">
+            <ConferenciaProducaoTab organizationId={organizationId} />
           </TabsContent>
         </Tabs>
       </div>
