@@ -668,7 +668,16 @@ const Insumos = () => {
                   ) : (
                     insumos.map((insumo) => (
                       <TableRow key={insumo.id}>
-                        <TableCell className="font-medium text-primary">{insumo.nome}</TableCell>
+                        <TableCell className="font-medium text-primary">
+                          <div className="flex flex-col">
+                            <span>{insumo.nome}</span>
+                            {insumo.data_ultima_movimentacao && (
+                              <span className="text-[10px] text-muted-foreground/70">
+                                Atualizado às {format(new Date(insumo.data_ultima_movimentacao), "HH:mm:ss", { locale: ptBR })}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
                             <span
