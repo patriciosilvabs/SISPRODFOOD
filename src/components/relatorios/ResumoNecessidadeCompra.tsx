@@ -391,6 +391,11 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{item.insumo_nome}</p>
                       <p className="text-xs text-muted-foreground">{item.unidade}</p>
+                      {ultimaAtualizacao && (
+                        <p className="text-[10px] text-muted-foreground/60">
+                          Atualizado às {formatarHorario(ultimaAtualizacao)}
+                        </p>
+                      )}
                     </div>
                     
                     {/* Estoque */}
