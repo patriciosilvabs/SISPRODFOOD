@@ -293,8 +293,8 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                     {isMobile ? 'Necessidade de Compra' : 'Resumo de Necessidade de Compra'}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {isMobile && ultimaAtualizacao 
-                      ? `Atualizado às ${formatarHorario(ultimaAtualizacao)}`
+                    {ultimaAtualizacao 
+                      ? `Atualizado às ${formatarHorario(ultimaAtualizacao)} • Consumo previsto`
                       : 'Consumo previsto baseado nas produções ativas'
                     }
                   </CardDescription>
