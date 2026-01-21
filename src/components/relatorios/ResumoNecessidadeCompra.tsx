@@ -317,14 +317,14 @@ export const ResumoNecessidadeCompra = ({ insumos, organizationId }: ResumoNeces
                       </div>
                       {getStatusBadge(item.status)}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
                         <p className="text-muted-foreground">Estoque</p>
-                        <p className="font-mono font-semibold">{formatarValor(item.estoque_atual, item.unidade)}</p>
+                        <p className="font-mono font-semibold text-base">{formatarValor(item.estoque_atual, item.unidade)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Consumo Prev.</p>
-                        <p className="font-mono font-semibold text-amber-600">{formatarValor(item.consumo_previsto, item.unidade)}</p>
+                        <p className="font-mono font-semibold text-base text-amber-600">{formatarValor(item.consumo_previsto, item.unidade)}</p>
                       </div>
                     </div>
                   </Card>
