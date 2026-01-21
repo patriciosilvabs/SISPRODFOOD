@@ -511,23 +511,25 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                       {/* Insumo Principal */}
                       {registro.insumo_principal_nome && registro.peso_programado_kg && (
                         <div className={`
-                          flex items-center justify-between py-2 px-2 rounded-md
+                          flex flex-col py-2 px-2 rounded-md
                           ${estoqueInsuficiente ? 'bg-destructive/10 border border-destructive/30' : 'bg-slate-100/80 dark:bg-slate-800/50'}
                         `}>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
-                            {estoqueInsuficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
-                          </div>
-                          <div className="text-right">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium">{registro.insumo_principal_nome}</span>
+                              {estoqueInsuficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                            </div>
                             <span className={`text-xs font-bold tabular-nums ${estoqueInsuficiente ? 'text-destructive' : ''}`}>
                               {registro.peso_programado_kg} kg
                             </span>
-                            {estoqueInsuficiente && registro.insumo_principal_estoque_kg !== undefined && (
-                              <div className="text-[10px] text-destructive">
-                                Disp: {registro.insumo_principal_estoque_kg} kg
-                              </div>
-                            )}
                           </div>
+                          {registro.insumo_principal_estoque_kg !== undefined && (
+                            <div className="flex justify-end mt-1">
+                              <span className={`text-[10px] tabular-nums ${estoqueInsuficiente ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                Estoque: {formatarPesoExibicao(registro.insumo_principal_estoque_kg * 1000)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
                       
@@ -536,24 +538,38 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                         <div 
                           key={idx} 
                           className={`
-                            flex items-center justify-between py-2 px-2 rounded-md
+                            flex flex-col py-2 px-2 rounded-md
                             ${!extra.estoque_suficiente ? 'bg-destructive/10 border border-destructive/30' : 'bg-slate-100/80 dark:bg-slate-800/50'}
                           `}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium">{extra.nome}</span>
-                            {!extra.estoque_suficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium">{extra.nome}</span>
+                              {!extra.estoque_suficiente && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                            </div>
+                            <span className={`text-xs font-bold tabular-nums ${!extra.estoque_suficiente ? 'text-destructive' : ''}`}>
+                              {extra.unidade === 'g' 
+                                ? formatarPesoExibicao(extra.quantidade_necessaria)
+                                : extra.unidade === 'unidade'
+                                  ? `${extra.quantidade_necessaria % 1 === 0 
+                                      ? extra.quantidade_necessaria.toFixed(0) 
+                                      : extra.quantidade_necessaria.toFixed(2)} unidades`
+                                  : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
+                              }
+                            </span>
                           </div>
-                          <span className={`text-xs font-bold tabular-nums ${!extra.estoque_suficiente ? 'text-destructive' : ''}`}>
-                            {extra.unidade === 'g' 
-                              ? formatarPesoExibicao(extra.quantidade_necessaria)
-                              : extra.unidade === 'unidade'
-                                ? `${extra.quantidade_necessaria % 1 === 0 
-                                    ? extra.quantidade_necessaria.toFixed(0) 
-                                    : extra.quantidade_necessaria.toFixed(2)} unidades`
-                                : `${extra.quantidade_necessaria.toFixed(2)} ${extra.unidade}`
-                            }
-                          </span>
+                          <div className="flex justify-end mt-1">
+                            <span className={`text-[10px] tabular-nums ${!extra.estoque_suficiente ? 'text-destructive' : 'text-muted-foreground'}`}>
+                              Estoque: {extra.unidade === 'g' 
+                                ? formatarPesoExibicao(extra.estoque_disponivel)
+                                : extra.unidade === 'unidade'
+                                  ? `${extra.estoque_disponivel % 1 === 0 
+                                      ? extra.estoque_disponivel.toFixed(0) 
+                                      : extra.estoque_disponivel.toFixed(2)} un`
+                                  : `${extra.estoque_disponivel.toFixed(2)} ${extra.unidade}`
+                              }
+                            </span>
+                          </div>
                         </div>
                       ))}
 
