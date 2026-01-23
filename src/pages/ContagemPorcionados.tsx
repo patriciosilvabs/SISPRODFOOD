@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/dialog';
 import { useSessaoContagem } from '@/hooks/useSessaoContagem';
 import { useJanelaContagem } from '@/hooks/useJanelaContagem';
-import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
+import { useRomaneioNotificacao } from '@/hooks/useRomaneioNotificacao';
 import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
 import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
@@ -165,8 +165,8 @@ const ContagemPorcionados = () => {
     isDepoisJanela,
   } = useJanelaContagem(lojas.map(l => l.id));
 
-  // Hook de romaneio automático
-  const { verificarECriarRomaneiosAutomaticos } = useRomaneioAutomatico();
+  // Hook de notificação (romaneio é 100% manual)
+  const { verificarSeTodasLojasEncerraram } = useRomaneioNotificacao();
 
   // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
   const isRestrictedUser = !isAdmin();
@@ -608,21 +608,18 @@ const ContagemPorcionados = () => {
           .eq('id', lojaId)
           .single();
         
-        // Verificar se TODAS as lojas encerraram (apenas notificação, sem criação automática)
+        // Verificar se TODAS as lojas encerraram (apenas notificação - romaneio é 100% manual)
         if (lojaData?.tipo !== 'cpd' && organizationId) {
           console.log('[handleEncerrarSessao] Verificando se todas as lojas encerraram...');
-          const result = await verificarECriarRomaneiosAutomaticos(
+          const result = await verificarSeTodasLojasEncerraram(
             organizationId,
-            diaOperacionalTravado,
-            user!.id,
-            profile?.nome || user?.email || 'Usuário'
+            diaOperacionalTravado
           );
           
           if (result.aguardandoLojas.length > 0) {
             toast.info(`Aguardando ${result.aguardandoLojas.length} loja(s) encerrar contagem: ${result.aguardandoLojas.join(', ')}`);
           }
-          // Nota: Romaneios não são mais criados automaticamente.
-          // O operador deve ir à tela de Romaneio e escolher a ordem das lojas.
+          // Romaneio é 100% manual - operador vai à tela de Romaneio
         }
 
         // 7. Enviar email de resumo da contagem

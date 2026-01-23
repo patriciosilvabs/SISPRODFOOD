@@ -22,7 +22,7 @@ import { WeightInput } from '@/components/ui/weight-input';
 import { VolumeInput } from '@/components/ui/volume-input';
 import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weightUtils';
 import { pesoProgressivoToWords } from '@/lib/numberToWords';
-import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
+// Romaneio automático removido - fluxo é 100% manual
 import { LojaSelectionGrid } from '@/components/romaneio/LojaSelectionGrid';
 
 // Formatar código do lote adicionando data legível
@@ -506,7 +506,7 @@ const Romaneio = () => {
   const { organizationId } = useOrganization();
   const { primaryLoja, userLojas } = useUserLoja();
   const { cpdLojaId } = useCPDLoja();
-  const { buscarProducoesPendentes } = useRomaneioAutomatico();
+  // Romaneio automático removido - fluxo é 100% manual
 
   // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
   const isRestrictedUser = !isAdmin();
@@ -551,7 +551,7 @@ const Romaneio = () => {
   
   // Romaneios aguardando conferência
   const [romaneiosAguardando, setRomaneiosAguardando] = useState<RomaneioAguardandoConferencia[]>([]);
-  const [loadingBuscarPendentes, setLoadingBuscarPendentes] = useState(false);
+  // Estado removido - buscarProducoesPendentes não é mais usado
   
   // Estoque CPD para exibição de resumo
   const [estoqueCPDResumo, setEstoqueCPDResumo] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
@@ -1358,19 +1358,8 @@ const Romaneio = () => {
     }
   };
 
-  const handleBuscarPendentes = async () => {
-    if (!organizationId) return;
-    
-    setLoadingBuscarPendentes(true);
-    try {
-      await buscarProducoesPendentes(organizationId);
-      await fetchRomaneiosAguardando();
-    } catch (error) {
-      console.error('Erro ao buscar pendentes:', error);
-    } finally {
-      setLoadingBuscarPendentes(false);
-    }
-  };
+  // handleBuscarPendentes REMOVIDO - fluxo é 100% manual agora
+  // O operador seleciona a loja e confirma o envio manualmente
 
   // ==================== HANDLERS: ENVIAR POR LOJA ====================
 
@@ -2133,21 +2122,7 @@ const Romaneio = () => {
               {canManageProduction && (
                 <TabsContent value="enviar" className="space-y-4">
                   {/* Botões de ação */}
-                  <div className="flex justify-between items-center">
-                    <Button 
-                      variant="secondary" 
-                      size="sm" 
-                      onClick={handleBuscarPendentes}
-                      disabled={loadingBuscarPendentes}
-                      className="gap-2"
-                    >
-                      {loadingBuscarPendentes ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4" />
-                      )}
-                      Buscar Pendentes
-                    </Button>
+                  <div className="flex justify-end items-center">
                     <Button 
                       variant="outline" 
                       size="sm" 
