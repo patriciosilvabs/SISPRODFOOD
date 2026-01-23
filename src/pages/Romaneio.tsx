@@ -801,31 +801,71 @@ const Romaneio = () => {
         itens_porcionados: item.itens_porcionados
       })) || [];
 
-      // 2. Buscar produções finalizadas dos últimos 2 dias com detalhes_lojas não vazios
-      const { data: producoesRaw, error: producoesError } = await supabase
-        .from('producao_registros')
-        .select('id, item_id, item_nome, detalhes_lojas, data_fim, sequencia_traco, data_referencia, codigo_lote')
-        .eq('status', 'finalizado')
-        .gte('data_referencia', ontemStr)
-        .not('detalhes_lojas', 'is', null)
-        .order('data_fim', { ascending: false });
-
-      if (producoesError) throw producoesError;
-      console.log('[Romaneio] Produções brutas encontradas:', producoesRaw?.length);
-
-      // 3. Filtrar produções com detalhes_lojas vazios (traços secundários têm [])
-      const producoes = producoesRaw?.filter(prod => {
-        const detalhes = prod.detalhes_lojas as Array<any> | null;
-        // Excluir se detalhes_lojas é null, não é array, ou está vazio
-        return detalhes && Array.isArray(detalhes) && detalhes.length > 0;
-      }) || [];
+      // 2. CORREÇÃO: Buscar demandas diretamente de contagem_porcionados das lojas (não producao_registros)
+      // O campo a_produzir = ideal_amanha - final_sobra representa a demanda real de cada loja
+      const lojasIds = lojas.map(l => l.id);
       
-      console.log('[Romaneio] Produções após filtro (detalhes_lojas não vazio):', producoes.length);
-      producoes.forEach(p => {
-        console.log(`[Romaneio] - ${p.item_nome}: detalhes_lojas =`, p.detalhes_lojas);
+      // Buscar contagens das lojas (exceto CPD) do dia operacional atual
+      let contagensLojas: Array<{
+        loja_id: string;
+        item_porcionado_id: string;
+        a_produzir: number;
+        itens_porcionados: { id: string; nome: string };
+      }> | null = null;
+      
+      const { data: contagensHojeLojas, error: contagensLojasError } = await supabase
+        .from('contagem_porcionados')
+        .select(`
+          loja_id,
+          item_porcionado_id,
+          a_produzir,
+          itens_porcionados!inner(id, nome)
+        `)
+        .in('loja_id', lojasIds)
+        .eq('dia_operacional', diaOperacional)
+        .gt('a_produzir', 0);
+      
+      if (contagensLojasError) throw contagensLojasError;
+      
+      console.log('[Romaneio] Contagens das lojas (dia atual):', contagensHojeLojas?.length || 0, 'itens com demanda');
+      
+      if (contagensHojeLojas && contagensHojeLojas.length > 0) {
+        contagensLojas = contagensHojeLojas;
+      } else {
+        // Fallback: buscar do dia anterior se não encontrar hoje
+        const ontemDate = new Date(diaOperacional);
+        ontemDate.setDate(ontemDate.getDate() - 1);
+        const ontemOperacional = ontemDate.toISOString().split('T')[0];
+        
+        console.log('[Romaneio] Nenhuma demanda hoje, buscando de:', ontemOperacional);
+        
+        const { data: contagensOntemLojas, error: contagensOntemError } = await supabase
+          .from('contagem_porcionados')
+          .select(`
+            loja_id,
+            item_porcionado_id,
+            a_produzir,
+            itens_porcionados!inner(id, nome)
+          `)
+          .in('loja_id', lojasIds)
+          .eq('dia_operacional', ontemOperacional)
+          .gt('a_produzir', 0);
+        
+        if (contagensOntemError) throw contagensOntemError;
+        
+        if (contagensOntemLojas && contagensOntemLojas.length > 0) {
+          contagensLojas = contagensOntemLojas;
+          console.log('[Romaneio] Usando contagens do dia anterior:', contagensLojas.length, 'itens');
+        }
+      }
+      
+      // Log detalhado das demandas encontradas
+      contagensLojas?.forEach(c => {
+        const lojaNome = lojas.find(l => l.id === c.loja_id)?.nome || c.loja_id;
+        console.log(`[Romaneio] Demanda ${lojaNome}: ${(c.itens_porcionados as any).nome} = ${c.a_produzir} un`);
       });
 
-      // 3. Buscar romaneios pendentes/enviados COM data_criacao para filtrar por produção
+      // 3. Buscar romaneios pendentes/enviados do dia atual
       const { data: romaneiosPendentes, error: romaneiosError } = await supabase
         .from('romaneio_itens')
         .select(`item_porcionado_id, quantidade, romaneios!inner(loja_id, status, data_criacao)`)
@@ -852,73 +892,36 @@ const Romaneio = () => {
       setEstoqueCPDResumo(resumoEstoque);
       console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
-      // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
-      // E criar mapa de data_fim por item para filtrar romaneios
-      const demandaPorLojaItem: Record<string, Record<string, { quantidade: number; codigo_lote?: string; producao_registro_id: string }>> = {};
-      const dataFimPorItem: Record<string, string> = {}; // Mapa: item_id -> data_fim da última produção
-      const itemsProcessados = new Set<string>();
+      // 5. Construir mapa de demanda por loja/item a partir das contagens
+      const demandaPorLojaItem: Record<string, Record<string, { quantidade: number }>> = {};
       
-      // Produções já ordenadas por data_fim DESC, então primeira aparição é a mais recente
-      producoes?.forEach(prod => {
-        // Pular se já processamos este item (usar apenas a última produção)
-        if (itemsProcessados.has(prod.item_id)) return;
-        itemsProcessados.add(prod.item_id);
+      contagensLojas?.forEach(c => {
+        const lojaId = c.loja_id;
+        const itemId = c.item_porcionado_id;
+        const demanda = c.a_produzir;
         
-        // Armazenar data_fim desta produção (mais recente)
-        if (prod.data_fim) {
-          dataFimPorItem[prod.item_id] = prod.data_fim;
-        }
-        
-        const detalhes = prod.detalhes_lojas as Array<{ loja_id: string; loja_nome?: string; quantidade: number }> | null;
-        
-        // Verificar se detalhes_lojas existe E não está vazio
-        if (!detalhes || !Array.isArray(detalhes) || detalhes.length === 0) return;
-        
-        detalhes.forEach(d => {
-          if (d.quantidade > 0 && d.loja_id) {
-            if (!demandaPorLojaItem[d.loja_id]) {
-              demandaPorLojaItem[d.loja_id] = {};
-            }
-            demandaPorLojaItem[d.loja_id][prod.item_id] = {
-              quantidade: d.quantidade,
-              codigo_lote: prod.codigo_lote,
-              producao_registro_id: prod.id
-            };
+        if (demanda > 0) {
+          if (!demandaPorLojaItem[lojaId]) {
+            demandaPorLojaItem[lojaId] = {};
           }
-        });
+          demandaPorLojaItem[lojaId][itemId] = { quantidade: demanda };
+        }
       });
       
       console.log('[Romaneio] Demanda por loja/item:', demandaPorLojaItem);
-      console.log('[Romaneio] Data fim por item:', dataFimPorItem);
 
-      // 6. Calcular já enviado por loja e item - APENAS romaneios criados APÓS a finalização da produção
+      // 6. Calcular já enviado por loja e item (romaneios do dia atual)
       const jaEnviadoPorLojaItem: Record<string, Record<string, number>> = {};
       romaneiosPendentes?.forEach(ri => {
         const lojaId = (ri.romaneios as any).loja_id;
         const itemId = ri.item_porcionado_id;
-        const dataCriacaoRomaneio = (ri.romaneios as any).data_criacao;
-        const dataFimProd = dataFimPorItem[itemId];
-        
-        // Só conta como "já enviado" se romaneio foi criado APÓS a finalização da produção atual
-        // Se não há produção para este item, também não conta (produção antiga foi substituída)
-        if (!dataFimProd) {
-          console.log(`[Romaneio] Item ${itemId} sem produção atual - romaneio ignorado`);
-          return;
-        }
-        
-        if (dataCriacaoRomaneio <= dataFimProd) {
-          console.log(`[Romaneio] Romaneio de ${itemId} criado ANTES da produção atual (${dataCriacaoRomaneio} <= ${dataFimProd}) - ignorado`);
-          return;
-        }
-        
-        console.log(`[Romaneio] Romaneio de ${itemId} criado APÓS produção (${dataCriacaoRomaneio} > ${dataFimProd}) - contando...`);
         
         if (!jaEnviadoPorLojaItem[lojaId]) {
           jaEnviadoPorLojaItem[lojaId] = {};
         }
         jaEnviadoPorLojaItem[lojaId][itemId] = (jaEnviadoPorLojaItem[lojaId][itemId] || 0) + ri.quantidade;
       });
-      console.log('[Romaneio] Já enviado por loja/item (após filtro por data):', jaEnviadoPorLojaItem);
+      console.log('[Romaneio] Já enviado por loja/item:', jaEnviadoPorLojaItem);
 
       // 7. Construir demandas para cada loja
       const demandasProcessadas: DemandaPorLoja[] = lojas.map(loja => {
@@ -940,7 +943,7 @@ const Romaneio = () => {
           const demandaPendente = Math.max(0, quantidade - qtdJaEnviada);
           const disponivel = Math.min(demandaPendente, estoque.quantidade);
           
-          console.log(`[Romaneio] ${loja.nome} - ${estoque.nome}: demanda=${quantidade}, jaEnviado=${qtdJaEnviada}, pendente=${demandaPendente}, disponivel=${disponivel}, codigo_lote=${itemData.codigo_lote}`);
+          console.log(`[Romaneio] ${loja.nome} - ${estoque.nome}: demanda=${quantidade}, jaEnviado=${qtdJaEnviada}, pendente=${demandaPendente}, disponivel=${disponivel}`);
           
           if (disponivel > 0) {
             const itemDemanda: ItemDemandaLoja = {
@@ -949,9 +952,7 @@ const Romaneio = () => {
               quantidade_demanda: quantidade,
               quantidade_estoque_cpd: estoque.quantidade,
               quantidade_disponivel: disponivel,
-              quantidade_ja_enviada: qtdJaEnviada,
-              codigo_lote: itemData.codigo_lote,
-              producao_registro_id: itemData.producao_registro_id
+              quantidade_ja_enviada: qtdJaEnviada
             };
             itens.push(itemDemanda);
             
@@ -962,8 +963,6 @@ const Romaneio = () => {
               quantidade: disponivel,
               peso_g: '',
               volumes: '',
-              codigo_lote: itemData.codigo_lote,
-              producao_registro_id: itemData.producao_registro_id,
               salvo: false
             });
           }
