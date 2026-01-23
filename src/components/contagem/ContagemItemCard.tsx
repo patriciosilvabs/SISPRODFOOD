@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useLongPress } from '@/hooks/useLongPress';
 
 interface ContagemItemCardProps {
   item: {
@@ -52,6 +53,27 @@ export const ContagemItemCard = ({
   showProducaoExtra = false,
   onSolicitarProducaoExtra,
 }: ContagemItemCardProps) => {
+  // Hooks para segurar e acelerar os botões
+  const decrementHandlers = useLongPress({
+    onPress: onDecrementSobra,
+    initialDelay: 400,
+    accelerationSteps: [
+      { delay: 0, interval: 150 },
+      { delay: 800, interval: 80 },
+      { delay: 1500, interval: 40 },
+    ],
+  });
+
+  const incrementHandlers = useLongPress({
+    onPress: onIncrementSobra,
+    initialDelay: 400,
+    accelerationSteps: [
+      { delay: 0, interval: 150 },
+      { delay: 800, interval: 80 },
+      { delay: 1500, interval: 40 },
+    ],
+  });
+
   const getCardClasses = () => {
     if (isItemNaoPreenchido) {
       return 'bg-gray-50 dark:bg-gray-800/50 border-l-amber-400 ring-2 ring-amber-200 dark:ring-amber-800 ring-inset';
@@ -97,8 +119,8 @@ export const ContagemItemCard = ({
             type="button"
             variant="default" 
             size="icon" 
-            className="h-12 w-12 rounded-l-xl rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-            onClick={onDecrementSobra}
+            className="h-12 w-12 rounded-l-xl rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+            {...decrementHandlers}
           >
             <Minus className="h-5 w-5" />
           </Button>
@@ -113,8 +135,8 @@ export const ContagemItemCard = ({
             type="button"
             variant="default" 
             size="icon" 
-            className="h-12 w-12 rounded-r-xl rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-            onClick={onIncrementSobra}
+            className="h-12 w-12 rounded-r-xl rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+            {...incrementHandlers}
           >
             <Plus className="h-5 w-5" />
           </Button>
