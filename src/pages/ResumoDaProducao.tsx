@@ -22,7 +22,7 @@ import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
-import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
+// Hook de romaneio automático removido - fluxo agora é 100% manual
 
 
 interface DetalheLojaProducao {
@@ -135,7 +135,7 @@ const ResumoDaProducao = () => {
   const { playAlarm, stopAlarm } = useAlarmSound();
   const { log } = useAuditLog();
   const { registrarMovimentacao } = useMovimentacaoEstoque();
-  const { criarRomaneiosAutomaticos } = useRomaneioAutomatico();
+  // Romaneio automático removido - fluxo agora é 100% manual na tela de Romaneio
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -1265,20 +1265,9 @@ const ResumoDaProducao = () => {
 
         toast.success('Produção finalizada com sucesso!');
         
-        // === ROMANEIO AUTOMÁTICO ===
-        // Após creditar estoque, verificar se pode criar romaneios automaticamente
-        if (selectedRegistro.detalhes_lojas && selectedRegistro.detalhes_lojas.length > 0) {
-          await criarRomaneiosAutomaticos(
-            selectedRegistro.id,
-            selectedRegistro.item_id,
-            selectedRegistro.item_nome,
-            selectedRegistro.detalhes_lojas,
-            data.unidades_reais,
-            organizationId!,
-            user?.id || '',
-            profile?.nome || 'Sistema'
-          );
-        }
+        // === ROMANEIO MANUAL ===
+        // Estoque creditado no CPD. Operador deve ir à tela de Romaneio
+        // para escolher a ordem de envio das lojas e confirmar manualmente.
       }
 
       // Atualização otimista: mover card localmente
