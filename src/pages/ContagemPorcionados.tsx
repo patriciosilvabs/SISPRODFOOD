@@ -623,6 +623,48 @@ const ContagemPorcionados = () => {
           }
         }
 
+        // 7. Enviar email de resumo da contagem
+        try {
+          const currentDay = getCurrentDayKey(diaOperacionalTravado);
+          const itensResumo = itens.map(item => {
+            const estoqueKey = `${lojaId}-${item.id}`;
+            const contagem = contagens[lojaId]?.find(c => c.item_porcionado_id === item.id);
+            const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+            const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+            const finalSobra = contagem?.final_sobra ?? 0;
+            const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+            
+            return {
+              nome: item.nome,
+              ideal: idealFromConfig,
+              sobra: finalSobra,
+              aProduzir: aProduzir,
+            };
+          });
+
+          console.log('[handleEncerrarSessao] Enviando email de resumo...', {
+            lojaNome: lojaAtual?.nome,
+            itensCount: itensResumo.length
+          });
+
+          await supabase.functions.invoke('enviar-email-contagem', {
+            body: {
+              organizationId,
+              lojaId,
+              lojaNome: lojaAtual?.nome || 'Loja',
+              diaOperacional: diaOperacionalTravado,
+              encerradoPor: profile?.nome || user?.email || 'Usuário',
+              encerradoEm: format(new Date(), "dd/MM 'às' HH:mm", { locale: ptBR }),
+              itens: itensResumo,
+            },
+          });
+          
+          console.log('[handleEncerrarSessao] Email de resumo enviado com sucesso');
+        } catch (emailError) {
+          console.error('[handleEncerrarSessao] Erro ao enviar email de resumo:', emailError);
+          // Não bloqueia o fluxo principal - email é complementar
+        }
+
         loadData();
       }
     } catch (error) {
