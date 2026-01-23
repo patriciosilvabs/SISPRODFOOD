@@ -3225,40 +3225,15 @@ export type Database = {
     }
     Functions: {
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
-      criar_ou_atualizar_producao_registro:
-        | {
-            Args: {
-              p_farinha_por_lote_kg?: number
-              p_item_id: string
-              p_item_nome: string
-              p_massa_gerada_por_lote_kg?: number
-              p_organization_id: string
-              p_quantidade_por_lote?: number
-              p_usuario_id: string
-              p_usuario_nome: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_item_id: string
-              p_organization_id: string
-              p_usuario_id: string
-              p_usuario_nome: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_dia_operacional?: string
-              p_is_incremental?: boolean
-              p_item_id: string
-              p_organization_id: string
-              p_usuario_id: string
-              p_usuario_nome: string
-            }
-            Returns: Json
-          }
+      criar_ou_atualizar_producao_registro: {
+        Args: {
+          p_item_id: string
+          p_organization_id: string
+          p_usuario_id: string
+          p_usuario_nome: string
+        }
+        Returns: string
+      }
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
