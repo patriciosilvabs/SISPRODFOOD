@@ -22,6 +22,7 @@ import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { RefreshCw } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
+import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
 
 
 interface DetalheLojaProducao {
@@ -134,6 +135,7 @@ const ResumoDaProducao = () => {
   const { playAlarm, stopAlarm } = useAlarmSound();
   const { log } = useAuditLog();
   const { registrarMovimentacao } = useMovimentacaoEstoque();
+  const { criarRomaneiosAutomaticos } = useRomaneioAutomatico();
   const [columns, setColumns] = useState<KanbanColumns>({
     a_produzir: [],
     em_preparo: [],
@@ -1211,6 +1213,21 @@ const ResumoDaProducao = () => {
         toast.error('Produção finalizada, mas erro ao atualizar estoque');
       } else {
         toast.success('Produção finalizada com sucesso!');
+        
+        // === ROMANEIO AUTOMÁTICO ===
+        // Após creditar estoque, verificar se pode criar romaneios automaticamente
+        if (selectedRegistro.detalhes_lojas && selectedRegistro.detalhes_lojas.length > 0) {
+          await criarRomaneiosAutomaticos(
+            selectedRegistro.id,
+            selectedRegistro.item_id,
+            selectedRegistro.item_nome,
+            selectedRegistro.detalhes_lojas,
+            data.unidades_reais,
+            organizationId!,
+            user?.id || '',
+            profile?.nome || 'Sistema'
+          );
+        }
       }
 
       // Atualização otimista: mover card localmente

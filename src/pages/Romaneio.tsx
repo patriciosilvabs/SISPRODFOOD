@@ -21,6 +21,7 @@ import { WeightInput } from '@/components/ui/weight-input';
 import { VolumeInput } from '@/components/ui/volume-input';
 import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weightUtils';
 import { pesoProgressivoToWords } from '@/lib/numberToWords';
+import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
 
 // Formatar código do lote adicionando data legível
 // Entrada: "LOTE-20260110-003"
@@ -160,6 +161,24 @@ interface RomaneioAvulso {
     quantidade: number;
     peso_kg: number;
     quantidade_recebida?: number;
+  }>;
+}
+
+// Interface para romaneios aguardando conferência (criados automaticamente)
+interface RomaneioAguardandoConferencia {
+  id: string;
+  loja_id: string;
+  loja_nome: string;
+  data_criacao: string;
+  usuario_nome: string;
+  itens: Array<{
+    id: string;
+    item_nome: string;
+    quantidade: number;
+    peso_g: string;
+    volumes: string;
+    salvo: boolean;
+    producao_registro_id?: string;
   }>;
 }
 
@@ -432,6 +451,7 @@ const Romaneio = () => {
   const { organizationId } = useOrganization();
   const { primaryLoja, userLojas } = useUserLoja();
   const { cpdLojaId } = useCPDLoja();
+  const { buscarProducoesPendentes } = useRomaneioAutomatico();
 
   // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
   const isRestrictedUser = !isAdmin();
@@ -473,6 +493,10 @@ const Romaneio = () => {
     salvo: boolean;
   }
   const [recebimentosPorItem, setRecebimentosPorItem] = useState<{ [itemId: string]: ItemRecebimentoState }>({});
+  
+  // Romaneios aguardando conferência
+  const [romaneiosAguardando, setRomaneiosAguardando] = useState<RomaneioAguardandoConferencia[]>([]);
+  const [loadingBuscarPendentes, setLoadingBuscarPendentes] = useState(false);
 
   // ==================== EFFECTS ====================
 
@@ -482,10 +506,11 @@ const Romaneio = () => {
     fetchUserLojas();
   }, []);
 
-  // Buscar demandas quando lojas e CPD estiverem disponíveis
+  // Buscar demandas e romaneios aguardando quando lojas e CPD estiverem disponíveis
   useEffect(() => {
     if (lojas.length > 0 && cpdLojaId && canManageProduction) {
       fetchDemandasTodasLojas();
+      fetchRomaneiosAguardando();
     }
   }, [lojas, cpdLojaId, canManageProduction]);
 
@@ -537,6 +562,7 @@ const Romaneio = () => {
         console.log('[Romaneio] Romaneio atualizado:', payload);
         fetchDemandasTodasLojas();
         fetchRomaneiosEnviados();
+        fetchRomaneiosAguardando();
       })
       .on('postgres_changes', {
         event: '*',
@@ -941,6 +967,204 @@ const Romaneio = () => {
       }
     } catch (error) {
       console.error('Erro ao buscar romaneios avulsos:', error);
+    }
+  };
+
+  // ==================== FETCH: ROMANEIOS AGUARDANDO CONFERÊNCIA ====================
+  
+  const fetchRomaneiosAguardando = async () => {
+    try {
+      // Buscar romaneios com status 'aguardando_conferencia'
+      const { data: romaneios, error } = await supabase
+        .from('romaneios')
+        .select(`
+          id, loja_id, loja_nome, data_criacao, usuario_nome,
+          romaneio_itens (id, item_nome, quantidade, peso_total_kg, quantidade_volumes, producao_registro_id)
+        `)
+        .eq('status', 'aguardando_conferencia')
+        .order('data_criacao', { ascending: true });
+
+      if (error) throw error;
+
+      // Transformar para o formato esperado
+      const romaneiosFormatados: RomaneioAguardandoConferencia[] = (romaneios || []).map(r => ({
+        id: r.id,
+        loja_id: r.loja_id,
+        loja_nome: r.loja_nome,
+        data_criacao: r.data_criacao,
+        usuario_nome: r.usuario_nome,
+        itens: (r.romaneio_itens || []).map((item: any) => ({
+          id: item.id,
+          item_nome: item.item_nome,
+          quantidade: item.quantidade,
+          peso_g: item.peso_total_kg ? String(Math.round(item.peso_total_kg * 1000)) : '',
+          volumes: item.quantidade_volumes ? String(item.quantidade_volumes) : '',
+          salvo: item.peso_total_kg > 0 && item.quantidade_volumes > 0,
+          producao_registro_id: item.producao_registro_id
+        }))
+      }));
+
+      setRomaneiosAguardando(romaneiosFormatados);
+      console.log('[Romaneio] Romaneios aguardando conferência:', romaneiosFormatados.length);
+    } catch (error) {
+      console.error('[Romaneio] Erro ao buscar romaneios aguardando:', error);
+    }
+  };
+
+  // ==================== HANDLERS: ROMANEIOS AGUARDANDO CONFERÊNCIA ====================
+
+  const handleUpdatePesoAguardando = (romaneioId: string, itemId: string, peso: string) => {
+    setRomaneiosAguardando(prev => prev.map(r => {
+      if (r.id !== romaneioId) return r;
+      return {
+        ...r,
+        itens: r.itens.map(item => 
+          item.id === itemId ? { ...item, peso_g: peso, salvo: false } : item
+        )
+      };
+    }));
+  };
+
+  const handleUpdateVolumesAguardando = (romaneioId: string, itemId: string, volumes: string) => {
+    setRomaneiosAguardando(prev => prev.map(r => {
+      if (r.id !== romaneioId) return r;
+      return {
+        ...r,
+        itens: r.itens.map(item => 
+          item.id === itemId ? { ...item, volumes, salvo: false } : item
+        )
+      };
+    }));
+  };
+
+  const handleSalvarItemAguardando = async (romaneioId: string, itemId: string) => {
+    const romaneio = romaneiosAguardando.find(r => r.id === romaneioId);
+    const item = romaneio?.itens.find(i => i.id === itemId);
+    if (!item) return;
+
+    try {
+      const pesoKg = rawToKg(item.peso_g);
+      const volumes = parseInt(item.volumes) || 0;
+
+      await supabase.from('romaneio_itens').update({
+        peso_total_kg: pesoKg,
+        quantidade_volumes: volumes
+      }).eq('id', itemId);
+
+      setRomaneiosAguardando(prev => prev.map(r => {
+        if (r.id !== romaneioId) return r;
+        return {
+          ...r,
+          itens: r.itens.map(i => 
+            i.id === itemId ? { ...i, salvo: true } : i
+          )
+        };
+      }));
+
+      toast.success(`${item.item_nome} salvo!`);
+    } catch (error) {
+      console.error('Erro ao salvar item:', error);
+      toast.error('Erro ao salvar item');
+    }
+  };
+
+  const handleEnviarRomaneioAguardando = async (romaneioId: string) => {
+    const romaneio = romaneiosAguardando.find(r => r.id === romaneioId);
+    if (!romaneio) return;
+
+    // Validar: todos os itens devem estar salvos
+    const itensNaoSalvos = romaneio.itens.filter(i => !i.salvo);
+    if (itensNaoSalvos.length > 0) {
+      toast.error(`${itensNaoSalvos.length} item(ns) não foi(ram) salvo(s). Salve todos antes de enviar.`);
+      return;
+    }
+
+    // Validar peso e volumes
+    for (const item of romaneio.itens) {
+      if (!item.peso_g || item.peso_g === '0') {
+        toast.error(`Informe o peso do item: ${item.item_nome}`);
+        return;
+      }
+      if (!item.volumes || item.volumes === '0') {
+        toast.error(`Informe a quantidade de volumes do item: ${item.item_nome}`);
+        return;
+      }
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Validar estoque CPD antes de enviar
+      for (const item of romaneio.itens) {
+        // Buscar item_porcionado_id do romaneio_item
+        const { data: romaneioItem } = await supabase
+          .from('romaneio_itens')
+          .select('item_porcionado_id')
+          .eq('id', item.id)
+          .single();
+
+        if (romaneioItem?.item_porcionado_id) {
+          const { data: estoque } = await supabase
+            .from('estoque_cpd')
+            .select('quantidade')
+            .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
+            .maybeSingle();
+
+          const estoqueAtual = estoque?.quantidade || 0;
+          if (estoqueAtual < item.quantidade) {
+            toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
+            return;
+          }
+
+          // Debitar estoque CPD
+          const novaQuantidade = estoqueAtual - item.quantidade;
+          await supabase.from('estoque_cpd').update({
+            quantidade: novaQuantidade,
+            data_ultima_movimentacao: new Date().toISOString()
+          }).eq('item_porcionado_id', romaneioItem.item_porcionado_id);
+        }
+      }
+
+      // Calcular totais
+      const pesoTotalGramas = romaneio.itens.reduce((acc, item) => 
+        acc + parsePesoProgressivo(item.peso_g).valorGramas, 0);
+      const volumesTotal = romaneio.itens.reduce((acc, item) => 
+        acc + (parseInt(item.volumes) || 0), 0);
+
+      // Atualizar romaneio para status 'enviado'
+      await supabase.from('romaneios').update({
+        status: 'enviado',
+        data_envio: new Date().toISOString(),
+        peso_total_envio_g: pesoTotalGramas,
+        quantidade_volumes_envio: volumesTotal
+      }).eq('id', romaneioId);
+
+      toast.success(`📦 Romaneio enviado para ${romaneio.loja_nome}!`);
+      
+      // Atualizar listas
+      await Promise.all([
+        fetchRomaneiosAguardando(),
+        fetchDemandasTodasLojas(),
+        fetchRomaneiosEnviados()
+      ]);
+    } catch (error) {
+      console.error('Erro ao enviar romaneio:', error);
+      toast.error('Erro ao enviar romaneio');
+    }
+  };
+
+  const handleBuscarPendentes = async () => {
+    if (!organizationId) return;
+    
+    setLoadingBuscarPendentes(true);
+    try {
+      await buscarProducoesPendentes(organizationId);
+      await fetchRomaneiosAguardando();
+    } catch (error) {
+      console.error('Erro ao buscar pendentes:', error);
+    } finally {
+      setLoadingBuscarPendentes(false);
     }
   };
 
@@ -1659,12 +1883,29 @@ const Romaneio = () => {
               {/* TAB: ENVIAR - SEÇÕES INDEPENDENTES POR LOJA */}
               {canManageProduction && (
                 <TabsContent value="enviar" className="space-y-4">
-                  {/* Botão de Atualizar */}
-                  <div className="flex justify-end">
+                  {/* Botões de ação */}
+                  <div className="flex justify-between items-center">
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      onClick={handleBuscarPendentes}
+                      disabled={loadingBuscarPendentes}
+                      className="gap-2"
+                    >
+                      {loadingBuscarPendentes ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Buscar Pendentes
+                    </Button>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      onClick={() => fetchDemandasTodasLojas()}
+                      onClick={() => {
+                        fetchDemandasTodasLojas();
+                        fetchRomaneiosAguardando();
+                      }}
                       disabled={loadingDemandas}
                       className="gap-2"
                     >
@@ -1672,6 +1913,121 @@ const Romaneio = () => {
                       Atualizar
                     </Button>
                   </div>
+
+                  {/* SEÇÃO: ROMANEIOS AGUARDANDO CONFERÊNCIA */}
+                  {romaneiosAguardando.length > 0 && (
+                    <Card className="border-2 border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/20">
+                      <CardHeader className="py-3">
+                        <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-400">
+                          <Clock className="w-5 h-5" />
+                          Romaneios Aguardando Conferência ({romaneiosAguardando.length})
+                        </CardTitle>
+                        <CardDescription>
+                          Informe peso e volumes para cada item antes de enviar
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {romaneiosAguardando.map(romaneio => {
+                          const todosItensSalvos = romaneio.itens.every(i => i.salvo);
+                          const itensNaoSalvos = romaneio.itens.filter(i => !i.salvo).length;
+                          
+                          return (
+                            <Card key={romaneio.id} className="border-l-4 border-l-amber-500">
+                              <CardHeader className="py-3">
+                                <div className="flex items-center justify-between">
+                                  <CardTitle className="flex items-center gap-2 text-base">
+                                    <Store className="w-4 h-4 text-amber-600" />
+                                    {romaneio.loja_nome}
+                                  </CardTitle>
+                                  <div className="flex items-center gap-2">
+                                    {itensNaoSalvos > 0 && (
+                                      <Badge variant="outline" className="text-amber-600 border-amber-600">
+                                        {itensNaoSalvos} item(ns) pendente(s)
+                                      </Badge>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleEnviarRomaneioAguardando(romaneio.id)}
+                                      disabled={!todosItensSalvos}
+                                      className="gap-1"
+                                    >
+                                      <Send className="w-4 h-4" />
+                                      Enviar
+                                    </Button>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Criado em {format(new Date(romaneio.data_criacao), "dd/MM HH:mm", { locale: ptBR })} por {romaneio.usuario_nome}
+                                </p>
+                              </CardHeader>
+                              <CardContent className="pt-0">
+                                <div className="space-y-2">
+                                  {romaneio.itens.map(item => {
+                                    const camposPreenchidos = item.peso_g && item.peso_g !== '0' && item.volumes && item.volumes !== '0';
+                                    const precisaSalvar = !item.salvo && camposPreenchidos;
+                                    
+                                    return (
+                                      <div key={item.id} className={`flex items-center gap-3 p-3 border rounded ${item.salvo ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20' : 'bg-background'}`}>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <p className="font-medium">{item.item_nome}</p>
+                                            {item.salvo && (
+                                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                            )}
+                                          </div>
+                                          <p className="text-sm text-muted-foreground">{item.quantidade} un</p>
+                                        </div>
+                                        
+                                        <PesoInputInlineCompacto
+                                          value={item.peso_g}
+                                          onChange={(v) => handleUpdatePesoAguardando(romaneio.id, item.id, v)}
+                                        />
+                                        
+                                        <Input
+                                          type="number"
+                                          value={item.volumes || ''}
+                                          onChange={(e) => handleUpdateVolumesAguardando(romaneio.id, item.id, e.target.value)}
+                                          placeholder="Vol"
+                                          className="w-20 h-10 text-center text-base font-medium"
+                                          min={1}
+                                        />
+                                        <span className="text-sm text-muted-foreground">vol</span>
+                                        
+                                        <Button
+                                          size="sm"
+                                          variant={item.salvo ? "ghost" : "default"}
+                                          className={`h-9 px-3 ${
+                                            item.salvo 
+                                              ? "text-green-600 hover:text-green-700 hover:bg-green-50" 
+                                              : precisaSalvar 
+                                                ? "bg-primary hover:bg-primary/90 text-primary-foreground animate-pulse"
+                                                : "bg-muted text-muted-foreground"
+                                          }`}
+                                          onClick={() => handleSalvarItemAguardando(romaneio.id, item.id)}
+                                          disabled={item.salvo || !camposPreenchidos}
+                                        >
+                                          {item.salvo ? (
+                                            <Check className="w-4 h-4" />
+                                          ) : (
+                                            <>
+                                              <Save className="w-4 h-4" />
+                                              <span className="ml-1">Salvar</span>
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  <Separator />
                   
                   {loadingDemandas ? (
                     <div className="flex items-center justify-center py-12">
