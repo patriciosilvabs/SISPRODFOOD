@@ -68,5 +68,8 @@ verify_jwt = true
 [functions.excluir-organizacao]
 verify_jwt = true
 
+[functions.enviar-email-contagem]
+verify_jwt = false
+
 [functions.processar-cutoff-lojas]
 verify_jwt = false
