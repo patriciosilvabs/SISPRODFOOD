@@ -447,7 +447,10 @@ const ContagemPorcionados = () => {
     console.log('[hasAnyChanges] editingValues keys:', keys.length, keys);
     
     const result = keys.some(key => {
-      const [lojaId, itemId] = key.split('-');
+      // UUIDs têm formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
+      // A key é lojaId-itemId, então precisamos separar corretamente
+      const lojaId = key.substring(0, 36);
+      const itemId = key.substring(37); // pula o hífen separador
       const dirty = isRowDirty(lojaId, itemId);
       if (dirty) {
         console.log('[hasAnyChanges] Encontrada alteração em:', key);
