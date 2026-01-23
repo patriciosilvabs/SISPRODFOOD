@@ -2,12 +2,13 @@ import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone, Play, Trash2, Music, AlertTriangle, Loader2 } from 'lucide-react';
+import { TrendingUp, Volume2, Package, Building2, Box, Users, Store, Calendar, Settings2, Bell, Megaphone, Play, Trash2, Music, AlertTriangle, Loader2, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ConfigurarReservaDiariaModal } from '@/components/modals/ConfigurarReservaDiariaModal';
 import { ConfigurarAlertasEstoqueModal } from '@/components/modals/ConfigurarAlertasEstoqueModal';
+import { GerenciarDestinatariosEmailModal } from '@/components/modals/GerenciarDestinatariosEmailModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -29,6 +30,7 @@ const Configuracoes = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [alertasModalOpen, setAlertasModalOpen] = useState(false);
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentSoundUrl, setCurrentSoundUrl] = useState<string | null>(null);
   const [savedFileName, setSavedFileName] = useState<string | null>(null);
@@ -324,6 +326,13 @@ const Configuracoes = () => {
       onClick: () => toast.info('Funcionalidade em desenvolvimento'),
     },
     {
+      title: 'Notificações por Email',
+      description: 'Configure quem recebe o resumo da contagem por email.',
+      icon: Mail,
+      color: 'bg-emerald-100 text-emerald-600',
+      onClick: () => setEmailModalOpen(true),
+    },
+    {
       title: 'Alertas de Estoque',
       description: 'Configure alertas automáticos por email quando itens atingirem níveis críticos.',
       icon: Bell,
@@ -404,6 +413,10 @@ const Configuracoes = () => {
       <ConfigurarAlertasEstoqueModal 
         open={alertasModalOpen} 
         onOpenChange={setAlertasModalOpen} 
+      />
+      <GerenciarDestinatariosEmailModal
+        open={emailModalOpen}
+        onOpenChange={setEmailModalOpen}
       />
 
       {/* Dialog de confirmação de reset */}
