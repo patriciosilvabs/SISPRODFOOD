@@ -709,14 +709,47 @@ const Romaneio = () => {
       const ontemStr = ontem.toISOString().split('T')[0];
       console.log('[Romaneio] Buscando produções desde:', ontemStr);
 
-      // 1. Buscar estoque CPD (tabela dedicada estoque_cpd)
-      const { data: estoqueCpd, error: estoqueError } = await supabase
-        .from('estoque_cpd')
-        .select(`item_porcionado_id, quantidade, itens_porcionados:itens_porcionados!inner(nome)`)
-        .gt('quantidade', 0);
+      // 1. Buscar estoque CPD a partir da contagem física (contagem_porcionados do CPD)
+      // IMPORTANTE: Usar contagem física como fonte de verdade, não estoque_cpd acumulado
+      const { data: lojaCPD } = await supabase
+        .from('lojas')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('tipo', 'cpd')
+        .maybeSingle();
 
-      if (estoqueError) throw estoqueError;
-      console.log('[Romaneio] Estoque CPD encontrado:', estoqueCpd?.length, 'itens');
+      if (!lojaCPD) {
+        console.warn('[Romaneio] Loja CPD não encontrada');
+        setLoadingDemandas(false);
+        return;
+      }
+
+      // Calcular dia operacional atual
+      const { data: diaOperacionalResult } = await supabase.rpc('calcular_dia_operacional');
+      const diaOperacional = diaOperacionalResult || serverDate;
+      console.log('[Romaneio] Dia operacional:', diaOperacional);
+
+      // Buscar contagem física do CPD (final_sobra = estoque real em unidades)
+      const { data: contagemCPD, error: contagemError } = await supabase
+        .from('contagem_porcionados')
+        .select(`
+          item_porcionado_id, 
+          final_sobra,
+          itens_porcionados!inner(nome)
+        `)
+        .eq('loja_id', lojaCPD.id)
+        .eq('dia_operacional', diaOperacional)
+        .gt('final_sobra', 0);
+
+      if (contagemError) throw contagemError;
+      console.log('[Romaneio] Contagem física CPD encontrada:', contagemCPD?.length, 'itens');
+
+      // Mapear para formato compatível com o restante do código
+      const estoqueCpd = contagemCPD?.map(item => ({
+        item_porcionado_id: item.item_porcionado_id,
+        quantidade: item.final_sobra, // final_sobra = estoque físico em unidades
+        itens_porcionados: item.itens_porcionados
+      })) || [];
 
       // 2. Buscar produções finalizadas dos últimos 2 dias com detalhes_lojas não vazios
       const { data: producoesRaw, error: producoesError } = await supabase
@@ -1184,7 +1217,18 @@ const Romaneio = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Validar estoque CPD antes de enviar
+      // Buscar loja CPD e dia operacional para debitar contagem física
+      const { data: lojaCPDData } = await supabase
+        .from('lojas')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('tipo', 'cpd')
+        .maybeSingle();
+
+      const { data: diaOperacionalData } = await supabase.rpc('calcular_dia_operacional');
+      const diaOperacionalAtual = diaOperacionalData || new Date().toISOString().split('T')[0];
+
+      // Validar estoque CPD (contagem física) antes de enviar
       for (const item of romaneio.itens) {
         // Buscar item_porcionado_id do romaneio_item
         const { data: romaneioItem } = await supabase
@@ -1193,25 +1237,28 @@ const Romaneio = () => {
           .eq('id', item.id)
           .single();
 
-        if (romaneioItem?.item_porcionado_id) {
-          const { data: estoque } = await supabase
-            .from('estoque_cpd')
-            .select('quantidade')
+        if (romaneioItem?.item_porcionado_id && lojaCPDData?.id) {
+          // Buscar estoque da contagem física do CPD
+          const { data: contagem } = await supabase
+            .from('contagem_porcionados')
+            .select('id, final_sobra')
+            .eq('loja_id', lojaCPDData.id)
             .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
+            .eq('dia_operacional', diaOperacionalAtual)
             .maybeSingle();
 
-          const estoqueAtual = estoque?.quantidade || 0;
+          const estoqueAtual = contagem?.final_sobra || 0;
           if (estoqueAtual < item.quantidade) {
             toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
             return;
           }
 
-          // Debitar estoque CPD
+          // Debitar do estoque físico (contagem_porcionados do CPD)
           const novaQuantidade = estoqueAtual - item.quantidade;
-          await supabase.from('estoque_cpd').update({
-            quantidade: novaQuantidade,
-            data_ultima_movimentacao: new Date().toISOString()
-          }).eq('item_porcionado_id', romaneioItem.item_porcionado_id);
+          await supabase.from('contagem_porcionados').update({
+            final_sobra: novaQuantidade,
+            updated_at: new Date().toISOString()
+          }).eq('id', contagem.id);
         }
       }
 
@@ -1277,15 +1324,28 @@ const Romaneio = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Validar estoque CPD antes de enviar
+      // Buscar loja CPD e dia operacional para validar/debitar contagem física
+      const { data: lojaCPDValidar } = await supabase
+        .from('lojas')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('tipo', 'cpd')
+        .maybeSingle();
+
+      const { data: diaOpValidar } = await supabase.rpc('calcular_dia_operacional');
+      const diaOpAtual = diaOpValidar || new Date().toISOString().split('T')[0];
+
+      // Validar estoque CPD (contagem física) antes de enviar
       for (const item of itens) {
-        const { data: estoque } = await supabase
-          .from('estoque_cpd')
-          .select('quantidade')
+        const { data: contagemValidar } = await supabase
+          .from('contagem_porcionados')
+          .select('final_sobra')
+          .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
+          .eq('dia_operacional', diaOpAtual)
           .maybeSingle();
         
-        const estoqueAtual = estoque?.quantidade || 0;
+        const estoqueAtual = contagemValidar?.final_sobra || 0;
         if (estoqueAtual < item.quantidade) {
           toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
           setDemandasPorLoja(prev => prev.map(d => 
@@ -1329,24 +1389,27 @@ const Romaneio = () => {
 
       await supabase.from('romaneio_itens').insert(itensRomaneio);
 
-      // Debitar estoque CPD (tabela estoque_cpd)
+      // Debitar estoque físico do CPD (contagem_porcionados)
       for (const item of itens) {
-        const { data: estoqueAtual } = await supabase
-          .from('estoque_cpd')
-          .select('quantidade')
+        const { data: contagemAtual } = await supabase
+          .from('contagem_porcionados')
+          .select('id, final_sobra')
+          .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
+          .eq('dia_operacional', diaOpAtual)
           .maybeSingle();
         
-        const novaQuantidade = Math.max(0, (estoqueAtual?.quantidade || 0) - item.quantidade);
-        
-        await supabase
-          .from('estoque_cpd')
-          .upsert({
-            item_porcionado_id: item.item_id,
-            quantidade: novaQuantidade,
-            data_ultima_movimentacao: new Date().toISOString(),
-            organization_id: organizationId
-          }, { onConflict: 'item_porcionado_id' });
+        if (contagemAtual) {
+          const novaQuantidade = Math.max(0, (contagemAtual.final_sobra || 0) - item.quantidade);
+          
+          await supabase
+            .from('contagem_porcionados')
+            .update({
+              final_sobra: novaQuantidade,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', contagemAtual.id);
+        }
       }
 
       // Verificar se produção foi totalmente expedida e atualizar status
