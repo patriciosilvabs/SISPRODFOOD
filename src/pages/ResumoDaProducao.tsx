@@ -376,8 +376,7 @@ const ResumoDaProducao = () => {
         setIsRefreshing(true);
       }
       
-      // REGRA OBRIGATÓRIA: Usar dia operacional do CPD (não data do servidor)
-      // Isso sincroniza com ContagemPorcionados e criar_ou_atualizar_producao_registro
+      // Usar data atual do servidor (sistema simplificado sem dia operacional)
       let hoje: string;
       
       // Buscar loja CPD da organização
@@ -388,17 +387,11 @@ const ResumoDaProducao = () => {
         .eq('organization_id', organizationId)
         .maybeSingle();
       
-      if (cpdLoja?.id) {
-        // Usar dia operacional do CPD (respeitando timezone)
-        const { data: diaOp } = await supabase.rpc('calcular_dia_operacional', { p_loja_id: cpdLoja.id });
-        hoje = diaOp || new Date().toISOString().split('T')[0];
-      } else {
-        // Fallback para data do servidor se não houver CPD
-        const { data: dataServidor } = await supabase.rpc('get_current_date');
-        hoje = dataServidor || new Date().toISOString().split('T')[0];
-      }
+      // Usar data do servidor
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      hoje = dataServidor || new Date().toISOString().split('T')[0];
       
-      // Guardar dia operacional para uso no cancelamento em lote
+      // Guardar data atual para uso
       setDiaOperacionalAtual(hoje);
       
       // Verificar se já passou do horário de limpeza configurado no CPD
@@ -911,13 +904,12 @@ const ResumoDaProducao = () => {
       // Determinar timer_status baseado se o item tem timer ativo
       const timerStatus = registro.timer_ativo ? 'rodando' : 'concluido';
 
-      // Calcular demanda atual total para snapshot
+      // Calcular demanda atual total para snapshot (sem filtro de dia_operacional)
       const { data: demandaData } = await supabase
         .from('contagem_porcionados')
         .select('ideal_amanha, final_sobra')
         .eq('item_porcionado_id', registro.item_id)
-        .eq('organization_id', organizationId)
-        .eq('dia_operacional', registro.data_referencia || new Date().toISOString().split('T')[0]);
+        .eq('organization_id', organizationId);
       
       const demandaAtual = demandaData?.reduce(
         (acc, c) => acc + Math.max(0, (c.ideal_amanha || 0) - (c.final_sobra || 0)), 0

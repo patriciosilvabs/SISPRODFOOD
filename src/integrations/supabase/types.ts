@@ -283,7 +283,6 @@ export type Database = {
         Row: {
           a_produzir: number | null
           created_at: string
-          dia_operacional: string
           final_sobra: number
           id: string
           ideal_amanha: number
@@ -299,7 +298,6 @@ export type Database = {
         Insert: {
           a_produzir?: number | null
           created_at?: string
-          dia_operacional: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
@@ -315,7 +313,6 @@ export type Database = {
         Update: {
           a_produzir?: number | null
           created_at?: string
-          dia_operacional?: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
@@ -3003,83 +3000,6 @@ export type Database = {
           },
         ]
       }
-      sessoes_contagem: {
-        Row: {
-          created_at: string | null
-          dia_operacional: string
-          encerrado_em: string | null
-          encerrado_por_id: string | null
-          encerrado_por_nome: string | null
-          id: string
-          iniciado_em: string | null
-          iniciado_por_id: string | null
-          iniciado_por_nome: string | null
-          loja_id: string
-          organization_id: string
-          status: string
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          dia_operacional: string
-          encerrado_em?: string | null
-          encerrado_por_id?: string | null
-          encerrado_por_nome?: string | null
-          id?: string
-          iniciado_em?: string | null
-          iniciado_por_id?: string | null
-          iniciado_por_nome?: string | null
-          loja_id: string
-          organization_id: string
-          status?: string
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          dia_operacional?: string
-          encerrado_em?: string | null
-          encerrado_por_id?: string | null
-          encerrado_por_nome?: string | null
-          id?: string
-          iniciado_em?: string | null
-          iniciado_por_id?: string | null
-          iniciado_por_nome?: string | null
-          loja_id?: string
-          organization_id?: string
-          status?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sessoes_contagem_encerrado_por_id_fkey"
-            columns: ["encerrado_por_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sessoes_contagem_iniciado_por_id_fkey"
-            columns: ["iniciado_por_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sessoes_contagem_loja_id_fkey"
-            columns: ["loja_id"]
-            isOneToOne: false
-            referencedRelation: "lojas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sessoes_contagem_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       solicitacoes_reposicao: {
         Row: {
           created_at: string | null
@@ -3355,10 +3275,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      calcular_dia_operacional: {
-        Args: { p_loja_id: string; p_timestamp?: string }
-        Returns: string
-      }
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
       criar_ou_atualizar_producao_registro:
         | {
@@ -3385,7 +3301,7 @@ export type Database = {
           }
         | {
             Args: {
-              p_dia_operacional: string
+              p_dia_operacional?: string
               p_is_incremental?: boolean
               p_item_id: string
               p_organization_id: string
