@@ -550,13 +550,47 @@ const ContagemPorcionados = () => {
         duration: 3000 
       });
 
+      const newTimestamp = new Date().toISOString();
+      const newPesoTotal = values?.peso_total_g ? parseFloat(values.peso_total_g) : null;
+
       setOriginalValues(prev => ({
         ...prev,
         [key]: {
           final_sobra: finalSobra,
-          peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
+          peso_total_g: newPesoTotal,
         }
       }));
+
+      // Atualizar contagens com os novos valores e timestamp para exibição imediata
+      // Atualizar contagens com os novos valores e timestamp para exibição imediata
+      setContagens(prev => {
+        const updated = { ...prev };
+        const lojaContagens = [...(updated[lojaId] || [])];
+        
+        const existingIndex = lojaContagens.findIndex(c => c.item_porcionado_id === itemId);
+        const itemInfo = itens.find(i => i.id === itemId);
+        
+        const updatedContagem = {
+          loja_id: lojaId,
+          item_porcionado_id: itemId,
+          final_sobra: finalSobra,
+          peso_total_g: newPesoTotal,
+          updated_at: newTimestamp,
+          item_nome: itemInfo?.nome || 'Item desconhecido',
+        };
+        
+        if (existingIndex >= 0) {
+          lojaContagens[existingIndex] = {
+            ...lojaContagens[existingIndex],
+            ...updatedContagem,
+          };
+        } else {
+          lojaContagens.push(updatedContagem as any);
+        }
+        
+        updated[lojaId] = lojaContagens;
+        return updated;
+      });
       
       setEditingValues(prev => {
         const newValues = { ...prev };
