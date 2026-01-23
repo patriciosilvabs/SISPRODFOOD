@@ -608,9 +608,9 @@ const ContagemPorcionados = () => {
           .eq('id', lojaId)
           .single();
         
-        // Só verificar se a loja atual NÃO é CPD
+        // Verificar se TODAS as lojas encerraram (apenas notificação, sem criação automática)
         if (lojaData?.tipo !== 'cpd' && organizationId) {
-          console.log('[handleEncerrarSessao] Verificando se todas as lojas encerraram para criar romaneios...');
+          console.log('[handleEncerrarSessao] Verificando se todas as lojas encerraram...');
           const result = await verificarECriarRomaneiosAutomaticos(
             organizationId,
             diaOperacionalTravado,
@@ -621,6 +621,8 @@ const ContagemPorcionados = () => {
           if (result.aguardandoLojas.length > 0) {
             toast.info(`Aguardando ${result.aguardandoLojas.length} loja(s) encerrar contagem: ${result.aguardandoLojas.join(', ')}`);
           }
+          // Nota: Romaneios não são mais criados automaticamente.
+          // O operador deve ir à tela de Romaneio e escolher a ordem das lojas.
         }
 
         // 7. Enviar email de resumo da contagem

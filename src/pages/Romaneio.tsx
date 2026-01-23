@@ -548,6 +548,9 @@ const Romaneio = () => {
   // Romaneios aguardando conferência
   const [romaneiosAguardando, setRomaneiosAguardando] = useState<RomaneioAguardandoConferencia[]>([]);
   const [loadingBuscarPendentes, setLoadingBuscarPendentes] = useState(false);
+  
+  // Estoque CPD para exibição de resumo
+  const [estoqueCPDResumo, setEstoqueCPDResumo] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
 
   // ==================== EFFECTS ====================
 
@@ -748,14 +751,22 @@ const Romaneio = () => {
       if (romaneiosError) throw romaneiosError;
       console.log('[Romaneio] Romaneios pendentes/enviados:', romaneiosPendentes?.length);
 
-      // 4. Construir mapa de estoque CPD
+      // 4. Construir mapa de estoque CPD e atualizar resumo
       const estoqueMap: Record<string, { quantidade: number; nome: string }> = {};
+      const resumoEstoque: Array<{ item_nome: string; quantidade: number }> = [];
       estoqueCpd?.forEach(est => {
         estoqueMap[est.item_porcionado_id] = {
           quantidade: est.quantidade || 0,
           nome: (est.itens_porcionados as any).nome
         };
+        resumoEstoque.push({
+          item_nome: (est.itens_porcionados as any).nome,
+          quantidade: est.quantidade || 0
+        });
       });
+      // Ordenar por nome e atualizar estado
+      resumoEstoque.sort((a, b) => a.item_nome.localeCompare(b.item_nome));
+      setEstoqueCPDResumo(resumoEstoque);
       console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
       // 5. Calcular demanda por loja baseado em detalhes_lojas (apenas última produção por item)
@@ -1991,6 +2002,34 @@ const Romaneio = () => {
                       Atualizar
                     </Button>
                   </div>
+
+                  {/* RESUMO DE ESTOQUE CPD */}
+                  {estoqueCPDResumo.length > 0 && (
+                    <Card className="border border-primary/30 bg-primary/5">
+                      <CardHeader className="py-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Package className="w-5 h-5 text-primary" />
+                          Estoque Disponível no CPD
+                        </CardTitle>
+                        <CardDescription>
+                          Escolha a ordem de envio das lojas. O estoque será debitado ao confirmar cada envio.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="py-2">
+                        <div className="flex flex-wrap gap-2">
+                          {estoqueCPDResumo.map((item) => (
+                            <Badge 
+                              key={item.item_nome} 
+                              variant="secondary" 
+                              className="text-sm py-1 px-3"
+                            >
+                              {item.item_nome}: <span className="font-bold ml-1">{item.quantidade}</span> un
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* SEÇÃO: ROMANEIOS AGUARDANDO CONFERÊNCIA */}
                   {romaneiosAguardando.length > 0 && (
