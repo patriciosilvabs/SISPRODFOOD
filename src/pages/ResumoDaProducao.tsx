@@ -19,7 +19,7 @@ import { ConfirmarSeparacaoInsumosModal, InsumoParaConfirmar } from '@/component
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Calculator } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
 // Hook de romaneio automático removido - fluxo agora é 100% manual
@@ -129,7 +129,7 @@ const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
 };
 
 const ResumoDaProducao = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const { organizationId } = useOrganization();
   const { cpdLojaId } = useCPDLoja();
   const { playAlarm, stopAlarm } = useAlarmSound();
@@ -144,6 +144,7 @@ const ResumoDaProducao = () => {
   });
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
@@ -165,6 +166,40 @@ const ResumoDaProducao = () => {
   const handleStopAlarm = () => {
     stopAlarm();
     setAlarmPlaying(false);
+  };
+
+  // Função para recalcular toda a produção do dia baseado nas contagens atuais
+  const handleRecalcularProducao = async () => {
+    if (!organizationId || !user) return;
+    
+    setIsRecalculating(true);
+    try {
+      const { data, error } = await supabase.rpc('recalcular_producao_dia', {
+        p_organization_id: organizationId,
+        p_usuario_id: user.id,
+        p_usuario_nome: profile?.nome || 'Admin'
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; itens_processados?: number; cards_criados?: number; error?: string } | null;
+      
+      if (result?.success) {
+        toast.success(
+          `Produção recalculada! ${result.itens_processados || 0} itens processados, ${result.cards_criados || 0} cards criados/atualizados.`
+        );
+      } else {
+        toast.error(result?.error || 'Erro ao recalcular produção');
+      }
+      
+      // Recarregar dados
+      await loadProducaoRegistros();
+    } catch (error) {
+      console.error('Erro ao recalcular produção:', error);
+      toast.error('Erro ao recalcular produção');
+    } finally {
+      setIsRecalculating(false);
+    }
   };
 
   // Função para notificar quando timer acabar
@@ -1541,6 +1576,18 @@ const ResumoDaProducao = () => {
                 <div className="inline-block h-3 w-3 mr-2 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
                 Sincronizando...
               </Badge>
+            )}
+            {isAdmin() && (
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={handleRecalcularProducao} 
+                disabled={isRecalculating || isRefreshing}
+                title="Recalcula toda a produção baseado nas contagens atuais das lojas"
+              >
+                <Calculator className={`h-4 w-4 mr-2 ${isRecalculating ? 'animate-pulse' : ''}`} />
+                Recalcular
+              </Button>
             )}
             <Button size="sm" onClick={() => loadProducaoRegistros()} disabled={isRefreshing} className="bg-primary hover:bg-primary/90 text-primary-foreground">
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />

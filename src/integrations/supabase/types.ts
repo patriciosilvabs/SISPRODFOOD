@@ -3428,6 +3428,14 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
+      recalcular_producao_dia: {
+        Args: {
+          p_organization_id: string
+          p_usuario_id: string
+          p_usuario_nome: string
+        }
+        Returns: Json
+      }
       registrar_movimentacao_estoque: {
         Args: {
           p_entidade_id: string
