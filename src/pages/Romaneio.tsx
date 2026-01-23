@@ -1275,6 +1275,11 @@ const Romaneio = () => {
       const diaOperacionalAtual = diaOperacionalData || new Date().toISOString().split('T')[0];
 
       // Validar estoque CPD (contagem física) antes de enviar
+      // Usar a mesma lógica de fallback: dia atual ou anterior
+      const ontemDate = new Date(diaOperacionalAtual);
+      ontemDate.setDate(ontemDate.getDate() - 1);
+      const ontemOperacional = ontemDate.toISOString().split('T')[0];
+
       for (const item of romaneio.itens) {
         // Buscar item_porcionado_id do romaneio_item
         const { data: romaneioItem } = await supabase
@@ -1284,14 +1289,26 @@ const Romaneio = () => {
           .single();
 
         if (romaneioItem?.item_porcionado_id && lojaCPDData?.id) {
-          // Buscar estoque da contagem física do CPD
-          const { data: contagem } = await supabase
+          // Buscar estoque da contagem física do CPD (dia atual ou anterior)
+          let { data: contagem } = await supabase
             .from('contagem_porcionados')
             .select('id, final_sobra')
             .eq('loja_id', lojaCPDData.id)
             .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
             .eq('dia_operacional', diaOperacionalAtual)
             .maybeSingle();
+
+          // Fallback para dia anterior se não encontrar
+          if (!contagem) {
+            const { data: contagemOntem } = await supabase
+              .from('contagem_porcionados')
+              .select('id, final_sobra')
+              .eq('loja_id', lojaCPDData.id)
+              .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
+              .eq('dia_operacional', ontemOperacional)
+              .maybeSingle();
+            contagem = contagemOntem;
+          }
 
           const estoqueAtual = contagem?.final_sobra || 0;
           if (estoqueAtual < item.quantidade) {
@@ -1300,11 +1317,13 @@ const Romaneio = () => {
           }
 
           // Debitar do estoque físico (contagem_porcionados do CPD)
-          const novaQuantidade = estoqueAtual - item.quantidade;
-          await supabase.from('contagem_porcionados').update({
-            final_sobra: novaQuantidade,
-            updated_at: new Date().toISOString()
-          }).eq('id', contagem.id);
+          if (contagem?.id) {
+            const novaQuantidade = estoqueAtual - item.quantidade;
+            await supabase.from('contagem_porcionados').update({
+              final_sobra: novaQuantidade,
+              updated_at: new Date().toISOString()
+            }).eq('id', contagem.id);
+          }
         }
       }
 
@@ -1380,16 +1399,33 @@ const Romaneio = () => {
 
       const { data: diaOpValidar } = await supabase.rpc('calcular_dia_operacional');
       const diaOpAtual = diaOpValidar || new Date().toISOString().split('T')[0];
+      
+      // Calcular dia anterior para fallback
+      const ontemValidar = new Date(diaOpAtual);
+      ontemValidar.setDate(ontemValidar.getDate() - 1);
+      const ontemOpStr = ontemValidar.toISOString().split('T')[0];
 
-      // Validar estoque CPD (contagem física) antes de enviar
+      // Validar estoque CPD (contagem física) antes de enviar - com fallback para dia anterior
       for (const item of itens) {
-        const { data: contagemValidar } = await supabase
+        let { data: contagemValidar } = await supabase
           .from('contagem_porcionados')
           .select('final_sobra')
           .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
           .eq('dia_operacional', diaOpAtual)
           .maybeSingle();
+        
+        // Fallback para dia anterior
+        if (!contagemValidar) {
+          const { data: contagemOntem } = await supabase
+            .from('contagem_porcionados')
+            .select('final_sobra')
+            .eq('loja_id', lojaCPDValidar?.id)
+            .eq('item_porcionado_id', item.item_id)
+            .eq('dia_operacional', ontemOpStr)
+            .maybeSingle();
+          contagemValidar = contagemOntem;
+        }
         
         const estoqueAtual = contagemValidar?.final_sobra || 0;
         if (estoqueAtual < item.quantidade) {
@@ -1435,15 +1471,27 @@ const Romaneio = () => {
 
       await supabase.from('romaneio_itens').insert(itensRomaneio);
 
-      // Debitar estoque físico do CPD (contagem_porcionados)
+      // Debitar estoque físico do CPD (contagem_porcionados) - com fallback para dia anterior
       for (const item of itens) {
-        const { data: contagemAtual } = await supabase
+        let { data: contagemAtual } = await supabase
           .from('contagem_porcionados')
           .select('id, final_sobra')
           .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
           .eq('dia_operacional', diaOpAtual)
           .maybeSingle();
+        
+        // Fallback para dia anterior
+        if (!contagemAtual) {
+          const { data: contagemOntem } = await supabase
+            .from('contagem_porcionados')
+            .select('id, final_sobra')
+            .eq('loja_id', lojaCPDValidar?.id)
+            .eq('item_porcionado_id', item.item_id)
+            .eq('dia_operacional', ontemOpStr)
+            .maybeSingle();
+          contagemAtual = contagemOntem;
+        }
         
         if (contagemAtual) {
           const novaQuantidade = Math.max(0, (contagemAtual.final_sobra || 0) - item.quantidade);
