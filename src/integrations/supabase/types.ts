@@ -283,6 +283,7 @@ export type Database = {
         Row: {
           a_produzir: number | null
           created_at: string
+          dia_operacional: string
           final_sobra: number
           id: string
           ideal_amanha: number
@@ -298,6 +299,7 @@ export type Database = {
         Insert: {
           a_produzir?: number | null
           created_at?: string
+          dia_operacional?: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
@@ -313,6 +315,7 @@ export type Database = {
         Update: {
           a_produzir?: number | null
           created_at?: string
+          dia_operacional?: string
           final_sobra?: number
           id?: string
           ideal_amanha?: number
