@@ -188,10 +188,12 @@ const ContagemPorcionados = () => {
       
       if (itensError) throw itensError;
 
-      // Carregar contagens atuais (sem filtro de dia - apenas 1 por loja+item)
+      // Carregar contagens do dia atual
+      const today = new Date().toISOString().split('T')[0];
       const { data: contagensData, error: contagensError } = await supabase
         .from('contagem_porcionados')
         .select('*')
+        .eq('dia_operacional', today)
         .order('updated_at', { ascending: false });
 
       if (contagensError) throw contagensError;
@@ -442,7 +444,7 @@ const ContagemPorcionados = () => {
         const { error } = await supabase
           .from('contagem_porcionados')
           .upsert(dataToSave, {
-            onConflict: 'loja_id,item_porcionado_id',
+            onConflict: 'loja_id,item_porcionado_id,dia_operacional',
           });
 
         if (!error) return { success: true };
@@ -513,6 +515,10 @@ const ContagemPorcionados = () => {
       
       const aProduzir = Math.max(0, idealAmanha - finalSobra);
 
+      // Obter o dia operacional (data de hoje no timezone de São Paulo)
+      const today = new Date();
+      const diaOperacional = today.toISOString().split('T')[0]; // formato YYYY-MM-DD
+
       const dataToSave = {
         loja_id: lojaId,
         item_porcionado_id: itemId,
@@ -522,6 +528,7 @@ const ContagemPorcionados = () => {
         usuario_id: user.id,
         usuario_nome: profile?.nome || user.email || 'Usuário',
         organization_id: organizationId,
+        dia_operacional: diaOperacional,
       };
 
       const saveResult = await saveWithRetry(dataToSave);
