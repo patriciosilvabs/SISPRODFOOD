@@ -3246,7 +3246,7 @@ export type Database = {
               p_usuario_id: string
               p_usuario_nome: string
             }
-            Returns: Json
+            Returns: string
           }
         | {
             Args: {
