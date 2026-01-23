@@ -403,6 +403,14 @@ const ContagemPorcionados = () => {
     }));
   };
 
+  // Função auxiliar para normalizar valores para comparação
+  const normalizeValue = (val: any): string => {
+    if (val === null || val === undefined || val === '') return '';
+    // Converter para número e de volta para string para normalizar (ex: "0" e 0 ficam iguais)
+    const num = Number(val);
+    return isNaN(num) ? String(val) : String(num);
+  };
+
   // Função para detectar se uma linha está "dirty" (com mudanças não salvas)
   const isRowDirty = (lojaId: string, itemId: string): boolean => {
     const key = `${lojaId}-${itemId}`;
@@ -414,9 +422,13 @@ const ContagemPorcionados = () => {
     const fields = ['final_sobra', 'peso_total_g'];
     for (const field of fields) {
       if (current[field] !== undefined) {
-        const currentVal = String(current[field] ?? '');
-        const originalVal = String(original?.[field] ?? '');
-        if (currentVal !== originalVal) return true;
+        const currentVal = normalizeValue(current[field]);
+        const originalVal = normalizeValue(original?.[field]);
+        
+        if (currentVal !== originalVal) {
+          console.log('[isRowDirty] Alteração detectada:', { key, field, currentVal, originalVal });
+          return true;
+        }
       }
     }
     
