@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Edit, Trash2, Store, RefreshCw, Clock, Globe, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Store, RefreshCw, Globe } from 'lucide-react';
 import { useCanDelete } from '@/hooks/useCanDelete';
 import { toast } from 'sonner';
 import {
@@ -33,15 +33,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { JanelaContagemDias } from '@/components/lojas/JanelaContagemDias';
 
 interface Loja {
   id: string;
   nome: string;
   responsavel: string;
   fuso_horario: string;
-  janela_contagem_inicio: string | null;
-  janela_contagem_fim: string | null;
   horario_limpeza_finalizado: string | null;
   tipo: string | null;
 }
@@ -69,8 +66,6 @@ const Lojas = () => {
     nome: '',
     responsavel: '',
     fuso_horario: 'America/Sao_Paulo',
-    janela_contagem_inicio: '22:00',
-    janela_contagem_fim: '00:00',
     horario_limpeza_finalizado: '08:30',
   });
 
@@ -202,8 +197,6 @@ const Lojas = () => {
       nome: loja.nome,
       responsavel: loja.responsavel,
       fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
-      janela_contagem_inicio: loja.janela_contagem_inicio?.slice(0, 5) || '22:00',
-      janela_contagem_fim: loja.janela_contagem_fim?.slice(0, 5) || '00:00',
       horario_limpeza_finalizado: loja.horario_limpeza_finalizado?.slice(0, 5) || '08:30',
     });
     setDialogOpen(true);
@@ -215,8 +208,6 @@ const Lojas = () => {
       nome: '',
       responsavel: '',
       fuso_horario: 'America/Sao_Paulo',
-      janela_contagem_inicio: '22:00',
-      janela_contagem_fim: '00:00',
       horario_limpeza_finalizado: '08:30',
     });
   };
@@ -317,56 +308,6 @@ const Lojas = () => {
                     </Select>
                   </div>
 
-                  {/* Janela de Contagem por Dia */}
-                  {editingLoja && (
-                    <JanelaContagemDias
-                      lojaId={editingLoja.id}
-                      organizationId={organizationId || ''}
-                      defaultInicio={formData.janela_contagem_inicio}
-                      defaultFim={formData.janela_contagem_fim}
-                    />
-                  )}
-
-                  {/* Janela básica para nova loja (sem ID ainda) */}
-                  {!editingLoja && (
-                    <div className="space-y-3 p-3 bg-accent/30 rounded-lg border">
-                      <Label className="flex items-center gap-1 font-semibold">
-                        <Clock className="h-3.5 w-3.5" />
-                        Janela de Contagem (Padrão)
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Após criar a loja, você poderá configurar horários diferentes para cada dia da semana.
-                      </p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label htmlFor="janela_contagem_inicio" className="text-xs">
-                            Início
-                          </Label>
-                          <Input
-                            id="janela_contagem_inicio"
-                            type="time"
-                            value={formData.janela_contagem_inicio}
-                            onChange={(e) =>
-                              setFormData({ ...formData, janela_contagem_inicio: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="janela_contagem_fim" className="text-xs">
-                            Fim
-                          </Label>
-                          <Input
-                            id="janela_contagem_fim"
-                            type="time"
-                            value={formData.janela_contagem_fim}
-                            onChange={(e) =>
-                              setFormData({ ...formData, janela_contagem_fim: e.target.value })
-                            }
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Horário de Limpeza do Kanban - Apenas para CPD */}
                   {editingLoja?.tipo === 'cpd' && (
@@ -430,14 +371,13 @@ const Lojas = () => {
                   <TableHead>Nome</TableHead>
                   <TableHead>Responsável</TableHead>
                   <TableHead>Fuso Horário</TableHead>
-                  <TableHead>Janela Contagem</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lojas.length === 0 ? (
                 <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
                       Nenhuma loja cadastrada
                     </TableCell>
                   </TableRow>
@@ -459,12 +399,6 @@ const Lojas = () => {
                         </TableCell>
                         <TableCell>{loja.responsavel}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fusoLabel}</TableCell>
-                        <TableCell className="text-xs">
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            <span>Por dia</span>
-                          </div>
-                        </TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button
                             variant="ghost"
