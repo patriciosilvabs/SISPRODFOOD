@@ -12,8 +12,9 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useUserLoja } from '@/hooks/useUserLoja';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, subDays, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CalendarDays, Send as SendIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -124,6 +125,7 @@ interface Romaneio {
   data_criacao: string;
   data_envio: string | null;
   data_recebimento: string | null;
+  data_referencia?: string; // Data da demanda (do producao_registros)
   status: string;
   usuario_nome: string;
   recebido_por_nome: string | null;
@@ -139,8 +141,55 @@ interface Romaneio {
     peso_total_kg: number;
     codigo_lote?: string;
     producao_registro_id?: string;
+    data_referencia?: string;
   }>;
 }
+
+// Helper para descrição do dia da demanda
+const getDescricaoDia = (dataStr: string): string => {
+  const data = new Date(dataStr + 'T12:00:00'); // Evitar problemas de timezone
+  const hoje = new Date();
+  const ontem = subDays(hoje, 1);
+  const anteontem = subDays(hoje, 2);
+  
+  if (isSameDay(data, hoje)) return "hoje";
+  if (isSameDay(data, ontem)) return "ontem";
+  if (isSameDay(data, anteontem)) return "anteontem";
+  return format(data, "EEEE", { locale: ptBR }); // "segunda-feira", etc.
+};
+
+// Componente de Tarjas de Data
+interface DateTagsProps {
+  dataEnvio?: string | null;
+  dataReferencia?: string | null;
+  lojaNome?: string;
+}
+
+const DateTags = ({ dataEnvio, dataReferencia, lojaNome }: DateTagsProps) => {
+  return (
+    <div className="space-y-2 mb-3">
+      {/* Tarja Azul - Data do Envio */}
+      {dataEnvio && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-blue-100 dark:bg-blue-950 border border-blue-300 dark:border-blue-700 rounded-lg">
+          <SendIcon className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+            ENVIO: Romaneio realizado em {format(new Date(dataEnvio), "dd/MM/yyyy")} às {format(new Date(dataEnvio), "HH:mm")}
+          </span>
+        </div>
+      )}
+      
+      {/* Tarja Vermelha - Data da Demanda */}
+      {dataReferencia && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-700 rounded-lg">
+          <CalendarDays className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+          <span className="text-sm font-medium text-red-700 dark:text-red-300">
+            DEMANDA: Referente à demanda de {getDescricaoDia(dataReferencia)}, {format(new Date(dataReferencia + 'T12:00:00'), "dd/MM/yyyy")}{lojaNome ? ` - ${lojaNome}` : ''}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface RomaneioAvulso {
   id: string;
@@ -170,6 +219,7 @@ interface RomaneioAguardandoConferencia {
   loja_id: string;
   loja_nome: string;
   data_criacao: string;
+  data_referencia?: string;
   usuario_nome: string;
   itens: Array<{
     id: string;
@@ -179,6 +229,7 @@ interface RomaneioAguardandoConferencia {
     volumes: string;
     salvo: boolean;
     producao_registro_id?: string;
+    data_referencia?: string;
   }>;
 }
 
@@ -863,7 +914,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, peso_total_envio_g, quantidade_volumes_envio, romaneio_itens (id, item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote))`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, romaneio_itens (id, item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote, data_referencia))`)
         .eq('status', 'enviado')
         .order('data_envio', { ascending: false });
 
@@ -874,14 +925,23 @@ const Romaneio = () => {
       const { data, error } = await query;
       if (error) throw error;
       
-      // Transformar dados para extrair codigo_lote do join
-      const romaneiosFormatados = (data || []).map(r => ({
-        ...r,
-        romaneio_itens: r.romaneio_itens?.map((item: any) => ({
+      // Transformar dados para extrair codigo_lote e data_referencia do join
+      const romaneiosFormatados = (data || []).map(r => {
+        const itensFormatados = r.romaneio_itens?.map((item: any) => ({
           ...item,
-          codigo_lote: item.producao_registros?.codigo_lote || null
-        })) || []
-      }));
+          codigo_lote: item.producao_registros?.codigo_lote || null,
+          data_referencia: item.producao_registros?.data_referencia || null
+        })) || [];
+        
+        // Pegar a data_referencia do primeiro item (todos devem ser do mesmo dia)
+        const dataRefPrimeiro = itensFormatados[0]?.data_referencia || null;
+        
+        return {
+          ...r,
+          data_referencia: dataRefPrimeiro,
+          romaneio_itens: itensFormatados
+        };
+      });
       
       setRomaneiosEnviados(romaneiosFormatados);
     } catch (error) {
@@ -896,7 +956,7 @@ const Romaneio = () => {
 
       let query = supabase
         .from('romaneios')
-        .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote))`)
+        .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote, data_referencia))`)
         .order('data_criacao', { ascending: false });
 
       if (!isAdmin() && userLojasIds.length > 0) {
@@ -910,14 +970,23 @@ const Romaneio = () => {
       const { data, error } = await query;
       if (error) throw error;
       
-      // Transformar dados para extrair codigo_lote do join
-      const romaneiosFormatados = (data || []).map(r => ({
-        ...r,
-        romaneio_itens: r.romaneio_itens?.map((item: any) => ({
+      // Transformar dados para extrair codigo_lote e data_referencia do join
+      const romaneiosFormatados = (data || []).map(r => {
+        const itensFormatados = r.romaneio_itens?.map((item: any) => ({
           ...item,
-          codigo_lote: item.producao_registros?.codigo_lote || null
-        })) || []
-      }));
+          codigo_lote: item.producao_registros?.codigo_lote || null,
+          data_referencia: item.producao_registros?.data_referencia || null
+        })) || [];
+        
+        // Pegar a data_referencia do primeiro item
+        const dataRefPrimeiro = itensFormatados[0]?.data_referencia || null;
+        
+        return {
+          ...r,
+          data_referencia: dataRefPrimeiro,
+          romaneio_itens: itensFormatados
+        };
+      });
       
       setRomaneiosHistorico(romaneiosFormatados);
     } catch (error) {
@@ -979,7 +1048,7 @@ const Romaneio = () => {
         .from('romaneios')
         .select(`
           id, loja_id, loja_nome, data_criacao, usuario_nome,
-          romaneio_itens (id, item_nome, quantidade, peso_total_kg, quantidade_volumes, producao_registro_id)
+          romaneio_itens (id, item_nome, quantidade, peso_total_kg, quantidade_volumes, producao_registro_id, producao_registros:producao_registro_id (data_referencia))
         `)
         .eq('status', 'aguardando_conferencia')
         .order('data_criacao', { ascending: true });
@@ -987,22 +1056,31 @@ const Romaneio = () => {
       if (error) throw error;
 
       // Transformar para o formato esperado
-      const romaneiosFormatados: RomaneioAguardandoConferencia[] = (romaneios || []).map(r => ({
-        id: r.id,
-        loja_id: r.loja_id,
-        loja_nome: r.loja_nome,
-        data_criacao: r.data_criacao,
-        usuario_nome: r.usuario_nome,
-        itens: (r.romaneio_itens || []).map((item: any) => ({
+      const romaneiosFormatados: RomaneioAguardandoConferencia[] = (romaneios || []).map(r => {
+        const itensFormatados = (r.romaneio_itens || []).map((item: any) => ({
           id: item.id,
           item_nome: item.item_nome,
           quantidade: item.quantidade,
           peso_g: item.peso_total_kg ? String(Math.round(item.peso_total_kg * 1000)) : '',
           volumes: item.quantidade_volumes ? String(item.quantidade_volumes) : '',
           salvo: item.peso_total_kg > 0 && item.quantidade_volumes > 0,
-          producao_registro_id: item.producao_registro_id
-        }))
-      }));
+          producao_registro_id: item.producao_registro_id,
+          data_referencia: item.producao_registros?.data_referencia || null
+        }));
+        
+        // Pegar a data_referencia do primeiro item
+        const dataRefPrimeiro = itensFormatados[0]?.data_referencia || null;
+        
+        return {
+          id: r.id,
+          loja_id: r.loja_id,
+          loja_nome: r.loja_nome,
+          data_criacao: r.data_criacao,
+          data_referencia: dataRefPrimeiro,
+          usuario_nome: r.usuario_nome,
+          itens: itensFormatados
+        };
+      });
 
       setRomaneiosAguardando(romaneiosFormatados);
       console.log('[Romaneio] Romaneios aguardando conferência:', romaneiosFormatados.length);
@@ -1956,11 +2034,17 @@ const Romaneio = () => {
                                     </Button>
                                   </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                  Criado em {format(new Date(romaneio.data_criacao), "dd/MM HH:mm", { locale: ptBR })} por {romaneio.usuario_nome}
-                                </p>
                               </CardHeader>
                               <CardContent className="pt-0">
+                                {/* Tarja de Demanda */}
+                                {romaneio.data_referencia && (
+                                  <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-700 rounded-lg">
+                                    <CalendarDays className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+                                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                                      DEMANDA: Referente à demanda de {getDescricaoDia(romaneio.data_referencia)}, {format(new Date(romaneio.data_referencia + 'T12:00:00'), "dd/MM/yyyy")} - {romaneio.loja_nome}
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="space-y-2">
                                   {romaneio.itens.map(item => {
                                     const camposPreenchidos = item.peso_g && item.peso_g !== '0' && item.volumes && item.volumes !== '0';
@@ -2127,12 +2211,17 @@ const Romaneio = () => {
                                   <CardTitle className="text-sm">{romaneio.loja_nome}</CardTitle>
                                   <p className="text-xs text-muted-foreground">Por: {romaneio.usuario_nome}</p>
                                 </div>
-                                <Badge variant="outline" className="text-blue-600">
-                                  Enviado {format(new Date(romaneio.data_envio!), "dd/MM HH:mm")}
-                                </Badge>
+                                {getStatusBadge(romaneio.status)}
                               </div>
                             </CardHeader>
                             <CardContent className="space-y-3">
+                              {/* Tarjas de Data - Envio e Demanda */}
+                              <DateTags 
+                                dataEnvio={romaneio.data_envio}
+                                dataReferencia={romaneio.data_referencia}
+                                lojaNome={romaneio.loja_nome}
+                              />
+                              
                               {/* Informações do Envio */}
                               {(romaneio.peso_total_envio_g || romaneio.quantidade_volumes_envio) && (
                                 <div className="flex gap-4 p-3 bg-muted/50 rounded-lg">
@@ -2474,7 +2563,7 @@ const Romaneio = () => {
                             <div>
                               <p className="font-medium">{romaneio.loja_nome}</p>
                               <p className="text-xs text-muted-foreground">
-                                {format(new Date(romaneio.data_criacao), "dd/MM/yyyy HH:mm")} • {romaneio.usuario_nome}
+                                Criado por: {romaneio.usuario_nome}
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -2489,6 +2578,14 @@ const Romaneio = () => {
                               {getStatusBadge(romaneio.status)}
                             </div>
                           </div>
+                          
+                          {/* Tarjas de Data - Envio e Demanda */}
+                          <DateTags 
+                            dataEnvio={romaneio.data_envio}
+                            dataReferencia={romaneio.data_referencia}
+                            lojaNome={romaneio.loja_nome}
+                          />
+                          
                           <div className="text-xs text-muted-foreground">
                             {romaneio.romaneio_itens.map((item, i) => (
                               <span key={i}>{item.item_nome}: {item.quantidade}un{i < romaneio.romaneio_itens.length - 1 ? ' • ' : ''}</span>
