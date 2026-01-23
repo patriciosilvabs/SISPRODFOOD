@@ -57,22 +57,25 @@ const PesoInputInlineCompacto = ({ value, onChange }: PesoInputInlineCompactoPro
 
   return (
     <div className="flex flex-col items-center">
-      <Input
-        type="text"
-        inputMode="numeric"
-        placeholder="Peso"
-        value={displayValue}
-        onChange={handleChange}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        className="w-32 h-10 text-center text-base font-medium"
-      />
+      <div className="flex items-center gap-1">
+        <Input
+          type="text"
+          inputMode="numeric"
+          placeholder="Peso"
+          value={displayValue}
+          onChange={handleChange}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          className="w-24 h-10 text-center text-base font-medium"
+        />
+        <span className="text-sm text-muted-foreground">kg</span>
+      </div>
       {hasValue && !isFocused && (
         <span 
-          className="text-xs text-primary font-medium truncate max-w-32 leading-tight" 
-          title={pesoProgressivoToWords(value)}
+          className="text-xs text-muted-foreground font-medium truncate max-w-32 leading-tight" 
+          title="Peso total do volume"
         >
-          {pesoProgressivoToWords(value)}
+          Peso Total
         </span>
       )}
     </div>
