@@ -731,22 +731,13 @@ const Romaneio = () => {
         return;
       }
 
-      // Calcular dia operacional atual
-      const { data: diaOperacionalResult } = await supabase.rpc('calcular_dia_operacional');
-      const diaOperacional = diaOperacionalResult || serverDate;
-      console.log('[Romaneio] Dia operacional:', diaOperacional);
+      // Usar data atual (sistema simplificado sem dia operacional)
+      const diaOperacional = serverDate;
+      console.log('[Romaneio] Data atual:', diaOperacional);
 
       // Buscar contagem física do CPD (final_sobra = estoque real em unidades)
-      // Primeiro tenta do dia operacional atual, se não encontrar busca do dia anterior
-      let contagemCPD: Array<{
-        item_porcionado_id: string;
-        final_sobra: number;
-        itens_porcionados: { nome: string };
-      }> | null = null;
-      let diaContagemUsado = diaOperacional;
-
-      // Tentar buscar contagem do dia operacional atual
-      const { data: contagemHoje, error: contagemError } = await supabase
+      // Sistema simplificado: apenas 1 registro por loja+item
+      const { data: contagemCPD, error: contagemError } = await supabase
         .from('contagem_porcionados')
         .select(`
           item_porcionado_id, 
@@ -754,45 +745,11 @@ const Romaneio = () => {
           itens_porcionados!inner(nome)
         `)
         .eq('loja_id', lojaCPD.id)
-        .eq('dia_operacional', diaOperacional)
         .gt('final_sobra', 0);
 
       if (contagemError) throw contagemError;
-
-      if (contagemHoje && contagemHoje.length > 0) {
-        contagemCPD = contagemHoje;
-        console.log('[Romaneio] Contagem física CPD de hoje encontrada:', contagemCPD.length, 'itens');
-      } else {
-        // Se não encontrar contagem de hoje, buscar a do dia anterior
-        const ontemDate = new Date(diaOperacional);
-        ontemDate.setDate(ontemDate.getDate() - 1);
-        const ontemOperacional = ontemDate.toISOString().split('T')[0];
-        
-        console.log('[Romaneio] Contagem de hoje não encontrada, buscando de:', ontemOperacional);
-        
-        const { data: contagemOntem, error: contagemOntemError } = await supabase
-          .from('contagem_porcionados')
-          .select(`
-            item_porcionado_id, 
-            final_sobra,
-            itens_porcionados!inner(nome)
-          `)
-          .eq('loja_id', lojaCPD.id)
-          .eq('dia_operacional', ontemOperacional)
-          .gt('final_sobra', 0);
-
-        if (contagemOntemError) throw contagemOntemError;
-
-        if (contagemOntem && contagemOntem.length > 0) {
-          contagemCPD = contagemOntem;
-          diaContagemUsado = ontemOperacional;
-          console.log('[Romaneio] Usando contagem do dia anterior:', contagemCPD.length, 'itens');
-        } else {
-          console.warn('[Romaneio] Nenhuma contagem física do CPD encontrada (hoje ou ontem)');
-        }
-      }
       
-      console.log('[Romaneio] Dia da contagem usada:', diaContagemUsado);
+      console.log('[Romaneio] Contagem física CPD encontrada:', contagemCPD?.length || 0, 'itens');
 
       // Mapear para formato compatível com o restante do código
       const estoqueCpd = contagemCPD?.map(item => ({
@@ -1274,8 +1231,7 @@ const Romaneio = () => {
         .eq('tipo', 'cpd')
         .maybeSingle();
 
-      const { data: diaOperacionalData } = await supabase.rpc('calcular_dia_operacional');
-      const diaOperacionalAtual = diaOperacionalData || new Date().toISOString().split('T')[0];
+      const diaOperacionalAtual = new Date().toISOString().split('T')[0];
 
       // Validar estoque CPD (contagem física) antes de enviar
       // Usar a mesma lógica de fallback: dia atual ou anterior
@@ -1389,8 +1345,7 @@ const Romaneio = () => {
         .eq('tipo', 'cpd')
         .maybeSingle();
 
-      const { data: diaOpValidar } = await supabase.rpc('calcular_dia_operacional');
-      const diaOpAtual = diaOpValidar || new Date().toISOString().split('T')[0];
+      const diaOpAtual = new Date().toISOString().split('T')[0];
       
       // Calcular dia anterior para fallback
       const ontemValidar = new Date(diaOpAtual);

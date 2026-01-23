@@ -246,28 +246,15 @@ const Configuracoes = () => {
     setResettingContagens(true);
     
     try {
-      // Determinar dia operacional atual (usando fuso de São Paulo)
-      const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      
-      // 1. Deletar contagens do dia
+      // 1. Deletar TODAS as contagens (não há mais filtro por dia)
       const { error: errContagens } = await supabase
         .from('contagem_porcionados')
         .delete()
-        .eq('organization_id', organizationId)
-        .eq('dia_operacional', hoje);
+        .eq('organization_id', organizationId);
       
       if (errContagens) throw errContagens;
       
-      // 2. Deletar sessões do dia
-      const { error: errSessoes } = await supabase
-        .from('sessoes_contagem')
-        .delete()
-        .eq('organization_id', organizationId)
-        .eq('dia_operacional', hoje);
-      
-      if (errSessoes) throw errSessoes;
-      
-      // 3. Deletar TODOS os itens de romaneio
+      // 2. Deletar TODOS os itens de romaneio
       const { error: errRomaneioItens } = await supabase
         .from('romaneio_itens')
         .delete()
@@ -275,7 +262,7 @@ const Configuracoes = () => {
       
       if (errRomaneioItens) throw errRomaneioItens;
       
-      // 4. Deletar TODOS os romaneios (histórico completo)
+      // 3. Deletar TODOS os romaneios (histórico completo)
       const { error: errRomaneios } = await supabase
         .from('romaneios')
         .delete()
@@ -283,7 +270,7 @@ const Configuracoes = () => {
       
       if (errRomaneios) throw errRomaneios;
       
-      // 5. Deletar TODAS as produções (todos os status, qualquer data)
+      // 4. Deletar TODAS as produções (todos os status, qualquer data)
       const { error: errProducao } = await supabase
         .from('producao_registros')
         .delete()
@@ -291,21 +278,20 @@ const Configuracoes = () => {
       
       if (errProducao) throw errProducao;
       
-      // 6. Registrar no audit log
+      // 5. Registrar no audit log
       await supabase.from('audit_logs').insert({
         action: 'RESET_CONTAGENS',
         entity_type: 'contagem_porcionados',
         entity_id: null,
         details: { 
-          dia: hoje, 
-          descricao: 'Reset geral das contagens do dia'
+          descricao: 'Reset geral de todas as contagens'
         },
         user_id: user.id,
         user_email: user.email || '',
         organization_id: organizationId,
       });
       
-      toast.success('Reset realizado com sucesso! Todas as contagens do dia foram zeradas.');
+      toast.success('Reset realizado com sucesso! Todas as contagens foram zeradas.');
       setResetContagensDialog(false);
       setConfirmText('');
       
