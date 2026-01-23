@@ -16,18 +16,21 @@ export const useLongPress = ({
   ],
 }: UseLongPressOptions) => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const isActiveRef = useRef<boolean>(false);
+  
+  // Use ref to always have the latest onPress function (avoids stale closure)
+  const onPressRef = useRef(onPress);
+  
+  // Update ref whenever onPress changes
+  useEffect(() => {
+    onPressRef.current = onPress;
+  }, [onPress]);
 
   const clearTimers = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
-    }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
     }
     isActiveRef.current = false;
   }, []);
@@ -48,14 +51,18 @@ export const useLongPress = ({
     const elapsed = Date.now() - startTimeRef.current;
     const currentInterval = getIntervalForElapsed(elapsed);
     
-    onPress();
+    // Use ref to get the latest function
+    onPressRef.current();
     
     // Schedule next execution with potentially updated interval
     timerRef.current = setTimeout(startRepeating, currentInterval);
-  }, [onPress, getIntervalForElapsed]);
+  }, [getIntervalForElapsed]);
 
   const start = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
+    // Only prevent default for touch events
+    if ('touches' in e) {
+      e.preventDefault();
+    }
     
     if (isActiveRef.current) return;
     
@@ -63,11 +70,11 @@ export const useLongPress = ({
     startTimeRef.current = Date.now();
     
     // Execute immediately on first press
-    onPress();
+    onPressRef.current();
     
     // Start repeating after initial delay
     timerRef.current = setTimeout(startRepeating, initialDelay);
-  }, [onPress, initialDelay, startRepeating]);
+  }, [initialDelay, startRepeating]);
 
   const stop = useCallback(() => {
     clearTimers();
@@ -86,5 +93,6 @@ export const useLongPress = ({
     onMouseLeave: stop,
     onTouchStart: start,
     onTouchEnd: stop,
+    onTouchCancel: stop,
   };
 };
