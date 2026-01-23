@@ -14,9 +14,10 @@ type AuditAction =
   | 'user.update'
   | 'invite.cancel'
   | 'superadmin.promote'
-  | 'superadmin.demote';
+  | 'superadmin.demote'
+  | 'producao.limpar';
 
-type EntityType = 'user' | 'role' | 'permission' | 'invite';
+type EntityType = 'user' | 'role' | 'permission' | 'invite' | 'producao_registros';
 
 interface AuditLogDetails {
   target_email?: string;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,16 +14,25 @@ import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
 import { RegistrarPerdaModal } from '@/components/modals/RegistrarPerdaModal';
 import { EstoqueInsuficienteModal } from '@/components/modals/EstoqueInsuficienteModal';
 import { ConfirmarSeparacaoInsumosModal, InsumoParaConfirmar } from '@/components/modals/ConfirmarSeparacaoInsumosModal';
-
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useAlarmSound } from '@/hooks/useAlarmSound';
 import { useCPDLoja } from '@/hooks/useCPDLoja';
-import { RefreshCw, Calculator } from 'lucide-react';
+import { RefreshCw, Calculator, Trash2, Volume2 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useMovimentacaoEstoque } from '@/hooks/useMovimentacaoEstoque';
 // Hook de romaneio automático removido - fluxo agora é 100% manual
-
 
 interface DetalheLojaProducao {
   loja_id: string;
@@ -145,6 +154,7 @@ const ResumoDaProducao = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [isLimpando, setIsLimpando] = useState(false);
   const [selectedRegistro, setSelectedRegistro] = useState<ProducaoRegistro | null>(null);
   const [modalPreparo, setModalPreparo] = useState(false);
   const [modalFinalizar, setModalFinalizar] = useState(false);
@@ -162,6 +172,42 @@ const ResumoDaProducao = () => {
   const [registroParaIniciar, setRegistroParaIniciar] = useState<ProducaoRegistro | null>(null);
   
   const [diaOperacionalAtual, setDiaOperacionalAtual] = useState<string>('');
+  
+  // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
+  const knownCardIdsRef = useRef<Set<string>>(new Set());
+  const isFirstLoadRef = useRef(true);
+  
+  // Função para tocar notificação de novo card (beep curto e distinto)
+  const playNewCardNotification = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      // Som mais agudo e curto para distinguir do alarme
+      oscillator.frequency.value = 1200;
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.2;
+
+      oscillator.start();
+      
+      // Beep duplo curto
+      setTimeout(() => {
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      }, 100);
+      setTimeout(() => {
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+      }, 200);
+      setTimeout(() => {
+        oscillator.stop();
+      }, 300);
+    } catch (error) {
+      console.error('Erro ao tocar notificação:', error);
+    }
+  }, []);
 
   const handleStopAlarm = () => {
     stopAlarm();
@@ -199,6 +245,39 @@ const ResumoDaProducao = () => {
       toast.error('Erro ao recalcular produção');
     } finally {
       setIsRecalculating(false);
+    }
+  };
+
+  // Função para limpar produção do dia (remover finalizados antigos)
+  const handleLimparProducao = async () => {
+    if (!organizationId) return;
+    
+    setIsLimpando(true);
+    try {
+      const hoje = diaOperacionalAtual || new Date().toISOString().split('T')[0];
+      
+      const { error, count } = await supabase
+        .from('producao_registros')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('status', 'finalizado')
+        .lt('data_referencia', hoje);
+      
+      if (error) throw error;
+      
+      // Registrar no audit log
+      await log('producao.limpar', 'producao_registros', null, { 
+        acao: 'limpar_finalizados',
+        data_corte: hoje,
+      });
+      
+      toast.success(`Produção limpa com sucesso! ${count || 0} registros removidos.`);
+      await loadProducaoRegistros();
+    } catch (error) {
+      console.error('Erro ao limpar produção:', error);
+      toast.error('Erro ao limpar produção');
+    } finally {
+      setIsLimpando(false);
     }
   };
 
@@ -323,16 +402,60 @@ const ResumoDaProducao = () => {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
+          schema: 'public',
+          table: 'producao_registros'
+        },
+        (payload) => {
+          if (!isMounted) return;
+          const newRecord = payload.new as { id: string; item_nome: string; status: string; organization_id: string };
+          
+          // Verificar se é da mesma organização e é um novo card
+          if (newRecord.organization_id === organizationId && 
+              newRecord.status === 'a_produzir' && 
+              !knownCardIdsRef.current.has(newRecord.id) &&
+              !isFirstLoadRef.current) {
+            // Tocar notificação sonora
+            playNewCardNotification();
+            toast.info(`🆕 Novo item para produção: ${newRecord.item_nome}`, {
+              duration: 5000,
+            });
+          }
+          
+          // Debounce para recarregar
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            if (isMounted) loadProducaoRegistros(true);
+          }, 500);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
           schema: 'public',
           table: 'producao_registros'
         },
         () => {
           if (!isMounted) return;
-          // Debounce de 500ms para evitar múltiplas chamadas - atualização silenciosa
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
-            if (isMounted) loadProducaoRegistros(true); // silent = true
+            if (isMounted) loadProducaoRegistros(true);
+          }, 500);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'producao_registros'
+        },
+        () => {
+          if (!isMounted) return;
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            if (isMounted) loadProducaoRegistros(true);
           }, 500);
         }
       )
@@ -351,11 +474,52 @@ const ResumoDaProducao = () => {
         () => {
           if (!isMounted) return;
           console.log('[ResumoDaProducao] Contagem atualizada - recarregando produção');
-          // Debounce de 1s para contagens (dá tempo do sistema recalcular)
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
-            if (isMounted) loadProducaoRegistros(true); // silent = true
+            if (isMounted) loadProducaoRegistros(true);
           }, 1000);
+        }
+      )
+      .subscribe();
+
+    // Listener realtime para estoques_ideais_semanais - quando admin altera configurações
+    const estoqueIdealChannel = supabase
+      .channel('estoque-ideal-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'estoques_ideais_semanais'
+        },
+        () => {
+          if (!isMounted) return;
+          console.log('[ResumoDaProducao] Estoque ideal alterado - aguardando recálculo');
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            if (isMounted) loadProducaoRegistros(true);
+          }, 1500);
+        }
+      )
+      .subscribe();
+
+    // Listener realtime para itens_reserva_diaria - quando admin altera reserva CPD
+    const reservaDiariaChannel = supabase
+      .channel('reserva-diaria-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'itens_reserva_diaria'
+        },
+        () => {
+          if (!isMounted) return;
+          console.log('[ResumoDaProducao] Reserva diária alterada - aguardando recálculo');
+          if (reloadTimeout) clearTimeout(reloadTimeout);
+          reloadTimeout = setTimeout(() => {
+            if (isMounted) loadProducaoRegistros(true);
+          }, 1500);
         }
       )
       .subscribe();
@@ -365,8 +529,10 @@ const ResumoDaProducao = () => {
       if (reloadTimeout) clearTimeout(reloadTimeout);
       producaoChannel.unsubscribe().then(() => supabase.removeChannel(producaoChannel));
       contagemChannel.unsubscribe().then(() => supabase.removeChannel(contagemChannel));
+      estoqueIdealChannel.unsubscribe().then(() => supabase.removeChannel(estoqueIdealChannel));
+      reservaDiariaChannel.unsubscribe().then(() => supabase.removeChannel(reservaDiariaChannel));
     };
-  }, [organizationId]);
+  }, [organizationId, playNewCardNotification]);
 
   const loadProducaoRegistros = async (silent = false) => {
     try {
@@ -623,6 +789,15 @@ const ResumoDaProducao = () => {
         
         organizedColumns[targetColumn].push(registroTyped);
       });
+
+      // Atualizar knownCardIds para detecção de novos cards
+      const allCardIds = new Set(data?.map(r => r.id) || []);
+      knownCardIdsRef.current = allCardIds;
+      
+      // Após primeira carga, desativar flag
+      if (isFirstLoadRef.current) {
+        isFirstLoadRef.current = false;
+      }
 
       setColumns(organizedColumns);
     } catch (error) {
@@ -1564,6 +1739,36 @@ const ResumoDaProducao = () => {
                 <div className="inline-block h-3 w-3 mr-2 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
                 Sincronizando...
               </Badge>
+            )}
+            {isAdmin() && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    size="sm" 
+                    variant="destructive"
+                    disabled={isLimpando || isRefreshing}
+                    title="Remove cards finalizados de dias anteriores"
+                  >
+                    <Trash2 className={`h-4 w-4 mr-2 ${isLimpando ? 'animate-pulse' : ''}`} />
+                    Limpar Produção
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Limpar Produção do Dia?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Esta ação irá remover todos os cards <strong>FINALIZADOS</strong> de dias anteriores.
+                      Cards em andamento (A Produzir, Em Preparo, Em Porcionamento) serão mantidos.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleLimparProducao}>
+                      Confirmar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
             {isAdmin() && (
               <Button 
