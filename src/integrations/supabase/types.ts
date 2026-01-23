@@ -3385,17 +3385,7 @@ export type Database = {
           }
         | {
             Args: {
-              p_dia_operacional?: string
-              p_item_id: string
-              p_organization_id: string
-              p_usuario_id: string
-              p_usuario_nome: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_dia_operacional?: string
+              p_dia_operacional: string
               p_is_incremental?: boolean
               p_item_id: string
               p_organization_id: string
