@@ -23,6 +23,7 @@ import { VolumeInput } from '@/components/ui/volume-input';
 import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weightUtils';
 import { pesoProgressivoToWords } from '@/lib/numberToWords';
 import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
+import { LojaSelectionGrid } from '@/components/romaneio/LojaSelectionGrid';
 
 // Formatar código do lote adicionando data legível
 // Entrada: "LOTE-20260110-003"
@@ -554,6 +555,9 @@ const Romaneio = () => {
   
   // Estoque CPD para exibição de resumo
   const [estoqueCPDResumo, setEstoqueCPDResumo] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
+  
+  // Estado para loja selecionada (novo fluxo de seleção por botões)
+  const [lojaSelecionada, setLojaSelecionada] = useState<string | null>(null);
 
   // ==================== EFFECTS ====================
 
@@ -2126,7 +2130,7 @@ const Romaneio = () => {
                 </TabsTrigger>
               </TabsList>
 
-              {/* TAB: ENVIAR - SEÇÕES INDEPENDENTES POR LOJA */}
+              {/* TAB: ENVIAR - SELEÇÃO POR LOJA COM BOTÕES */}
               {canManageProduction && (
                 <TabsContent value="enviar" className="space-y-4">
                   {/* Botões de ação */}
@@ -2160,39 +2164,11 @@ const Romaneio = () => {
                     </Button>
                   </div>
 
-                  {/* RESUMO DE ESTOQUE CPD */}
-                  {estoqueCPDResumo.length > 0 && (
-                    <Card className="border border-primary/30 bg-primary/5">
-                      <CardHeader className="py-3">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Package className="w-5 h-5 text-primary" />
-                          Estoque Disponível no CPD
-                        </CardTitle>
-                        <CardDescription>
-                          Escolha a ordem de envio das lojas. O estoque será debitado ao confirmar cada envio.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="py-2">
-                        <div className="flex flex-wrap gap-2">
-                          {estoqueCPDResumo.map((item) => (
-                            <Badge 
-                              key={item.item_nome} 
-                              variant="secondary" 
-                              className="text-sm py-1 px-3"
-                            >
-                              {item.item_nome}: <span className="font-bold ml-1">{item.quantidade}</span> un
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
                   {/* SEÇÃO: ROMANEIOS AGUARDANDO CONFERÊNCIA */}
                   {romaneiosAguardando.length > 0 && (
-                    <Card className="border-2 border-amber-500/50 bg-amber-50/30 dark:bg-amber-950/20">
+                    <Card className="border-2 border-secondary bg-secondary/10">
                       <CardHeader className="py-3">
-                        <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-400">
+                        <CardTitle className="flex items-center gap-2 text-base text-secondary-foreground">
                           <Clock className="w-5 h-5" />
                           Romaneios Aguardando Conferência ({romaneiosAguardando.length})
                         </CardTitle>
@@ -2206,16 +2182,16 @@ const Romaneio = () => {
                           const itensNaoSalvos = romaneio.itens.filter(i => !i.salvo).length;
                           
                           return (
-                            <Card key={romaneio.id} className="border-l-4 border-l-amber-500">
+                            <Card key={romaneio.id} className="border-l-4 border-l-secondary">
                               <CardHeader className="py-3">
                                 <div className="flex items-center justify-between">
                                   <CardTitle className="flex items-center gap-2 text-base">
-                                    <Store className="w-4 h-4 text-amber-600" />
+                                    <Store className="w-4 h-4 text-secondary-foreground" />
                                     {romaneio.loja_nome}
                                   </CardTitle>
                                   <div className="flex items-center gap-2">
                                     {itensNaoSalvos > 0 && (
-                                      <Badge variant="outline" className="text-amber-600 border-amber-600">
+                                      <Badge variant="outline" className="text-secondary-foreground border-secondary">
                                         {itensNaoSalvos} item(ns) pendente(s)
                                       </Badge>
                                     )}
@@ -2234,9 +2210,9 @@ const Romaneio = () => {
                               <CardContent className="pt-0">
                                 {/* Tarja de Demanda */}
                                 {romaneio.data_referencia && (
-                                  <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-700 rounded-lg">
-                                    <CalendarDays className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
-                                    <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                                  <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-destructive/10 border border-destructive/30 rounded-lg">
+                                    <CalendarDays className="w-4 h-4 text-destructive flex-shrink-0" />
+                                    <span className="text-sm font-medium text-destructive">
                                       DEMANDA: Referente à demanda de {getDescricaoDia(romaneio.data_referencia)}, {format(new Date(romaneio.data_referencia + 'T12:00:00'), "dd/MM/yyyy")} - {romaneio.loja_nome}
                                     </span>
                                   </div>
@@ -2247,12 +2223,12 @@ const Romaneio = () => {
                                     const precisaSalvar = !item.salvo && camposPreenchidos;
                                     
                                     return (
-                                      <div key={item.id} className={`flex items-center gap-3 p-3 border rounded ${item.salvo ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20' : 'bg-background'}`}>
+                                      <div key={item.id} className={`flex items-center gap-3 p-3 border rounded ${item.salvo ? 'border-primary/50 bg-primary/5' : 'bg-background'}`}>
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-2">
                                             <p className="font-medium">{item.item_nome}</p>
                                             {item.salvo && (
-                                              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                              <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
                                             )}
                                           </div>
                                           <p className="text-sm text-muted-foreground">{item.quantidade} un</p>
@@ -2278,7 +2254,7 @@ const Romaneio = () => {
                                           variant={item.salvo ? "ghost" : "default"}
                                           className={`h-9 px-3 ${
                                             item.salvo 
-                                              ? "text-green-600 hover:text-green-700 hover:bg-green-50" 
+                                              ? "text-primary hover:text-primary/80 hover:bg-primary/10" 
                                               : precisaSalvar 
                                                 ? "bg-primary hover:bg-primary/90 text-primary-foreground animate-pulse"
                                                 : "bg-muted text-muted-foreground"
@@ -2309,80 +2285,55 @@ const Romaneio = () => {
                   
                   <Separator />
                   
-                  {loadingDemandas ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                      <span className="ml-2 text-muted-foreground">Carregando demandas...</span>
-                    </div>
-                  ) : lojasComItens.length === 0 ? (
-                    <div className="py-12 text-center text-muted-foreground">
-                      <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-lg font-medium">Nenhum item disponível para envio</p>
-                      <p className="text-sm mt-1">
-                        Itens aparecerão automaticamente quando a produção for finalizada
-                      </p>
-                      
-                      {/* Indicador de lojas sem demanda */}
-                      {lojas.length > 0 && (
-                        <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-dashed max-w-md mx-auto">
-                          <p className="text-xs font-medium text-muted-foreground mb-2">
-                            Lojas cadastradas ({lojas.length}):
-                          </p>
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {lojas.map(loja => (
-                              <Badge key={loja.id} variant="outline" className="text-xs">
-                                {loja.nome}
-                              </Badge>
-                            ))}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Nenhuma demanda pendente para estas lojas
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                  {/* SELEÇÃO DE LOJA POR BOTÕES */}
+                  {!lojaSelecionada ? (
+                    <LojaSelectionGrid
+                      lojas={lojas}
+                      demandasPorLoja={demandasPorLoja}
+                      estoqueCPDResumo={estoqueCPDResumo}
+                      lojaSelecionada={lojaSelecionada}
+                      onSelectLoja={setLojaSelecionada}
+                      loading={loadingDemandas}
+                    />
                   ) : (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>
-                          {lojasComItens.length} {lojasComItens.length === 1 ? 'loja' : 'lojas'} com itens pendentes
-                        </span>
-                      </div>
+                    <>
+                      {/* Botão Voltar */}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setLojaSelecionada(null)}
+                        className="gap-2"
+                      >
+                        <ArrowRightLeft className="w-4 h-4" />
+                        Voltar para Seleção de Lojas
+                      </Button>
                       
-                      {lojasComItens.map(demanda => (
-                        <SecaoLojaRomaneio
-                          key={demanda.loja_id}
-                          demanda={demanda}
-                          onEnviar={handleEnviarRomaneioLoja}
-                          onUpdateQuantidade={handleUpdateQuantidadeLoja}
-                          onUpdatePesoItem={handleUpdatePesoItemLoja}
-                          onUpdateVolumesItem={handleUpdateVolumesItemLoja}
-                          onRemoveItem={handleRemoveItemLoja}
-                          onAddItem={handleAddItemLoja}
-                          onSalvarItem={handleSalvarItemLoja}
-                        />
-                      ))}
-                      
-                      {/* Indicador de lojas sem demanda quando há algumas com demanda */}
-                      {lojas.length > lojasComItens.length && (
-                        <div className="p-3 bg-muted/30 rounded-lg border border-dashed">
-                          <p className="text-xs font-medium text-muted-foreground mb-2">
-                            Lojas sem demanda pendente ({lojas.length - lojasComItens.length}):
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {lojas
-                              .filter(loja => !lojasComItens.find(d => d.loja_id === loja.id))
-                              .map(loja => (
-                                <Badge key={loja.id} variant="outline" className="text-xs opacity-60">
-                                  {loja.nome}
-                                </Badge>
-                              ))
-                            }
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                      {/* Painel da Loja Selecionada */}
+                      {(() => {
+                        const demandaSelecionada = demandasPorLoja.find(d => d.loja_id === lojaSelecionada);
+                        if (!demandaSelecionada) {
+                          return (
+                            <div className="py-8 text-center text-muted-foreground">
+                              <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                              <p>Loja não encontrada</p>
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <SecaoLojaRomaneio
+                            demanda={demandaSelecionada}
+                            onEnviar={handleEnviarRomaneioLoja}
+                            onUpdateQuantidade={handleUpdateQuantidadeLoja}
+                            onUpdatePesoItem={handleUpdatePesoItemLoja}
+                            onUpdateVolumesItem={handleUpdateVolumesItemLoja}
+                            onRemoveItem={handleRemoveItemLoja}
+                            onAddItem={handleAddItemLoja}
+                            onSalvarItem={handleSalvarItemLoja}
+                          />
+                        );
+                      })()}
+                    </>
                   )}
                 </TabsContent>
               )}

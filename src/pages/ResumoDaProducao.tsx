@@ -1212,6 +1212,57 @@ const ResumoDaProducao = () => {
         console.error('Erro ao atualizar estoque CPD:', estoqueError);
         toast.error('Produção finalizada, mas erro ao atualizar estoque');
       } else {
+        // TAMBÉM ATUALIZAR contagem_porcionados do CPD para consistência com Romaneio
+        try {
+          const { data: cpdLoja } = await supabase
+            .from('lojas')
+            .select('id')
+            .eq('organization_id', organizationId)
+            .eq('tipo', 'cpd')
+            .single();
+
+          if (cpdLoja) {
+            const diaOperacional = new Date().toISOString().split('T')[0];
+            
+            // Buscar contagem existente
+            const { data: contagemExistente } = await supabase
+              .from('contagem_porcionados')
+              .select('id, final_sobra')
+              .eq('loja_id', cpdLoja.id)
+              .eq('item_porcionado_id', selectedRegistro.item_id)
+              .eq('dia_operacional', diaOperacional)
+              .maybeSingle();
+            
+            if (contagemExistente) {
+              // Incrementar final_sobra
+              await supabase
+                .from('contagem_porcionados')
+                .update({ 
+                  final_sobra: contagemExistente.final_sobra + data.unidades_reais,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', contagemExistente.id);
+            } else {
+              // Criar nova contagem para o dia
+              await supabase
+                .from('contagem_porcionados')
+                .insert({
+                  loja_id: cpdLoja.id,
+                  item_porcionado_id: selectedRegistro.item_id,
+                  dia_operacional: diaOperacional,
+                  final_sobra: data.unidades_reais,
+                  ideal_amanha: 0,
+                  usuario_id: user?.id || '',
+                  usuario_nome: profile?.nome || 'Sistema',
+                  organization_id: organizationId
+                });
+            }
+            console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome}`);
+          }
+        } catch (contagemError) {
+          console.warn('Aviso: falha ao atualizar contagem_porcionados do CPD:', contagemError);
+        }
+
         toast.success('Produção finalizada com sucesso!');
         
         // === ROMANEIO AUTOMÁTICO ===
