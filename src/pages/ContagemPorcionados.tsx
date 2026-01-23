@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dialog';
 import { useSessaoContagem } from '@/hooks/useSessaoContagem';
 import { useJanelaContagem } from '@/hooks/useJanelaContagem';
+import { useRomaneioAutomatico } from '@/hooks/useRomaneioAutomatico';
 import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
 import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
@@ -163,6 +164,9 @@ const ContagemPorcionados = () => {
     isDentroJanela,
     isDepoisJanela,
   } = useJanelaContagem(lojas.map(l => l.id));
+
+  // Hook de romaneio automático
+  const { verificarECriarRomaneiosAutomaticos } = useRomaneioAutomatico();
 
   // Verificar se usuário é restrito (não-admin) - todos não-admin usam lojas_acesso
   const isRestrictedUser = !isAdmin();
@@ -594,6 +598,31 @@ const ContagemPorcionados = () => {
         }
 
         toast.success('✅ Contagem encerrada e verificada com sucesso!');
+        
+        // 6. Verificar se TODAS as lojas (não-CPD) encerraram e criar romaneios automaticamente
+        // Buscar tipo da loja atual
+        const lojaAtual = lojas.find(l => l.id === lojaId);
+        const { data: lojaData } = await supabase
+          .from('lojas')
+          .select('tipo')
+          .eq('id', lojaId)
+          .single();
+        
+        // Só verificar se a loja atual NÃO é CPD
+        if (lojaData?.tipo !== 'cpd' && organizationId) {
+          console.log('[handleEncerrarSessao] Verificando se todas as lojas encerraram para criar romaneios...');
+          const result = await verificarECriarRomaneiosAutomaticos(
+            organizationId,
+            diaOperacionalTravado,
+            user!.id,
+            profile?.nome || user?.email || 'Usuário'
+          );
+          
+          if (result.aguardandoLojas.length > 0) {
+            toast.info(`Aguardando ${result.aguardandoLojas.length} loja(s) encerrar contagem: ${result.aguardandoLojas.join(', ')}`);
+          }
+        }
+
         loadData();
       }
     } catch (error) {

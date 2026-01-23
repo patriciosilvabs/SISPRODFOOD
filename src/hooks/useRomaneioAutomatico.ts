@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { addDays, getDay } from 'date-fns';
 
 interface DetalheLojaProducao {
   loja_id: string;
@@ -12,6 +13,13 @@ interface RomaneioAutomaticoResult {
   romaneiosCriados: number;
   error?: string;
 }
+
+type DiaSemana = 'domingo' | 'segunda' | 'terca' | 'quarta' | 'quinta' | 'sexta' | 'sabado';
+
+const getDiaSemanaKey = (date: Date): DiaSemana => {
+  const dias: DiaSemana[] = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+  return dias[getDay(date)];
+};
 
 /**
  * Hook para criar romaneios automaticamente ao finalizar produção
@@ -171,6 +179,249 @@ export const useRomaneioAutomatico = () => {
   };
 
   /**
+   * Verifica se TODAS as lojas com janela ativa encerraram a contagem
+   * e cria romaneios automaticamente baseado na demanda (ideal - sobra)
+   */
+  const verificarECriarRomaneiosAutomaticos = async (
+    organizationId: string,
+    diaOperacional: string,
+    userId: string,
+    userName: string
+  ): Promise<{ romaneiosCriados: number; aguardandoLojas: string[] }> => {
+    try {
+      console.log('[Romaneio Auto Contagem] Verificando se todas as lojas encerraram...', { diaOperacional });
+
+      const hoje = new Date();
+      const diaSemanaAtual = getDay(hoje); // 0-6 (domingo-sábado)
+
+      // 1. Buscar lojas NÃO-CPD com janela ATIVA para o dia da semana atual
+      const { data: lojasData } = await supabase
+        .from('lojas')
+        .select('id, nome, tipo')
+        .eq('organization_id', organizationId)
+        .neq('tipo', 'cpd');
+
+      if (!lojasData || lojasData.length === 0) {
+        console.log('[Romaneio Auto Contagem] Nenhuma loja não-CPD encontrada');
+        return { romaneiosCriados: 0, aguardandoLojas: [] };
+      }
+
+      // 2. Verificar janelas ativas por dia da semana
+      const { data: janelasAtivas } = await supabase
+        .from('janelas_contagem_por_dia')
+        .select('loja_id')
+        .eq('dia_semana', diaSemanaAtual)
+        .eq('ativo', true)
+        .in('loja_id', lojasData.map(l => l.id));
+
+      // Se há janelas configuradas, usar apenas lojas com janela ativa
+      // Se não há janelas configuradas, usar todas as lojas
+      const lojasParaVerificar = janelasAtivas && janelasAtivas.length > 0
+        ? lojasData.filter(l => janelasAtivas.some(j => j.loja_id === l.id))
+        : lojasData;
+
+      if (lojasParaVerificar.length === 0) {
+        console.log('[Romaneio Auto Contagem] Nenhuma loja com janela ativa hoje');
+        return { romaneiosCriados: 0, aguardandoLojas: [] };
+      }
+
+      console.log(`[Romaneio Auto Contagem] Lojas a verificar: ${lojasParaVerificar.map(l => l.nome).join(', ')}`);
+
+      // 3. Verificar sessões ENCERRADAS do dia operacional
+      const { data: sessoesEncerradas } = await supabase
+        .from('sessoes_contagem')
+        .select('loja_id')
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', diaOperacional)
+        .eq('status', 'encerrada')
+        .in('loja_id', lojasParaVerificar.map(l => l.id));
+
+      const lojasEncerradas = new Set(sessoesEncerradas?.map(s => s.loja_id) || []);
+
+      // 4. Verificar se TODAS as lojas ativas encerraram
+      const lojasFaltando = lojasParaVerificar.filter(l => !lojasEncerradas.has(l.id));
+      
+      if (lojasFaltando.length > 0) {
+        console.log(`[Romaneio Auto Contagem] Aguardando ${lojasFaltando.length} loja(s): ${lojasFaltando.map(l => l.nome).join(', ')}`);
+        return { romaneiosCriados: 0, aguardandoLojas: lojasFaltando.map(l => l.nome) };
+      }
+
+      console.log('[Romaneio Auto Contagem] ✅ TODAS as lojas encerraram! Criando romaneios...');
+
+      // 5. Calcular dia da demanda (próximo dia após o dia operacional)
+      const dataDiaOperacional = new Date(diaOperacional + 'T12:00:00');
+      const amanha = addDays(dataDiaOperacional, 1);
+      const diaSemanaAmanha = getDiaSemanaKey(amanha);
+      console.log(`[Romaneio Auto Contagem] Dia da demanda: ${diaSemanaAmanha} (${amanha.toISOString().split('T')[0]})`);
+
+      // 6. Buscar estoques ideais semanais
+      const { data: estoquesIdeais } = await supabase
+        .from('estoques_ideais_semanais')
+        .select('loja_id, item_porcionado_id, segunda, terca, quarta, quinta, sexta, sabado, domingo')
+        .eq('organization_id', organizationId);
+
+      // 7. Buscar contagens do dia operacional
+      const { data: contagens } = await supabase
+        .from('contagem_porcionados')
+        .select('loja_id, item_porcionado_id, final_sobra')
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', diaOperacional)
+        .in('loja_id', lojasParaVerificar.map(l => l.id));
+
+      // 8. Buscar estoque CPD
+      const { data: estoqueCPD } = await supabase
+        .from('estoque_cpd')
+        .select('item_porcionado_id, quantidade')
+        .eq('organization_id', organizationId);
+
+      const estoqueMap = new Map(estoqueCPD?.map(e => [e.item_porcionado_id, e.quantidade]) || []);
+
+      // 9. Buscar itens porcionados ativos
+      const { data: itensPorcionados } = await supabase
+        .from('itens_porcionados')
+        .select('id, nome')
+        .eq('organization_id', organizationId)
+        .eq('ativo', true);
+
+      if (!itensPorcionados || itensPorcionados.length === 0) {
+        console.log('[Romaneio Auto Contagem] Nenhum item porcionado ativo');
+        return { romaneiosCriados: 0, aguardandoLojas: [] };
+      }
+
+      let totalRomaneiosCriados = 0;
+      const agora = new Date().toISOString();
+
+      // 10. Para cada item, calcular demanda e criar romaneios
+      for (const item of itensPorcionados) {
+        let demandaTotal = 0;
+        const demandasPorLoja: { lojaId: string; lojaNome: string; quantidade: number }[] = [];
+
+        for (const loja of lojasParaVerificar) {
+          // Buscar estoque ideal do dia
+          const estoqueIdeal = estoquesIdeais?.find(
+            e => e.loja_id === loja.id && e.item_porcionado_id === item.id
+          );
+          const idealDia = estoqueIdeal?.[diaSemanaAmanha] || 0;
+
+          // Buscar sobra da contagem
+          const contagem = contagens?.find(
+            c => c.loja_id === loja.id && c.item_porcionado_id === item.id
+          );
+          const sobra = contagem?.final_sobra || 0;
+
+          // Calcular demanda
+          const demanda = Math.max(0, idealDia - sobra);
+
+          if (demanda > 0) {
+            demandaTotal += demanda;
+            demandasPorLoja.push({
+              lojaId: loja.id,
+              lojaNome: loja.nome,
+              quantidade: demanda
+            });
+          }
+        }
+
+        if (demandaTotal === 0) {
+          console.log(`[Romaneio Auto Contagem] Item ${item.nome}: demanda total = 0, ignorando`);
+          continue;
+        }
+
+        const estoqueDisponivel = estoqueMap.get(item.id) || 0;
+
+        // 11. Verificar estoque suficiente
+        if (estoqueDisponivel < demandaTotal) {
+          console.log(`[Romaneio Auto Contagem] Item ${item.nome}: estoque insuficiente. Disponível: ${estoqueDisponivel}, Demanda: ${demandaTotal}`);
+          continue;
+        }
+
+        console.log(`[Romaneio Auto Contagem] Item ${item.nome}: demanda total = ${demandaTotal}, estoque = ${estoqueDisponivel} ✓`);
+
+        // 12. Criar romaneios para cada loja com demanda
+        for (const demanda of demandasPorLoja) {
+          // Verificar se já existe romaneio_item para este item/loja (evitar duplicação)
+          const { data: existente } = await supabase
+            .from('romaneio_itens')
+            .select('romaneio_itens.id, romaneios!inner(loja_id, status)')
+            .eq('item_porcionado_id', item.id)
+            .eq('organization_id', organizationId)
+            .eq('romaneios.loja_id', demanda.lojaId)
+            .eq('romaneios.status', 'aguardando_conferencia');
+
+          if (existente && existente.length > 0) {
+            console.log(`[Romaneio Auto Contagem] Romaneio já existe para ${item.nome} -> ${demanda.lojaNome}`);
+            continue;
+          }
+
+          // Buscar ou criar romaneio para esta loja
+          let { data: romaneio } = await supabase
+            .from('romaneios')
+            .select('id')
+            .eq('loja_id', demanda.lojaId)
+            .eq('status', 'aguardando_conferencia')
+            .eq('organization_id', organizationId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!romaneio) {
+            const { data: novo, error: createError } = await supabase
+              .from('romaneios')
+              .insert({
+                loja_id: demanda.lojaId,
+                loja_nome: demanda.lojaNome,
+                status: 'aguardando_conferencia',
+                data_criacao: agora,
+                usuario_id: userId,
+                usuario_nome: userName,
+                organization_id: organizationId,
+                observacao: 'Criado automaticamente após todas as lojas encerrarem contagem'
+              })
+              .select('id')
+              .single();
+
+            if (createError) {
+              console.error(`[Romaneio Auto Contagem] Erro ao criar romaneio para ${demanda.lojaNome}:`, createError);
+              continue;
+            }
+            romaneio = novo;
+            console.log(`[Romaneio Auto Contagem] ✅ Novo romaneio criado para ${demanda.lojaNome}`);
+          }
+
+          // Inserir item no romaneio
+          const { error: itemError } = await supabase.from('romaneio_itens').insert({
+            romaneio_id: romaneio.id,
+            item_porcionado_id: item.id,
+            item_nome: item.nome,
+            quantidade: demanda.quantidade,
+            peso_total_kg: 0,
+            quantidade_volumes: 0,
+            organization_id: organizationId
+          });
+
+          if (itemError) {
+            console.error(`[Romaneio Auto Contagem] Erro ao inserir item:`, itemError);
+            continue;
+          }
+
+          totalRomaneiosCriados++;
+          console.log(`[Romaneio Auto Contagem] ✅ Item adicionado: ${item.nome} -> ${demanda.lojaNome} (${demanda.quantidade} un)`);
+        }
+      }
+
+      if (totalRomaneiosCriados > 0) {
+        toast.success(`📦 ${totalRomaneiosCriados} romaneio(s) criado(s) automaticamente! Verifique na tela de Romaneio.`);
+      }
+
+      return { romaneiosCriados: totalRomaneiosCriados, aguardandoLojas: [] };
+    } catch (error) {
+      console.error('[Romaneio Auto Contagem] Erro inesperado:', error);
+      toast.error('Erro ao criar romaneios automáticos');
+      return { romaneiosCriados: 0, aguardandoLojas: [] };
+    }
+  };
+
+  /**
    * Busca produções finalizadas sem romaneio criado (fallback manual)
    * Útil quando o romaneio automático falhou por falta de estoque que foi posteriormente reposto
    */
@@ -269,6 +520,7 @@ export const useRomaneioAutomatico = () => {
 
   return {
     criarRomaneiosAutomaticos,
+    verificarECriarRomaneiosAutomaticos,
     buscarProducoesPendentes
   };
 };
