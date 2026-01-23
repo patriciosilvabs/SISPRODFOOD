@@ -1249,15 +1249,12 @@ const ResumoDaProducao = () => {
             .single();
 
           if (cpdLoja) {
-            const diaOperacional = new Date().toISOString().split('T')[0];
-            
-            // Buscar contagem existente
+            // Buscar contagem existente (unique por loja_id + item_porcionado_id)
             const { data: contagemExistente } = await supabase
               .from('contagem_porcionados')
               .select('id, final_sobra')
               .eq('loja_id', cpdLoja.id)
               .eq('item_porcionado_id', selectedRegistro.item_id)
-              .eq('dia_operacional', diaOperacional)
               .maybeSingle();
             
             if (contagemExistente) {
@@ -1270,13 +1267,12 @@ const ResumoDaProducao = () => {
                 })
                 .eq('id', contagemExistente.id);
             } else {
-              // Criar nova contagem para o dia
+              // Criar nova contagem
               await supabase
                 .from('contagem_porcionados')
                 .insert({
                   loja_id: cpdLoja.id,
                   item_porcionado_id: selectedRegistro.item_id,
-                  dia_operacional: diaOperacional,
                   final_sobra: data.unidades_reais,
                   ideal_amanha: 0,
                   usuario_id: user?.id || '',
