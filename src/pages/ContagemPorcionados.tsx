@@ -920,7 +920,7 @@ const ContagemPorcionados = () => {
 
         {/* Footer Fixo */}
         <ContagemFixedFooter
-          isSessaoAtiva={true}
+          isSessaoAtiva={false}
           podeEncerrar={false}
           savingAll={savingAll}
           hasChanges={hasAnyChanges()}
