@@ -334,11 +334,11 @@ const ContagemPorcionados = () => {
         }
         contagensPorLoja[contagem.loja_id].push(contagemComNome);
         
-        // Salvar valores originais para detecção de mudanças
+        // Salvar valores originais para detecção de mudanças (como strings para consistência)
         const key = `${contagem.loja_id}-${contagem.item_porcionado_id}`;
         originals[key] = {
-          final_sobra: contagem.final_sobra,
-          peso_total_g: contagem.peso_total_g,
+          final_sobra: String(contagem.final_sobra ?? ''),
+          peso_total_g: String(contagem.peso_total_g ?? ''),
           ideal_amanha: contagem.ideal_amanha,
         };
       });
@@ -391,16 +391,22 @@ const ContagemPorcionados = () => {
   const handleValueChange = (lojaId: string, itemId: string, field: string, value: string) => {
     const key = `${lojaId}-${itemId}`;
     
+    console.log('[handleValueChange] Chamado:', { key, field, value, originalValue: originalValues[key]?.[field] });
+    
     // Marcar campo como tocado na sessão
     marcarCampoTocado(lojaId, itemId, field);
     
-    setEditingValues(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: value,
-      },
-    }));
+    setEditingValues(prev => {
+      const newValues = {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          [field]: value,
+        },
+      };
+      console.log('[handleValueChange] Novo editingValues[key]:', newValues[key]);
+      return newValues;
+    });
   };
 
   // Função auxiliar para normalizar valores para comparação
@@ -437,10 +443,20 @@ const ContagemPorcionados = () => {
 
   // Verificar se há qualquer alteração pendente
   const hasAnyChanges = (): boolean => {
-    return Object.keys(editingValues).some(key => {
+    const keys = Object.keys(editingValues);
+    console.log('[hasAnyChanges] editingValues keys:', keys.length, keys);
+    
+    const result = keys.some(key => {
       const [lojaId, itemId] = key.split('-');
-      return isRowDirty(lojaId, itemId);
+      const dirty = isRowDirty(lojaId, itemId);
+      if (dirty) {
+        console.log('[hasAnyChanges] Encontrada alteração em:', key);
+      }
+      return dirty;
     });
+    
+    console.log('[hasAnyChanges] Resultado:', result);
+    return result;
   };
 
   // Obter todas as linhas com alterações
