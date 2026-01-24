@@ -13,6 +13,7 @@ interface ContagemItemCardProps {
     nome: string;
     peso_unitario_g: number;
   };
+  lojaNome?: string;
   finalSobra: number;
   pesoTotal: string | number;
   idealFromConfig: number;
@@ -36,6 +37,7 @@ interface ContagemItemCardProps {
 
 export const ContagemItemCard = ({
   item,
+  lojaNome,
   finalSobra,
   pesoTotal,
   idealFromConfig,
@@ -98,6 +100,9 @@ export const ContagemItemCard = ({
     >
       {/* Nome e Status */}
       <div className="flex-1 min-w-0">
+        {lojaNome && (
+          <p className="text-xs text-primary font-medium mb-0.5">{lojaNome}</p>
+        )}
         <div className="flex items-center gap-2">
           {campoTocado && (
             <CheckCircle className="h-4 w-4 text-success shrink-0" />

@@ -944,6 +944,7 @@ const ContagemPorcionados = () => {
                         <ContagemItemCard
                           key={item.id}
                           item={item}
+                          lojaNome={loja.nome}
                           finalSobra={finalSobra}
                           pesoTotal={pesoTotal}
                           idealFromConfig={idealFromConfig}
