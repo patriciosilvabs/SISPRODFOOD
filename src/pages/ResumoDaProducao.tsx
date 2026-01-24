@@ -674,11 +674,13 @@ const ResumoDaProducao = () => {
             const escalaInsumo = (insumoVinculado as any).escala_configuracao || 'por_unidade';
             
             // ===== TRATAMENTO ESPECIAL PARA LOTE_MASSEIRA =====
-            if (itemInfo?.unidade_medida === 'lote_masseira' && registro.lotes_masseira) {
-              // Para LOTE_MASSEIRA, SEMPRE usar número de lotes, não unidades
-              // Todos os insumos são configurados POR LOTE
-              quantidadeNecessaria = registro.lotes_masseira * insumoVinculado.quantidade;
-            } 
+            // Cada card agora representa 1 lote (após desmembramento na função SQL)
+            // lotes_masseira = 1 por card, então usamos isso como multiplicador
+            if (itemInfo?.unidade_medida === 'lote_masseira') {
+              // IMPORTANTE: cada card = 1 lote, usar lotes_masseira ou default 1
+              const lotesDoCard = registro.lotes_masseira || 1;
+              quantidadeNecessaria = lotesDoCard * insumoVinculado.quantidade;
+            }
             // ===== DEMAIS TIPOS =====
             else if (escalaInsumo === 'por_lote' || escalaInsumo === 'por_traco') {
               // Insumo configurado para consumir por lote/traço
