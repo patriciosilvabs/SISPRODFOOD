@@ -51,6 +51,9 @@ interface ItemPorcionado {
   id: string;
   nome: string;
   peso_unitario_g: number;
+  unidade_medida?: string;
+  massa_gerada_por_lote_kg?: number;
+  peso_medio_operacional_bolinha_g?: number;
 }
 
 interface Contagem {
@@ -179,10 +182,10 @@ const ContagemPorcionados = () => {
         lojasData = data || [];
       }
 
-      // Carregar itens porcionados (apenas ativos)
+      // Carregar itens porcionados (apenas ativos) com dados de masseira
       const { data: itensData, error: itensError } = await supabase
         .from('itens_porcionados')
-        .select('id, nome, peso_unitario_g')
+        .select('id, nome, peso_unitario_g, unidade_medida, massa_gerada_por_lote_kg, peso_medio_operacional_bolinha_g')
         .eq('ativo', true)
         .order('nome');
       
@@ -940,6 +943,16 @@ const ContagemPorcionados = () => {
                       const aProduzir = Math.max(0, idealFromConfig - finalSobra);
                       const isDirty = isRowDirty(loja.id, item.id);
                       
+                      // Calcular lotes necessários para itens lote_masseira
+                      const isLoteMasseira = item.unidade_medida === 'lote_masseira';
+                      let lotesNecessarios = 0;
+                      if (isLoteMasseira && aProduzir > 0) {
+                        const massaGeradaPorLoteKg = item.massa_gerada_por_lote_kg || 25;
+                        const pesoMedioG = item.peso_medio_operacional_bolinha_g || 400;
+                        const unidadesPorLote = massaGeradaPorLoteKg / (pesoMedioG / 1000);
+                        lotesNecessarios = Math.ceil(aProduzir / unidadesPorLote);
+                      }
+                      
                       return (
                         <ContagemItemCard
                           key={item.id}
@@ -963,6 +976,8 @@ const ContagemPorcionados = () => {
                           currentDayLabel={diasSemanaLabels[currentDay]}
                           showProducaoExtra={isAdminUser}
                           onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
+                          isLoteMasseira={isLoteMasseira}
+                          lotesNecessarios={lotesNecessarios}
                         />
                       );
                     })}

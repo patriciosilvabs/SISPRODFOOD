@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
-  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp 
+  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -33,6 +33,9 @@ interface ContagemItemCardProps {
   // Novas props para produção extra
   showProducaoExtra?: boolean;
   onSolicitarProducaoExtra?: () => void;
+  // Props para itens lote_masseira
+  isLoteMasseira?: boolean;
+  lotesNecessarios?: number;
 }
 
 export const ContagemItemCard = ({
@@ -56,6 +59,8 @@ export const ContagemItemCard = ({
   currentDayLabel,
   showProducaoExtra = false,
   onSolicitarProducaoExtra,
+  isLoteMasseira = false,
+  lotesNecessarios = 0,
 }: ContagemItemCardProps) => {
   // Hooks para segurar e acelerar os botões
   const decrementHandlers = useLongPress({
@@ -198,6 +203,17 @@ export const ContagemItemCard = ({
           <span className="text-[10px] uppercase tracking-wide opacity-80">A Produzir</span>
           <span className="text-base font-bold">{aProduzir}</span>
         </div>
+
+        {/* Lotes Necessários - apenas para itens lote_masseira */}
+        {isLoteMasseira && lotesNecessarios > 0 && (
+          <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[70px] bg-blue-500 dark:bg-blue-600 text-white">
+            <span className="text-[10px] uppercase tracking-wide opacity-80 flex items-center gap-1">
+              <Layers className="h-3 w-3" />
+              Lotes
+            </span>
+            <span className="text-base font-bold">{lotesNecessarios}</span>
+          </div>
+        )}
 
         {/* Botão Produção Extra */}
         {showProducaoExtra && onSolicitarProducaoExtra && (
