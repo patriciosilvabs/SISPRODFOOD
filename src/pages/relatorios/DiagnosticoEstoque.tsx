@@ -1,12 +1,14 @@
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, TrendingUp, Package, Clock, User } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { AlertTriangle, TrendingUp, Package, Clock, User, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Button } from '@/components/ui/button';
+import { useOrganization } from '@/contexts/OrganizationContext';
 
 interface DiagnosticoItem {
   item_id: string;
@@ -22,14 +24,12 @@ interface DiagnosticoItem {
 }
 
 const DiagnosticoEstoque = () => {
+  const { organizationId } = useOrganization();
   const [diagnosticos, setDiagnosticos] = useState<DiagnosticoItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
-  useEffect(() => {
-    loadDiagnostico();
-  }, []);
-
-  const loadDiagnostico = async () => {
+  const loadDiagnostico = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -114,7 +114,46 @@ const DiagnosticoEstoque = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadDiagnostico();
+    
+    // Realtime subscription
+    const channel = supabase
+      .channel('diagnostico-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'estoque_cpd' },
+        () => {
+          console.log('[DiagnosticoEstoque] Estoque CPD atualizado');
+          loadDiagnostico();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'producao_registros' },
+        () => {
+          console.log('[DiagnosticoEstoque] Produção atualizada');
+          loadDiagnostico();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[DiagnosticoEstoque] Realtime status:', status);
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('connected');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setRealtimeStatus('disconnected');
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [loadDiagnostico]);
+
+
+
 
   const getStatusBadge = (status: string) => {
     switch (status) {

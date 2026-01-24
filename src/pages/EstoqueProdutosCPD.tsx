@@ -257,6 +257,41 @@ export default function EstoqueProdutosCPD() {
     if (cpdLojaId) {
       fetchData();
     }
+    
+    // Realtime subscription para atualizações automáticas
+    const channel = supabase
+      .channel('estoque-cpd-produtos-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'estoque_loja_produtos' },
+        () => {
+          console.log('[EstoqueProdutosCPD] Estoque atualizado');
+          if (cpdLojaId) fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'movimentacoes_cpd_produtos' },
+        () => {
+          console.log('[EstoqueProdutosCPD] Movimentação registrada');
+          if (cpdLojaId) fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos_compra' },
+        () => {
+          console.log('[EstoqueProdutosCPD] Pedido atualizado');
+          if (activeTab === "receber") fetchPedidos();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[EstoqueProdutosCPD] Realtime status:', status);
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
   }, [organizationId, cpdLojaId]);
 
   useEffect(() => {

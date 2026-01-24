@@ -422,11 +422,11 @@ const ResumoDaProducao = () => {
             });
           }
           
-          // Debounce para recarregar
+          // Debounce reduzido para recarregar mais rápido
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 500);
+          }, 300);
         }
       )
       .on(
@@ -441,7 +441,7 @@ const ResumoDaProducao = () => {
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 500);
+          }, 300);
         }
       )
       .on(
@@ -456,7 +456,7 @@ const ResumoDaProducao = () => {
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 500);
+          }, 300);
         }
       )
       .subscribe();
@@ -477,7 +477,7 @@ const ResumoDaProducao = () => {
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 1000);
+          }, 500);
         }
       )
       .subscribe();
@@ -498,7 +498,7 @@ const ResumoDaProducao = () => {
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 1500);
+          }, 800);
         }
       )
       .subscribe();
@@ -519,7 +519,7 @@ const ResumoDaProducao = () => {
           if (reloadTimeout) clearTimeout(reloadTimeout);
           reloadTimeout = setTimeout(() => {
             if (isMounted) loadProducaoRegistros(true);
-          }, 1500);
+          }, 800);
         }
       )
       .subscribe();
