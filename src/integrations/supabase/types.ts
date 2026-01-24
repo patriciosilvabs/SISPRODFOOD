@@ -2251,6 +2251,7 @@ export type Database = {
           status: string | null
           status_calibracao: string | null
           timer_status: string | null
+          total_tracos_lote: number | null
           unidades_programadas: number | null
           unidades_reais: number | null
           usuario_id: string
@@ -2293,6 +2294,7 @@ export type Database = {
           status?: string | null
           status_calibracao?: string | null
           timer_status?: string | null
+          total_tracos_lote?: number | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
           usuario_id: string
@@ -2335,6 +2337,7 @@ export type Database = {
           status?: string | null
           status_calibracao?: string | null
           timer_status?: string | null
+          total_tracos_lote?: number | null
           unidades_programadas?: number | null
           unidades_reais?: number | null
           usuario_id?: string
