@@ -248,30 +248,27 @@ const ResumoDaProducao = () => {
     }
   };
 
-  // Função para limpar produção do dia (remover finalizados antigos)
+  // Função para limpar TODA a produção (reset completo)
   const handleLimparProducao = async () => {
     if (!organizationId) return;
     
     setIsLimpando(true);
     try {
-      const hoje = diaOperacionalAtual || new Date().toISOString().split('T')[0];
-      
       const { error, count } = await supabase
         .from('producao_registros')
         .delete()
-        .eq('organization_id', organizationId)
-        .eq('status', 'finalizado')
-        .lt('data_referencia', hoje);
+        .eq('organization_id', organizationId);
+      // SEM filtros - remove TODOS os registros da organização
       
       if (error) throw error;
       
       // Registrar no audit log
       await log('producao.limpar', 'producao_registros', null, { 
-        acao: 'limpar_finalizados',
-        data_corte: hoje,
+        acao: 'limpar_tudo',
+        registros_removidos: String(count || 0),
       });
       
-      toast.success(`Produção limpa com sucesso! ${count || 0} registros removidos.`);
+      toast.success(`Produção limpa! ${count || 0} registros removidos.`);
       await loadProducaoRegistros();
     } catch (error) {
       console.error('Erro ao limpar produção:', error);
@@ -1747,7 +1744,7 @@ const ResumoDaProducao = () => {
                     size="sm" 
                     variant="destructive"
                     disabled={isLimpando || isRefreshing}
-                    title="Remove cards finalizados de dias anteriores"
+                    title="Remove TODOS os cards de produção"
                   >
                     <Trash2 className={`h-4 w-4 mr-2 ${isLimpando ? 'animate-pulse' : ''}`} />
                     Limpar Produção
@@ -1755,10 +1752,15 @@ const ResumoDaProducao = () => {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Limpar Produção do Dia?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Esta ação irá remover todos os cards <strong>FINALIZADOS</strong> de dias anteriores.
-                      Cards em andamento (A Produzir, Em Preparo, Em Porcionamento) serão mantidos.
+                    <AlertDialogTitle>Limpar TODA a Produção?</AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                      <span className="block">
+                        Esta ação irá remover <strong>TODOS</strong> os cards de produção 
+                        (A Produzir, Em Preparo, Em Porcionamento e Finalizados).
+                      </span>
+                      <span className="block text-destructive font-medium">
+                        Após limpar, você precisará salvar novas contagens ou clicar em "Recalcular" para gerar novos cards.
+                      </span>
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
