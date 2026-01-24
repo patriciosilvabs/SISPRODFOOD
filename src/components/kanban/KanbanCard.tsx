@@ -336,53 +336,51 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             {/* A PRODUZIR */}
             {columnId === 'a_produzir' && (
               <>
-                {/* Seção: Produção Industrial (LOTE_MASSEIRA) */}
-                {registro.unidade_medida === 'lote_masseira' && registro.lotes_masseira ? (
+                {/* Seção: Produção Industrial (LOTE_MASSEIRA) - Cada card = 1 lote individual */}
+                {registro.unidade_medida === 'lote_masseira' ? (
                   <CollapsibleSection
-                    title="Produção Industrial"
+                    title="Este Lote Consome"
                     icon={<Factory className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
                     isOpen={producaoOpen}
                     onToggle={() => setProducaoOpen(!producaoOpen)}
                     variant="purple"
-                    badge={
-                      registro.lotes_masseira > 1 ? (
-                        <Badge variant="secondary" className="ml-2 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
-                          {registro.lotes_masseira} traços
-                        </Badge>
-                      ) : null
-                    }
                   >
                     <div className="grid grid-cols-2 gap-3 mt-2">
                       <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Massa Estimada</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Farinha (este lote)</span>
                         <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          {registro.massa_total_gerada_kg?.toFixed(1)}
+                          {registro.farinha_consumida_kg?.toFixed(1) || '15'}
                           <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
                         </p>
                       </div>
                       <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Farinha</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Massa Gerada</span>
                         <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          {registro.farinha_consumida_kg?.toFixed(1)}
+                          {registro.massa_total_gerada_kg?.toFixed(1) || '25'}
                           <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
                         </p>
                       </div>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Lotes</span>
+                      <div className="space-y-0.5 col-span-2">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unidades (este lote)</span>
                         <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          {registro.lotes_masseira}
-                        </p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unid. Estimadas</span>
-                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          ~{registro.unidades_estimadas_masseira || registro.unidades_programadas}
+                          ~{registro.unidades_programadas || registro.unidades_estimadas_masseira}
                           <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
                         </p>
                       </div>
                     </div>
+                    
+                    {/* Resumo total da produção (só exibe se há múltiplos lotes) */}
+                    {registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
+                      <div className="mt-3 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400">
+                        📊 Total: {registro.total_tracos_lote} lotes × {registro.farinha_consumida_kg || 15}kg = {' '}
+                        <span className="font-bold">
+                          {(registro.total_tracos_lote * (registro.farinha_consumida_kg || 15)).toFixed(0)}kg farinha
+                        </span>
+                      </div>
+                    )}
+                    
                     {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
-                      <div className="mt-3 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                      <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
                         ⚖️ Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
                         {registro.peso_alvo_bolinha_g && (
                           <span className="text-muted-foreground">(Alvo: {registro.peso_alvo_bolinha_g}g)</span>
