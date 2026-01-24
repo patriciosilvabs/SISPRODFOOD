@@ -26,6 +26,7 @@ interface ContagemItemCardProps {
   lastUpdate?: string;
   onIncrementSobra: () => void;
   onDecrementSobra: () => void;
+  onSobraChange: (value: number) => void;
   onPesoChange: (value: string) => void;
   currentDayLabel: string;
   // Novas props para produção extra
@@ -48,6 +49,7 @@ export const ContagemItemCard = ({
   lastUpdate,
   onIncrementSobra,
   onDecrementSobra,
+  onSobraChange,
   onPesoChange,
   currentDayLabel,
   showProducaoExtra = false,
@@ -124,13 +126,21 @@ export const ContagemItemCard = ({
           >
             <Minus className="h-5 w-5" />
           </Button>
-          <div className={`h-12 w-16 flex items-center justify-center text-xl font-bold border-y-2 ${
-            isItemNaoPreenchido 
-              ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
-              : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
-          }`}>
-            {finalSobra}
-          </div>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={finalSobra}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '');
+              onSobraChange(val === '' ? 0 : parseInt(val, 10));
+            }}
+            className={`h-12 w-16 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
+              isItemNaoPreenchido 
+                ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
+                : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
+            }`}
+          />
           <Button 
             type="button"
             variant="default" 
