@@ -168,37 +168,36 @@ export const ContagemItemCard = ({
           <span className="text-xs text-muted-foreground">g</span>
         </div>
 
-        {/* Colunas Admin */}
+        {/* Coluna Ideal - apenas para admin com detalhes */}
         {showAdminCols && (
-          <>
-            <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
-              idealFromConfig === 0 
-                ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
-                : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-            }`}>
-              <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Ideal ({currentDayLabel})
+          <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
+            idealFromConfig === 0 
+              ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
+              : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+          }`}>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Ideal ({currentDayLabel})
+            </span>
+            {idealFromConfig === 0 ? (
+              <span className="text-xs flex items-center gap-0.5">
+                <AlertTriangle className="h-3 w-3" />
+                N/C
               </span>
-              {idealFromConfig === 0 ? (
-                <span className="text-xs flex items-center gap-0.5">
-                  <AlertTriangle className="h-3 w-3" />
-                  N/C
-                </span>
-              ) : (
-                <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
-              )}
-            </div>
-
-            <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[80px] ${
-              aProduzir > 0 
-                ? 'bg-amber-500 dark:bg-amber-600 text-white' 
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-            }`}>
-              <span className="text-[10px] uppercase tracking-wide opacity-80">A Produzir</span>
-              <span className="text-base font-bold">{aProduzir}</span>
-            </div>
-          </>
+            ) : (
+              <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
+            )}
+          </div>
         )}
+
+        {/* A Produzir - SEMPRE VISÍVEL para todos */}
+        <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[80px] ${
+          aProduzir > 0 
+            ? 'bg-amber-500 dark:bg-amber-600 text-white' 
+            : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+        }`}>
+          <span className="text-[10px] uppercase tracking-wide opacity-80">A Produzir</span>
+          <span className="text-base font-bold">{aProduzir}</span>
+        </div>
 
         {/* Botão Produção Extra */}
         {showProducaoExtra && onSolicitarProducaoExtra && (
