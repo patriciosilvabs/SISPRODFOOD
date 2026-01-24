@@ -306,6 +306,18 @@ const ContagemPorcionados = () => {
     }));
   };
 
+  // Handler para alteração direta da sobra via input
+  const handleSobraChange = (lojaId: string, itemId: string, value: number) => {
+    const key = `${lojaId}-${itemId}`;
+    setEditingValues(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        final_sobra: String(value),
+      },
+    }));
+  };
+
   // Função auxiliar para normalizar valores para comparação
   const normalizeValue = (val: any): string => {
     if (val === null || val === undefined || val === '') return '';
@@ -943,8 +955,9 @@ const ContagemPorcionados = () => {
                           isAdmin={isAdminUser}
                           showAdminCols={showAdminCols}
                           lastUpdate={contagem?.updated_at}
-                          onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 10))}
+                          onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
                           onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                          onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
                           onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                           currentDayLabel={diasSemanaLabels[currentDay]}
                           showProducaoExtra={isAdminUser}
