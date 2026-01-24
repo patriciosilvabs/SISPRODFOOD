@@ -3240,6 +3240,15 @@ export type Database = {
           }
         | {
             Args: {
+              p_data_producao: string
+              p_demanda_total: number
+              p_item_id: string
+              p_organization_id: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
               p_data_referencia: string
               p_demanda_unidades: number
               p_ideal_configurado?: number
