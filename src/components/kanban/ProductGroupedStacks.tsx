@@ -4,8 +4,11 @@ import { CardStack } from "./CardStack";
 import { CPDStockIndicator } from "./CPDStockIndicator";
 
 interface CPDStockItem {
+  item_id: string;
   item_nome: string;
-  quantidade: number;
+  estoque_cpd: number;
+  demanda_lojas: number;
+  saldo_liquido: number;
 }
 
 interface InsumoExtraComEstoque {
@@ -138,9 +141,17 @@ export function ProductGroupedStacks({
   }, [filteredRegistros]);
 
   if (filteredRegistros.length === 0) {
-    // Se é coluna A PRODUZIR e tem estoque CPD, mostrar indicador especial
+    // Se é coluna A PRODUZIR, verificar se há itens com estoque suficiente para cobrir demanda
     if (columnId === 'a_produzir' && estoquesCPD && estoquesCPD.length > 0) {
-      return <CPDStockIndicator estoquesCPD={estoquesCPD} />;
+      // Filtrar apenas itens COM demanda E estoque suficiente (saldo <= 0)
+      const itensComEstoqueSuficiente = estoquesCPD.filter(e => 
+        e.demanda_lojas > 0 && e.saldo_liquido <= 0
+      );
+      
+      // Só mostrar indicador se há itens com demanda sendo cobertos pelo estoque
+      if (itensComEstoqueSuficiente.length > 0) {
+        return <CPDStockIndicator estoquesCPD={estoquesCPD} />;
+      }
     }
     
     return (
