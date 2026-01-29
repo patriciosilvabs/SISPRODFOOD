@@ -73,3 +73,6 @@ verify_jwt = false
 
 [functions.processar-cutoff-lojas]
 verify_jwt = false
+
+[functions.excluir-item-porcionado]
+verify_jwt = true
