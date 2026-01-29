@@ -599,22 +599,11 @@ const Romaneio = () => {
           });
         }
       })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'estoque_cpd'
-      }, (payload) => {
-        console.log('[Romaneio] Estoque CPD atualizado:', payload);
-        fetchDemandasTodasLojas();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'estoque_loja_itens'
-      }, (payload) => {
-        console.log('[Romaneio] Estoque loja atualizado:', payload);
-        fetchDemandasTodasLojas();
-      })
+      // REMOVIDO: listeners de estoque_cpd e estoque_loja_itens
+      // Esses listeners causavam loops infinitos quando o romaneio debitava o estoque CPD
+      // O romaneio atualiza contagem_porcionados.final_sobra do CPD, que disparava triggers
+      // e os listeners aqui recarregavam dados, criando um ciclo
+      // Os listeners de romaneios e producao_registros já cobrem as necessidades de atualização
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -939,8 +928,16 @@ const Romaneio = () => {
         .eq('status', 'enviado')
         .order('data_envio', { ascending: false });
 
-      if (!isAdmin() && userLojasIds.length > 0) {
-        query = query.in('loja_id', userLojasIds);
+      // Filtro por loja: usuário "Loja" vê APENAS sua loja principal
+      // Usuário "Produção" vê todas as lojas vinculadas
+      if (!isAdmin()) {
+        if (hasRole('Loja') && primaryLoja) {
+          // Loja vê apenas romaneios da SUA loja principal
+          query = query.eq('loja_id', primaryLoja.loja_id);
+        } else if (userLojasIds.length > 0) {
+          // Produção vê todas as lojas que tem acesso
+          query = query.in('loja_id', userLojasIds);
+        }
       }
 
       const { data, error } = await query;
@@ -985,8 +982,16 @@ const Romaneio = () => {
         .select(`*, peso_total_envio_g, quantidade_volumes_envio, peso_total_recebido_g, quantidade_volumes_recebido, romaneio_itens (item_nome, quantidade, peso_total_kg, producao_registro_id, producao_registros:producao_registro_id (codigo_lote, data_referencia))`)
         .order('data_criacao', { ascending: false });
 
-      if (!isAdmin() && userLojasIds.length > 0) {
-        query = query.in('loja_id', userLojasIds);
+      // Filtro por loja: usuário "Loja" vê APENAS sua loja principal
+      // Usuário "Produção" vê todas as lojas vinculadas
+      if (!isAdmin()) {
+        if (hasRole('Loja') && primaryLoja) {
+          // Loja vê apenas romaneios da SUA loja principal
+          query = query.eq('loja_id', primaryLoja.loja_id);
+        } else if (userLojasIds.length > 0) {
+          // Produção vê todas as lojas que tem acesso
+          query = query.in('loja_id', userLojasIds);
+        }
       }
 
       if (filtroStatus !== 'todos') {
