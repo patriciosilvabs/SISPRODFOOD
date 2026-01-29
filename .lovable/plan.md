@@ -1,123 +1,223 @@
 
-# Plano: Corrigir Inconsistências no Estoque CPD e Lotes que Desaparecem
+# Plano: Corrigir Lógica do Indicador "Estoque CPD Suficiente"
 
-## Problemas Identificados
+## Problema
 
-### Problema 1: Indicador "Estoque CPD Suficiente" mostra dados incorretos
+O indicador "Estoque CPD Suficiente" está aparecendo de forma incorreta porque:
 
-**Causa raiz**: O `loadProducaoRegistros` busca o estoque CPD corretamente, MAS o problema está em outro lugar. Ao finalizar uma produção, o código nas **linhas 1549-1565** faz:
+1. **Lógica atual**: Mostra o indicador quando a coluna "A PRODUZIR" está vazia e o CPD tem **qualquer** estoque > 0
+2. **Lógica correta**: Deveria mostrar apenas quando o estoque CPD é **suficiente para cobrir a demanda das lojas** para cada item
 
-```typescript
-// Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
-const { data: contagensAtuais } = await supabase
-  .from('contagem_porcionados')
-  .select('id, final_sobra')
-  .eq('item_porcionado_id', selectedRegistro.item_id); // SEM FILTRO!
-
-for (const contagem of contagensAtuais) {
-  await supabase
-    .from('contagem_porcionados')
-    .update({ ideal_amanha: contagem.final_sobra }) // Zera a_produzir = ideal - sobra = 0
-    .eq('id', contagem.id);
-}
-```
-
-Isso **zera a demanda (`a_produzir`) de TODAS as lojas e TODOS os dias** para aquele item! Resultado:
-- A loja UNIDADE ALEIXO que tinha demanda de 99 unidades agora mostra 0
-- O sistema interpreta que não há demanda pendente
-- O indicador "Estoque CPD Suficiente" aparece mesmo quando as lojas precisam de itens
-
-### Problema 2: Segundo lote de MASSA desaparece
-
-**Causa raiz**: Quando o primeiro lote é finalizado:
-1. O código zera o `ideal_amanha` de todas as contagens
-2. Isso faz `a_produzir = 0` para todas as lojas
-3. O trigger `trg_criar_producao_apos_contagem` é disparado
-4. A função `criar_ou_atualizar_producao_registro` recalcula: demanda = 0, portanto **deleta os cards pendentes**
-5. O segundo lote de MASSA (que ainda não foi produzido) é deletado!
-
-**Evidência no banco de dados**:
-```
-MASSA - PORCIONADO: total_tracos_lote = 2, mas só existe 1 registro (status: finalizado)
-```
-
-O segundo lote foi deletado pela função RPC quando ela verificou que `saldo_liquido <= 0`.
+Exemplo do problema:
+- CARNE: Demanda da loja = 50 un, Estoque CPD = 30 un → **Deveria produzir 20 un**, mas o indicador mostra "suficiente"
 
 ## Solução
 
-### O que NÃO deve acontecer
+### Mudança Conceitual
 
-O código de "resetar a_produzir" após finalizar produção **NÃO deveria existir**. Essa lógica foi introduzida incorretamente e causa os dois problemas.
+O indicador deve comparar **por item**:
+- `Saldo Líquido = Demanda das Lojas - Estoque CPD`
+- Se **todos** os itens com demanda têm `Saldo Líquido <= 0` → Mostrar indicador verde
+- Se **qualquer** item tem `Saldo Líquido > 0` → Cards de produção devem existir (não mostrar indicador)
 
-A arquitetura correta é:
-- A demanda das lojas (`ideal_amanha`) deve permanecer inalterada até nova contagem
-- O estoque produzido é creditado no CPD
-- O Romaneio debita o estoque CPD e envia para as lojas
-- Após receber, a loja faz nova contagem atualizando `final_sobra`
+### Arquivos a Modificar
 
-### Alteração Necessária
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/ResumoDaProducao.tsx` | Buscar demandas das lojas junto com estoque CPD e calcular saldo líquido |
+| `src/components/kanban/CPDStockIndicator.tsx` | Mostrar detalhes de demanda vs estoque por item |
+| `src/components/kanban/ProductGroupedStacks.tsx` | Receber dados de demanda e verificar se realmente não há produção necessária |
 
-**Arquivo**: `src/pages/ResumoDaProducao.tsx`
+### Alterações Técnicas
 
-**Remover completamente** as linhas 1549-1565 que fazem o reset incorreto do `ideal_amanha`.
+#### 1. ResumoDaProducao.tsx - Buscar Demandas e Estoque
 
-**Antes (linhas 1549-1565)**:
+Modificar a busca de estoque CPD para incluir comparação com demandas:
+
 ```typescript
-// Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
-// (a_produzir é coluna gerada, não pode ser atualizada diretamente)
-const { data: contagensAtuais, error: fetchError } = await supabase
-  .from('contagem_porcionados')
-  .select('id, final_sobra')
-  .eq('item_porcionado_id', selectedRegistro.item_id);
+// Estado ampliado para incluir saldo líquido
+interface EstoqueCPDItem {
+  item_nome: string;
+  item_id: string;
+  estoque_cpd: number;
+  demanda_lojas: number;
+  saldo_liquido: number; // demanda - estoque (negativo = suficiente)
+}
 
-if (fetchError) {
-  console.error('Erro ao buscar contagens para reset:', fetchError);
-} else if (contagensAtuais) {
-  for (const contagem of contagensAtuais) {
-    await supabase
-      .from('contagem_porcionados')
-      .update({ ideal_amanha: contagem.final_sobra })
-      .eq('id', contagem.id);
+const [estoqueCPD, setEstoqueCPD] = useState<EstoqueCPDItem[]>([]);
+
+// Na função loadProducaoRegistros, após buscar estoque CPD:
+
+// 1. Buscar estoque CPD
+const { data: estoqueCPDData } = await supabase
+  .from('contagem_porcionados')
+  .select('item_porcionado_id, final_sobra, itens_porcionados!inner(nome)')
+  .eq('loja_id', cpdLoja.id)
+  .eq('dia_operacional', hoje);
+
+// 2. Buscar demandas das lojas (tipo != 'cpd')
+const lojasNaoCPD = lojasData?.filter(l => l.tipo !== 'cpd').map(l => l.id) || [];
+const { data: demandasData } = await supabase
+  .from('contagem_porcionados')
+  .select('item_porcionado_id, a_produzir, itens_porcionados!inner(nome)')
+  .in('loja_id', lojasNaoCPD)
+  .eq('dia_operacional', hoje)
+  .gt('a_produzir', 0);
+
+// 3. Agregar demandas por item
+const demandasPorItem = new Map<string, { nome: string; demanda: number }>();
+demandasData?.forEach(d => {
+  const itemId = d.item_porcionado_id;
+  const nome = (d.itens_porcionados as any).nome;
+  if (!demandasPorItem.has(itemId)) {
+    demandasPorItem.set(itemId, { nome, demanda: 0 });
   }
+  demandasPorItem.get(itemId)!.demanda += d.a_produzir;
+});
+
+// 4. Calcular saldo líquido por item
+const estoqueCPDMap = new Map<string, number>();
+estoqueCPDData?.forEach(e => {
+  estoqueCPDMap.set(e.item_porcionado_id, e.final_sobra || 0);
+});
+
+// 5. Montar lista final com saldo líquido
+const estoqueComSaldo: EstoqueCPDItem[] = [];
+demandasPorItem.forEach((dados, itemId) => {
+  const estoque = estoqueCPDMap.get(itemId) || 0;
+  estoqueComSaldo.push({
+    item_id: itemId,
+    item_nome: dados.nome,
+    estoque_cpd: estoque,
+    demanda_lojas: dados.demanda,
+    saldo_liquido: dados.demanda - estoque, // negativo = suficiente
+  });
+});
+
+// Também incluir itens que têm estoque mas sem demanda (100% suficiente)
+estoqueCPDData?.forEach(e => {
+  const itemId = e.item_porcionado_id;
+  if (!demandasPorItem.has(itemId) && e.final_sobra > 0) {
+    estoqueComSaldo.push({
+      item_id: itemId,
+      item_nome: (e.itens_porcionados as any).nome,
+      estoque_cpd: e.final_sobra,
+      demanda_lojas: 0,
+      saldo_liquido: -e.final_sobra, // negativo = sobra de estoque
+    });
+  }
+});
+
+setEstoqueCPD(estoqueComSaldo);
+```
+
+#### 2. ProductGroupedStacks.tsx - Lógica de Exibição
+
+Modificar a condição de exibição do indicador:
+
+```typescript
+interface EstoqueCPDItem {
+  item_nome: string;
+  item_id: string;
+  estoque_cpd: number;
+  demanda_lojas: number;
+  saldo_liquido: number;
+}
+
+interface ProductGroupedStacksProps {
+  // ... props existentes
+  estoquesCPD?: EstoqueCPDItem[];
+}
+
+// Na renderização:
+if (filteredRegistros.length === 0) {
+  // Verificar se há itens com estoque suficiente (saldo_liquido <= 0)
+  const itensComEstoqueSuficiente = estoquesCPD?.filter(e => 
+    e.demanda_lojas > 0 && e.saldo_liquido <= 0
+  ) || [];
+  
+  // Só mostrar indicador se há itens com demanda E estoque cobrindo
+  if (columnId === 'a_produzir' && itensComEstoqueSuficiente.length > 0) {
+    return <CPDStockIndicator estoquesCPD={itensComEstoqueSuficiente} />;
+  }
+  
+  return (/* mensagem padrão */);
 }
 ```
 
-**Depois**: Remover completamente esse bloco de código.
+#### 3. CPDStockIndicator.tsx - Exibir Demanda vs Estoque
 
-## Fluxo Correto Após Correção
+Atualizar o componente para mostrar claramente a comparação:
+
+```typescript
+interface CPDStockItem {
+  item_nome: string;
+  item_id: string;
+  estoque_cpd: number;
+  demanda_lojas: number;
+  saldo_liquido: number;
+}
+
+// Renderização atualizada:
+<div className="flex items-center justify-between px-3 py-2 text-sm">
+  <span className="text-gray-700 dark:text-gray-300 truncate max-w-[150px]">
+    {item.item_nome}
+  </span>
+  <div className="flex items-center gap-2 text-xs">
+    <span className="text-muted-foreground">
+      Demanda: {item.demanda_lojas}
+    </span>
+    <Badge className="bg-emerald-100 text-emerald-700">
+      Estoque: {item.estoque_cpd}
+    </Badge>
+  </div>
+</div>
+```
+
+### Fluxo Corrigido
 
 ```
-Finalizar Produção
+loadProducaoRegistros()
        │
-       ├─► Atualiza estoque CPD (tabela estoque_cpd)
+       ├─► Buscar estoque CPD (final_sobra)
        │
-       ├─► Atualiza contagem_porcionados do CPD (final_sobra += unidades_reais)
+       ├─► Buscar demandas das lojas (a_produzir onde tipo != 'cpd')
        │
-       └─► NÃO toca nas contagens das lojas (ideal_amanha permanece inalterado)
-       
-       ↓ Resultado:
-       
-- Demanda das lojas permanece visível
-- Cards pendentes NÃO são deletados
-- Saldo líquido é calculado corretamente: demanda - estoque_cpd
-- Segundo lote continua aguardando produção
+       ├─► Calcular saldo líquido por item
+       │         └── saldo = demanda - estoque
+       │
+       └─► Passar para ProductGroupedStacks
+                 │
+                 └─► Se coluna vazia + itens com saldo_liquido <= 0:
+                           └── Mostrar CPDStockIndicator
+                     Se coluna vazia + sem itens ou saldo > 0:
+                           └── Mensagem padrão "Nenhum item"
 ```
 
-## Por Que Essa Lógica Estava Incorreta
+### Cenários de Exibição
 
-O código parece ter sido adicionado com a intenção de "limpar" a demanda após produzir. Mas isso quebra o modelo:
+| Cenário | Demanda | Estoque CPD | Saldo | Indicador |
+|---------|---------|-------------|-------|-----------|
+| Estoque cobre demanda | 50 | 99 | -49 | **Mostra "Suficiente"** |
+| Estoque igual demanda | 50 | 50 | 0 | **Mostra "Suficiente"** |
+| Estoque insuficiente | 100 | 50 | +50 | Card de produção existe |
+| Sem demanda, com estoque | 0 | 99 | -99 | Mostra (estoque disponível) |
+| Sem demanda, sem estoque | 0 | 0 | 0 | Mensagem padrão |
 
-| Aspecto | Comportamento Incorreto | Comportamento Correto |
-|---------|------------------------|----------------------|
-| Demanda da loja | Zerada imediatamente | Permanece até romaneio/recebimento |
-| Lotes pendentes | Deletados pelo trigger | Mantidos para produção |
-| Indicador CPD | Mostra "suficiente" incorretamente | Compara demanda real vs estoque |
-| Romaneio | Não tem mais demandas | Mostra itens pendentes para envio |
+### Informações Exibidas no Indicador
 
-## Impacto da Correção
+O indicador atualizado mostrará:
+- Título: "Estoque CPD Suficiente para Atender Demandas"
+- Por item:
+  - Nome do item
+  - Demanda total das lojas
+  - Estoque disponível no CPD
+  - Saldo (quanto sobra após atender)
+- Total de itens e unidades cobertas
 
-- ✅ Cards de produção não serão mais deletados incorretamente
-- ✅ Lotes múltiplos (ex: 2/2 de MASSA) permanecerão para produção
-- ✅ Indicador "Estoque CPD Suficiente" só aparecerá quando realmente não há demanda pendente
-- ✅ Demandas das lojas permanecerão corretas para o fluxo de Romaneio
-- ✅ Alinhamento com a arquitetura documentada do sistema
+### Resultado Esperado
+
+1. O indicador só aparece quando realmente não há produção necessária
+2. Mostra claramente a comparação demanda vs estoque
+3. Se algum item precisa ser produzido (saldo > 0), os cards de produção aparecem normalmente
+4. Alinhamento com a arquitetura documentada: `Saldo Líquido = Demanda - Estoque CPD`
