@@ -103,6 +103,17 @@ export function FinalizarProducaoModal({
       return;
     }
 
+    // Validação geral de peso máximo para evitar overflow numérico no banco
+    const MAX_PESO_KG = 9999.999;
+    if (pesoFinalKg > MAX_PESO_KG) {
+      toast.error(`Peso final excede o máximo permitido (${MAX_PESO_KG.toLocaleString('pt-BR')} kg)`);
+      return;
+    }
+    if (sobraKg > MAX_PESO_KG) {
+      toast.error(`Sobra excede o máximo permitido (${MAX_PESO_KG.toLocaleString('pt-BR')} kg)`);
+      return;
+    }
+
     // Validação contra valores absurdos para LOTE_MASSEIRA
     if (isLoteMasseira && massaGeradaPorLoteKg && lotesProducidos) {
       const massaEsperadaKg = massaGeradaPorLoteKg * lotesProducidos;
