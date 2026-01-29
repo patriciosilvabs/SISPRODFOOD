@@ -1,77 +1,127 @@
 
-# Plano: Mover Botões de Iniciar Produção para o Status das Contagens
+# Plano: Simplificar Kanban e Integrar Filtro com Status das Contagens
 
-## Problema Atual
+## Problema Identificado
 
-Atualmente existem dois elementos de UI duplicados:
-1. **LojaFilterTabs** (dentro da coluna "A PRODUZIR") - mostra abas de filtro por loja + botão "Iniciar Produção da Loja"
-2. **ContagemStatusIndicator** (acima do Kanban) - mostra status das contagens por loja
+Conforme a imagem do usuário, dentro da coluna "A PRODUZIR" existem elementos que poluem a interface:
+1. **Abas de filtro** (TODAS, ★ CPD - Centro de..., UNIDADE JAPIIM)
+2. **Mensagem de dica amarela** ("CPD - Centro de Produção e Distribuição tem a maior demanda...")
+3. **Labels de loja** acima dos cards
 
-O usuário quer consolidar: os botões de iniciar produção devem estar junto ao status das contagens, não dentro da coluna A PRODUZIR.
+Isso torna a interface confusa e bagunçada.
 
 ## Solução Proposta
 
-Integrar o botão "Iniciar Produção da Loja" diretamente nos cards de status das contagens:
+Transformar o fluxo em:
+1. O usuário clica em uma **loja no "Status das Contagens de Hoje"** (no topo da página)
+2. A coluna "A PRODUZIR" **automaticamente filtra** para mostrar apenas itens dessa loja
+3. **Remover** abas/filtros e mensagens de dica de dentro da coluna
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ 🏪 Status das Contagens de Hoje                           2/3 lojas   │
-├────────────────────────────────────────────────────────────────────────┤
-│ ┌──────────────────────────────────────────────────────────────────┐  │
-│ │ ✅ UNIDADE JAPIIM         📦 6 itens • 423 un                    │  │
-│ │    Atualizado: 14:32                                             │  │
-│ │                                     [🚀 Iniciar Produção]        │  │
-│ └──────────────────────────────────────────────────────────────────┘  │
-│                                                                        │
-│ ┌──────────────────────────────────────────────────────────────────┐  │
-│ │ ✅ UNIDADE CACHOEIRINHA   📦 2 itens • 46 un                     │  │
-│ │    Atualizado: 15:10                                             │  │
-│ │                                     [🚀 Iniciar Produção]        │  │
-│ └──────────────────────────────────────────────────────────────────┘  │
-│                                                                        │
-│ ┌──────────────────────────────────────────────────────────────────┐  │
-│ │ ⏳ UNIDADE ALEIXO                                   [Aguardando] │  │
-│ └──────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
+FLUXO ATUAL:
+┌─────────────────────────────────────────┐
+│ Status das Contagens de Hoje            │
+│ ✅ JAPIIM [Iniciar]   ✅ CPD [Iniciar]  │
+└─────────────────────────────────────────┘
+           ↓ (Sem conexão visual)
+┌───────────────────────────────────────────────┐
+│ A PRODUZIR                                    │
+│ [TODAS] [★ CPD] [JAPIIM] ← ABAS (poluição)   │
+│ "CPD tem maior demanda..." ← MENSAGEM        │
+│ Card 1, Card 2...                            │
+└───────────────────────────────────────────────┘
+
+FLUXO PROPOSTO:
+┌──────────────────────────────────────────────────┐
+│ Status das Contagens de Hoje                     │
+│ ┌──────────────────┐  ┌────────────────────────┐ │
+│ │ ★ CPD - 518 un   │  │ JAPIIM - 64 un         │ │
+│ │ [👁 Ver] [Iniciar]│  │ [👁 Ver] [Iniciar]     │ │
+│ └──────────────────┘  └────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+           ↓ Clica em "Ver" ou no card
+┌───────────────────────────────────────────────┐
+│ A PRODUZIR (Filtrado: CPD)        [✕ Limpar] │
+│ Card 1, Card 2, Card 3...                    │
+│ (Sem abas, sem mensagens extras)             │
+└───────────────────────────────────────────────┘
 ```
 
-## Mudanças Necessárias
+---
 
-### 1. `ContagemStatusIndicator.tsx` - Adicionar botões de ação
+## Mudanças Técnicas
 
-**Modificações:**
-- Receber nova prop `onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void`
-- Adicionar botão "Iniciar Produção" em cada card de loja que já enviou contagem
-- Destacar visualmente a loja com maior demanda (★) com sugestão de prioridade
-- O botão só aparece se a loja tiver itens a produzir (totalItens > 0)
+### 1. Criar estado de filtro global na página
+
+**Arquivo:** `src/pages/ResumoDaProducao.tsx`
+
+Adicionar estado para loja selecionada que será controlado pelo componente de status:
 
 ```typescript
-interface ContagemStatusIndicatorProps {
-  lojas: Loja[];
-  contagensHoje: ContagemData[];
-  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void; // NOVO
-}
+const [lojaFiltrada, setLojaFiltrada] = useState<{ id: string; nome: string } | null>(null);
 ```
 
-### 2. `LojaFilterTabs.tsx` - Simplificar para filtro puro
+### 2. Atualizar `ContagemStatusIndicator.tsx`
 
-**Modificações:**
-- Remover prop `onIniciarTudoLoja`
-- Remover botão "Iniciar Produção da Loja"
-- Manter apenas as abas de filtro por loja (para navegação nos cards)
-- Manter a dica visual de qual loja tem maior demanda
+- Adicionar botão "Ver Produção" ou tornar o card clicável
+- Nova prop: `onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void`
+- Destacar visualmente a loja selecionada
 
-### 3. `ProductGroupedStacks.tsx` - Remover handler de batch
+```typescript
+// Ao clicar no card da loja
+onClick={() => onSelecionarLoja?.(loja.id, loja.nome)}
+```
 
-**Modificações:**
-- Remover prop `onIniciarTudoLoja`
-- Atualizar chamada do `LojaFilterTabs` sem o handler de iniciar
+### 3. Simplificar `LojaFilterTabs.tsx`
 
-### 4. `ResumoDaProducao.tsx` - Conectar novo handler
+**Remover completamente** este componente - não será mais usado dentro da coluna A PRODUZIR.
 
-**Modificações:**
-- Passar `onIniciarProducaoLoja` para `ContagemStatusIndicator`
-- Remover `onIniciarTudoLoja` de `ProductGroupedStacks`
+### 4. Simplificar `ProductGroupedStacks.tsx`
+
+- **Remover** a chamada ao `LojaFilterTabs`
+- **Remover** a lógica de estado `selectedLojaId` interno
+- Receber `lojaFiltradaId` como prop (controle externo)
+- **Remover** badge de loja acima dos cards
+- **Remover** mensagem de dica
+
+```typescript
+// Antes
+const [selectedLojaId, setSelectedLojaId] = useState<string | null>(null);
+<LojaFilterTabs ... />
+
+// Depois
+interface Props {
+  lojaFiltradaId?: string | null; // Novo: recebe do pai
+}
+// Apenas filtra os registros baseado no prop
+```
+
+### 5. Atualizar `ResumoDaProducao.tsx`
+
+- Passar `lojaFiltradaId` para `ProductGroupedStacks`
+- Conectar `ContagemStatusIndicator` com o estado de filtro
+- Adicionar indicador visual quando há filtro ativo no header da coluna
+
+```typescript
+<ContagemStatusIndicator 
+  onSelecionarLoja={(lojaId, nome) => setLojaFiltrada(lojaId ? { id: lojaId, nome } : null)}
+/>
+
+// Coluna A PRODUZIR
+<CardTitle>
+  A PRODUZIR
+  {lojaFiltrada && (
+    <Button size="xs" onClick={() => setLojaFiltrada(null)}>
+      {lojaFiltrada.nome} ✕
+    </Button>
+  )}
+</CardTitle>
+
+<ProductGroupedStacks
+  lojaFiltradaId={lojaFiltrada?.id}
+  ...
+/>
+```
 
 ---
 
@@ -79,10 +129,51 @@ interface ContagemStatusIndicatorProps {
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/kanban/ContagemStatusIndicator.tsx` | Adicionar prop e botão de iniciar produção por loja |
-| `src/components/kanban/LojaFilterTabs.tsx` | Remover botão e prop de iniciar tudo |
-| `src/components/kanban/ProductGroupedStacks.tsx` | Remover prop `onIniciarTudoLoja` |
-| `src/pages/ResumoDaProducao.tsx` | Conectar handler ao novo local |
+| `src/pages/ResumoDaProducao.tsx` | Adicionar estado `lojaFiltrada`, conectar com Status e passar para ProductGroupedStacks |
+| `src/components/kanban/ContagemStatusIndicator.tsx` | Adicionar botão/clique para selecionar loja, nova prop `onSelecionarLoja` |
+| `src/components/kanban/ProductGroupedStacks.tsx` | Remover LojaFilterTabs, receber `lojaFiltradaId` como prop, simplificar render |
+| `src/components/kanban/LojaFilterTabs.tsx` | Manter mas não usar (ou remover se não utilizado em outro lugar) |
+
+---
+
+## Resultado Visual Esperado
+
+**Status das Contagens** (no topo):
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 🏪 Status das Contagens de Hoje                      2/3 lojas │
+├─────────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ ★ CPD - Centro de Produção    📦 5 itens • 518 un          │ │
+│ │   Atualizado: 14:32           [👁 Ver] [🚀 Iniciar]        │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ ✅ UNIDADE JAPIIM             📦 1 item • 64 un            │ │
+│ │   Atualizado: 15:10           [👁 Ver] [🚀 Iniciar]        │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Coluna A PRODUZIR** (limpa, sem poluição):
+```
+┌─────────────────────────────────────────────┐
+│ A PRODUZIR     [CPD ✕]              6      │  ← Badge mostra filtro ativo
+├─────────────────────────────────────────────┤
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │ PEPPERONI - PORCIONADO             │   │
+│  │ Lote 1 de 3 • 75 un                │   │
+│  │ [▶ Iniciar Preparo]                │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │ BACON - PORCIONADO                 │   │
+│  │ 70 un                              │   │
+│  │ [▶ Iniciar Preparo]                │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+└─────────────────────────────────────────────┘
+```
 
 ---
 
@@ -90,7 +181,8 @@ interface ContagemStatusIndicatorProps {
 
 | Antes | Depois |
 |-------|--------|
-| Botões duplicados em 2 lugares | Um único local de ação por loja |
-| Usuário precisa navegar para coluna | Ação visível logo no topo da página |
-| Status e ação separados | Status + ação integrados logicamente |
-| Confusão sobre onde clicar | Fluxo claro: ver status → iniciar produção |
+| Abas de filtro dentro da coluna | Filtro controlado pelo Status (topo) |
+| Mensagem de dica ocupando espaço | Sem mensagens extras |
+| Interface poluída | Interface limpa e focada |
+| Dois lugares para a mesma ação | Uma única fonte de controle |
+| Usuário precisa entender as abas | Clique intuitivo no card da loja |
