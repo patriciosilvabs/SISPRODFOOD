@@ -35,16 +35,19 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
 import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
 import { ContagemFixedFooter } from '@/components/contagem/ContagemFixedFooter';
 import { SolicitarProducaoExtraModal } from '@/components/modals/SolicitarProducaoExtraModal';
+import { AjusteEstoquePorcionadosCPD } from '@/components/cpd/AjusteEstoquePorcionadosCPD';
 
 interface Loja {
   id: string;
   nome: string;
   responsavel: string;
+  tipo?: string;
 }
 
 interface ItemPorcionado {
@@ -123,6 +126,7 @@ const ContagemPorcionados = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [lojaAtualId, setLojaAtualId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'contagem' | 'ajuste'>('contagem');
   
   // Estado para modal de produção extra
   const [producaoExtraModal, setProducaoExtraModal] = useState<{
@@ -164,7 +168,7 @@ const ContagemPorcionados = () => {
         if (lojasIds.length > 0) {
           const { data, error } = await supabase
             .from('lojas')
-            .select('*')
+            .select('id, nome, responsavel, tipo')
             .in('id', lojasIds)
             .order('nome');
           
@@ -175,7 +179,7 @@ const ContagemPorcionados = () => {
         // Admin/Produção: ver todas as lojas
         const { data, error } = await supabase
           .from('lojas')
-          .select('*')
+          .select('id, nome, responsavel, tipo')
           .order('nome');
         
         if (error) throw error;
@@ -865,6 +869,14 @@ const ContagemPorcionados = () => {
   const isAdminUser = roles.includes('Admin') || roles.includes('SuperAdmin');
   const showAdminCols = isAdminUser && showDetails;
 
+  // Verificar se o usuário está vinculado a um CPD
+  const cpdLoja = useMemo(() => {
+    return lojas.find((l) => l.tipo === 'cpd');
+  }, [lojas]);
+
+  const isCPDUser = !!cpdLoja;
+  const canAdjustStock = isAdminUser || isCPDUser;
+
   if (loading) {
     return (
       <Layout>
@@ -892,104 +904,224 @@ const ContagemPorcionados = () => {
           onRefresh={loadData}
         />
 
-        {/* Cards de Resumo */}
-        {lojaAtualId && (
-          <ContagemSummaryCards
-            totalItens={summaryStats.totalItens}
-            pesoTotalG={summaryStats.pesoTotalG}
-            itensPendentes={summaryStats.itensPendentes}
-            ultimaAtualizacao={summaryStats.ultimaAtualizacao}
-          />
+        {/* Tabs para CPD - mostrar aba de ajuste apenas para CPD/Admin */}
+        {canAdjustStock && cpdLoja ? (
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contagem' | 'ajuste')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 max-w-md">
+              <TabsTrigger value="contagem">Contagem</TabsTrigger>
+              <TabsTrigger value="ajuste">Ajustar Estoque</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="contagem" className="space-y-4 mt-4">
+              {/* Cards de Resumo */}
+              {lojaAtualId && (
+                <ContagemSummaryCards
+                  totalItens={summaryStats.totalItens}
+                  pesoTotalG={summaryStats.pesoTotalG}
+                  itensPendentes={summaryStats.itensPendentes}
+                  ultimaAtualizacao={summaryStats.ultimaAtualizacao}
+                />
+              )}
+
+              {/* Lista de Lojas */}
+              <div className="space-y-4">
+                {lojas.map((loja) => {
+                  const contagensLoja = contagens[loja.id] || [];
+                  const isOpen = openLojas.has(loja.id);
+                  
+                  return (
+                    <Collapsible
+                      key={loja.id}
+                      open={isOpen}
+                      onOpenChange={() => toggleLoja(loja.id)}
+                      className="bg-card rounded-xl border-2 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+                    >
+                      <CollapsibleTrigger className="w-full">
+                        <div className="flex items-center justify-between px-5 py-4 hover:bg-accent/30 transition-colors">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="font-bold text-lg text-foreground">{loja.nome}</span>
+                            <span className="text-sm text-muted-foreground">({loja.responsavel})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isOpen ? (
+                              <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+
+                      <CollapsibleContent>
+                        <div className="border-t-2 p-4 space-y-3">
+                          {/* Itens da Loja */}
+                          {itens.map((item) => {
+                            const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
+                            const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
+                            const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
+                            const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
+                            
+                            const estoqueKey = `${loja.id}-${item.id}`;
+                            const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                            const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                            const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                            const isDirty = isRowDirty(loja.id, item.id);
+                            
+                            // Calcular lotes necessários para itens lote_masseira
+                            const isLoteMasseira = item.unidade_medida === 'lote_masseira';
+                            let lotesNecessarios = 0;
+                            if (isLoteMasseira && aProduzir > 0) {
+                              const massaGeradaPorLoteKg = item.massa_gerada_por_lote_kg || 25;
+                              const pesoMedioG = item.peso_medio_operacional_bolinha_g || 400;
+                              const unidadesPorLote = massaGeradaPorLoteKg / (pesoMedioG / 1000);
+                              lotesNecessarios = Math.ceil(aProduzir / unidadesPorLote);
+                            }
+                            
+                            return (
+                              <ContagemItemCard
+                                key={item.id}
+                                item={item}
+                                lojaNome={loja.nome}
+                                finalSobra={finalSobra}
+                                pesoTotal={pesoTotal}
+                                idealFromConfig={idealFromConfig}
+                                aProduzir={aProduzir}
+                                campoTocado={true}
+                                isDirty={isDirty}
+                                isItemNaoPreenchido={false}
+                                sessaoAtiva={true}
+                                isAdmin={isAdminUser}
+                                showAdminCols={showAdminCols}
+                                lastUpdate={contagem?.updated_at}
+                                onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
+                                onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                                onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
+                                onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                                currentDayLabel={diasSemanaLabels[currentDay]}
+                                showProducaoExtra={isAdminUser}
+                                onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
+                                isLoteMasseira={isLoteMasseira}
+                                lotesNecessarios={lotesNecessarios}
+                              />
+                            );
+                          })}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ajuste" className="mt-4">
+              <AjusteEstoquePorcionadosCPD
+                cpdLojaId={cpdLoja.id}
+                cpdLojaNome={cpdLoja.nome}
+              />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <>
+            {/* Cards de Resumo */}
+            {lojaAtualId && (
+              <ContagemSummaryCards
+                totalItens={summaryStats.totalItens}
+                pesoTotalG={summaryStats.pesoTotalG}
+                itensPendentes={summaryStats.itensPendentes}
+                ultimaAtualizacao={summaryStats.ultimaAtualizacao}
+              />
+            )}
+
+            {/* Lista de Lojas */}
+            <div className="space-y-4">
+              {lojas.map((loja) => {
+                const contagensLoja = contagens[loja.id] || [];
+                const isOpen = openLojas.has(loja.id);
+                
+                return (
+                  <Collapsible
+                    key={loja.id}
+                    open={isOpen}
+                    onOpenChange={() => toggleLoja(loja.id)}
+                    className="bg-card rounded-xl border-2 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+                  >
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center justify-between px-5 py-4 hover:bg-accent/30 transition-colors">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-bold text-lg text-foreground">{loja.nome}</span>
+                          <span className="text-sm text-muted-foreground">({loja.responsavel})</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isOpen ? (
+                            <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </div>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent>
+                      <div className="border-t-2 p-4 space-y-3">
+                        {/* Itens da Loja */}
+                        {itens.map((item) => {
+                          const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
+                          const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
+                          const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
+                          const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
+                          
+                          const estoqueKey = `${loja.id}-${item.id}`;
+                          const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+                          const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
+                          const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                          const isDirty = isRowDirty(loja.id, item.id);
+                          
+                          // Calcular lotes necessários para itens lote_masseira
+                          const isLoteMasseira = item.unidade_medida === 'lote_masseira';
+                          let lotesNecessarios = 0;
+                          if (isLoteMasseira && aProduzir > 0) {
+                            const massaGeradaPorLoteKg = item.massa_gerada_por_lote_kg || 25;
+                            const pesoMedioG = item.peso_medio_operacional_bolinha_g || 400;
+                            const unidadesPorLote = massaGeradaPorLoteKg / (pesoMedioG / 1000);
+                            lotesNecessarios = Math.ceil(aProduzir / unidadesPorLote);
+                          }
+                          
+                          return (
+                            <ContagemItemCard
+                              key={item.id}
+                              item={item}
+                              lojaNome={loja.nome}
+                              finalSobra={finalSobra}
+                              pesoTotal={pesoTotal}
+                              idealFromConfig={idealFromConfig}
+                              aProduzir={aProduzir}
+                              campoTocado={true}
+                              isDirty={isDirty}
+                              isItemNaoPreenchido={false}
+                              sessaoAtiva={true}
+                              isAdmin={isAdminUser}
+                              showAdminCols={showAdminCols}
+                              lastUpdate={contagem?.updated_at}
+                              onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
+                              onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                              onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
+                              onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
+                              currentDayLabel={diasSemanaLabels[currentDay]}
+                              showProducaoExtra={isAdminUser}
+                              onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
+                              isLoteMasseira={isLoteMasseira}
+                              lotesNecessarios={lotesNecessarios}
+                            />
+                          );
+                        })}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              })}
+            </div>
+          </>
         )}
-
-        {/* Lista de Lojas */}
-        <div className="space-y-4">
-          {lojas.map((loja) => {
-            const contagensLoja = contagens[loja.id] || [];
-            const isOpen = openLojas.has(loja.id);
-            
-            return (
-              <Collapsible
-                key={loja.id}
-                open={isOpen}
-                onOpenChange={() => toggleLoja(loja.id)}
-                className="bg-card rounded-xl border-2 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
-              >
-                <CollapsibleTrigger className="w-full">
-                  <div className="flex items-center justify-between px-5 py-4 hover:bg-accent/30 transition-colors">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="font-bold text-lg text-foreground">{loja.nome}</span>
-                      <span className="text-sm text-muted-foreground">({loja.responsavel})</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isOpen ? (
-                        <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                </CollapsibleTrigger>
-
-                <CollapsibleContent>
-                  <div className="border-t-2 p-4 space-y-3">
-                    {/* Itens da Loja */}
-                    {itens.map((item) => {
-                      const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
-                      const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
-                      const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
-                      const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
-                      
-                      const estoqueKey = `${loja.id}-${item.id}`;
-                      const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
-                      const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
-                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
-                      const isDirty = isRowDirty(loja.id, item.id);
-                      
-                      // Calcular lotes necessários para itens lote_masseira
-                      const isLoteMasseira = item.unidade_medida === 'lote_masseira';
-                      let lotesNecessarios = 0;
-                      if (isLoteMasseira && aProduzir > 0) {
-                        const massaGeradaPorLoteKg = item.massa_gerada_por_lote_kg || 25;
-                        const pesoMedioG = item.peso_medio_operacional_bolinha_g || 400;
-                        const unidadesPorLote = massaGeradaPorLoteKg / (pesoMedioG / 1000);
-                        lotesNecessarios = Math.ceil(aProduzir / unidadesPorLote);
-                      }
-                      
-                      return (
-                        <ContagemItemCard
-                          key={item.id}
-                          item={item}
-                          lojaNome={loja.nome}
-                          finalSobra={finalSobra}
-                          pesoTotal={pesoTotal}
-                          idealFromConfig={idealFromConfig}
-                          aProduzir={aProduzir}
-                          campoTocado={true}
-                          isDirty={isDirty}
-                          isItemNaoPreenchido={false}
-                          sessaoAtiva={true}
-                          isAdmin={isAdminUser}
-                          showAdminCols={showAdminCols}
-                          lastUpdate={contagem?.updated_at}
-                          onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
-                          onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
-                          onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
-                          onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
-                          currentDayLabel={diasSemanaLabels[currentDay]}
-                          showProducaoExtra={isAdminUser}
-                          onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
-                          isLoteMasseira={isLoteMasseira}
-                          lotesNecessarios={lotesNecessarios}
-                        />
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            );
-          })}
-        </div>
 
         {/* Footer Fixo */}
         <ContagemFixedFooter
