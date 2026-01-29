@@ -143,8 +143,10 @@ export function ProductGroupedStacks({
     <div className="space-y-3">
       {groupedByItem.map((group) => {
         // Verificar se a produção está habilitada para este registro
+        // Se nenhuma loja foi iniciada (null), todos estão habilitados
+        // Se uma loja foi iniciada, apenas ela fica habilitada
         const registroLojaId = group.registros[0].detalhes_lojas?.[0]?.loja_id;
-        const producaoHabilitada = lojaIniciadaId === registroLojaId;
+        const producaoHabilitada = lojaIniciadaId === null || lojaIniciadaId === registroLojaId;
         
         return (
           <div key={`${group.itemId}-${lojaFiltradaId || 'all'}`} className="animate-fade-in">
