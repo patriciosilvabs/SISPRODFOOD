@@ -3228,38 +3228,15 @@ export type Database = {
     }
     Functions: {
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
-      criar_ou_atualizar_producao_registro:
-        | {
-            Args: {
-              p_item_id: string
-              p_organization_id: string
-              p_usuario_id: string
-              p_usuario_nome: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_data_producao: string
-              p_demanda_total: number
-              p_item_id: string
-              p_organization_id: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              p_data_referencia: string
-              p_demanda_unidades: number
-              p_ideal_configurado?: number
-              p_item_id: string
-              p_item_nome: string
-              p_loja_id: string
-              p_loja_nome: string
-              p_organization_id: string
-            }
-            Returns: Json
-          }
+      criar_ou_atualizar_producao_registro: {
+        Args: {
+          p_item_id: string
+          p_organization_id: string
+          p_usuario_id: string
+          p_usuario_nome: string
+        }
+        Returns: string
+      }
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
