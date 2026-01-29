@@ -398,6 +398,11 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                         const camposPreenchidos = item.peso_g && item.peso_g !== '0' && item.volumes && item.volumes !== '0';
                         const precisaSalvar = !item.salvo && camposPreenchidos;
                         
+                        // Buscar limite máximo do estoque CPD
+                        const itemOriginal = demanda.itens.find(i => i.item_id === item.item_id);
+                        const maxDisponivel = itemOriginal?.quantidade_disponivel || item.quantidade;
+                        const estaNolimite = item.quantidade >= maxDisponivel;
+                        
                         return (
                           <div key={item.item_id} className={`flex items-center gap-3 bg-background border rounded ${layoutExpandido ? 'p-3' : 'p-2'} ${item.salvo ? 'border-green-500/50 bg-green-50/50' : ''}`}>
                             <div className="flex-1 min-w-0">
@@ -413,13 +418,27 @@ const SecaoLojaRomaneio = ({ demanda, onEnviar, onUpdateQuantidade, onUpdatePeso
                                 </span>
                               )}
                             </div>
-                            <Input
-                              type="number"
-                              value={item.quantidade || ''}
-                              onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-                              className={layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium"}
-                              min={1}
-                            />
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Input
+                                type="number"
+                                value={item.quantidade || ''}
+                                onChange={(e) => {
+                                  const valor = parseInt(e.target.value) || 0;
+                                  onUpdateQuantidade(demanda.loja_id, item.item_id, Math.min(valor, maxDisponivel));
+                                }}
+                                className={`${layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium"} ${estaNolimite ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : ""}`}
+                                min={1}
+                                max={maxDisponivel}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                Máx: {maxDisponivel}
+                              </span>
+                              {estaNolimite && (
+                                <Badge variant="outline" className="text-xs border-amber-500 text-amber-700 dark:text-amber-400">
+                                  Limite
+                                </Badge>
+                              )}
+                            </div>
                             <span className={`text-muted-foreground ${layoutExpandido ? 'text-base' : 'text-sm'}`}>un</span>
                             <PesoInputInlineCompacto
                               value={item.peso_g}
@@ -1448,10 +1467,17 @@ const Romaneio = () => {
   const handleUpdateQuantidadeLoja = (lojaId: string, itemId: string, quantidade: number) => {
     setDemandasPorLoja(prev => prev.map(d => {
       if (d.loja_id !== lojaId) return d;
+      
+      // Buscar limite máximo do item original (estoque disponível no CPD)
+      const itemOriginal = d.itens.find(i => i.item_id === itemId);
+      const maxDisponivel = itemOriginal?.quantidade_disponivel || 999999;
+      
       return {
         ...d,
         itensSelecionados: d.itensSelecionados.map(item =>
-          item.item_id === itemId ? { ...item, quantidade: Math.max(1, quantidade), salvo: false } : item
+          item.item_id === itemId 
+            ? { ...item, quantidade: Math.max(1, Math.min(quantidade, maxDisponivel)), salvo: false } 
+            : item
         )
       };
     }));
