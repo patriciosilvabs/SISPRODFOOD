@@ -820,42 +820,47 @@ const ResumoDaProducao = () => {
         setLojas(lojasData);
       }
       
-      // Buscar última atualização por loja diretamente da tabela contagem_porcionados
-      const { data: contagensRaw } = await supabase
+      // CORREÇÃO: Buscar contagens diretamente da tabela contagem_porcionados
+      // Isso garante que lojas apareçam como "enviaram" assim que salvam a contagem,
+      // mesmo que os cards de produção ainda não tenham sido gerados pelo trigger
+      const { data: contagensAgrupadas } = await supabase
         .from('contagem_porcionados')
-        .select('loja_id, updated_at')
+        .select('loja_id, a_produzir, updated_at')
         .eq('organization_id', organizationId)
-        .eq('dia_operacional', diaOperacionalAtual)
+        .eq('dia_operacional', hoje)
         .gt('a_produzir', 0);
       
-      // Agregar por loja: MAX de updated_at
-      const ultimaAtualizacaoPorLoja = new Map<string, string>();
-      contagensRaw?.forEach(c => {
-        const atual = ultimaAtualizacaoPorLoja.get(c.loja_id);
-        if (!atual || c.updated_at > atual) {
-          ultimaAtualizacaoPorLoja.set(c.loja_id, c.updated_at);
+      // Criar mapa de nomes das lojas para lookup rápido
+      const lojasMap = new Map(lojasData?.map(l => [l.id, l.nome]) || []);
+      
+      // Agregar estatísticas por loja
+      const contagemStats = new Map<string, { 
+        loja_id: string; 
+        loja_nome: string; 
+        totalItens: number; 
+        totalUnidades: number; 
+        ultimaAtualizacao?: string;
+      }>();
+      
+      contagensAgrupadas?.forEach(c => {
+        if (!contagemStats.has(c.loja_id)) {
+          contagemStats.set(c.loja_id, {
+            loja_id: c.loja_id,
+            loja_nome: lojasMap.get(c.loja_id) || 'Loja Desconhecida',
+            totalItens: 0,
+            totalUnidades: 0,
+            ultimaAtualizacao: c.updated_at,
+          });
+        }
+        const stats = contagemStats.get(c.loja_id)!;
+        stats.totalItens += 1;
+        stats.totalUnidades += c.a_produzir || 0;
+        // Atualizar timestamp se for mais recente
+        if (c.updated_at > (stats.ultimaAtualizacao || '')) {
+          stats.ultimaAtualizacao = c.updated_at;
         }
       });
       
-      // Calcular estatísticas de contagem por loja (baseado nos cards a_produzir)
-      const contagemStats = new Map<string, { loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number; ultimaAtualizacao?: string }>();
-      organizedColumns.a_produzir.forEach(reg => {
-        if (reg.detalhes_lojas && reg.detalhes_lojas.length > 0) {
-          const loja = reg.detalhes_lojas[0];
-          if (!contagemStats.has(loja.loja_id)) {
-            contagemStats.set(loja.loja_id, {
-              loja_id: loja.loja_id,
-              loja_nome: loja.loja_nome,
-              totalItens: 0,
-              totalUnidades: 0,
-              ultimaAtualizacao: ultimaAtualizacaoPorLoja.get(loja.loja_id),
-            });
-          }
-          const stats = contagemStats.get(loja.loja_id)!;
-          stats.totalItens += 1;
-          stats.totalUnidades += reg.unidades_programadas || 0;
-        }
-      });
       setContagensHoje(Array.from(contagemStats.values()));
       
     } catch (error) {
