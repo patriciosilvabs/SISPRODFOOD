@@ -198,6 +198,9 @@ const ResumoDaProducao = () => {
     data_referencia: string;
   }>>([]);
   
+  // Estado para estoque do CPD (para indicador visual quando coluna A PRODUZIR está vazia)
+  const [estoqueCPD, setEstoqueCPD] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
+  
   // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
   const knownCardIdsRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
@@ -827,6 +830,28 @@ const ResumoDaProducao = () => {
         .eq('status', 'aguardando_gatilho');
       
       setBacklogItems(backlogData || []);
+      
+      // Buscar estoque atual do CPD (final_sobra > 0 do dia atual)
+      // Isso será usado para mostrar indicador quando coluna A PRODUZIR está vazia
+      if (cpdLoja?.id) {
+        const { data: estoqueCPDData } = await supabase
+          .from('contagem_porcionados')
+          .select(`
+            item_porcionado_id,
+            final_sobra,
+            itens_porcionados!inner(nome)
+          `)
+          .eq('loja_id', cpdLoja.id)
+          .eq('dia_operacional', hoje)
+          .gt('final_sobra', 0);
+        
+        const estoquesCPDFormatado = estoqueCPDData?.map(e => ({
+          item_nome: (e.itens_porcionados as unknown as { nome: string }).nome,
+          quantidade: e.final_sobra,
+        })) || [];
+        
+        setEstoqueCPD(estoquesCPDFormatado);
+      }
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
@@ -2032,6 +2057,7 @@ const ResumoDaProducao = () => {
                       onCancelarPreparo={handleOpenCancelarModal}
                       onRegistrarPerda={handleOpenPerdaModal}
                       lojaFiltradaId={lojaFiltrada?.id}
+                      estoquesCPD={estoqueCPD}
                     />
                   ) : (
                     <>
