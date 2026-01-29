@@ -2041,14 +2041,16 @@ const ResumoDaProducao = () => {
           }}
         />
 
-        {/* Indicador de itens aguardando gatilho mínimo */}
-        <BacklogIndicator 
-          backlogItems={backlogItems}
-          onForcarProducao={async (itemId, itemNome) => {
-            // Força produção mesmo abaixo do gatilho (implementação futura)
-            toast.info(`Forçar produção de "${itemNome}" ainda não implementado. Aguarde novas contagens.`);
-          }}
-        />
+        {/* Indicador de itens aguardando gatilho mínimo - apenas para Admins */}
+        {isAdmin() && (
+          <BacklogIndicator 
+            backlogItems={backlogItems}
+            onForcarProducao={async (itemId, itemNome) => {
+              // Força produção mesmo abaixo do gatilho (implementação futura)
+              toast.info(`Forçar produção de "${itemNome}" ainda não implementado. Aguarde novas contagens.`);
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (
