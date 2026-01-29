@@ -1,186 +1,99 @@
 
-# Plano: Controle de Fluxo de Produção por Loja
+# Plano: Corrigir Bloqueio ao Iniciar Produção
 
-## Requisitos do Usuário
+## Problema Identificado
 
-1. **Remover botão "Ver Todos"** - Ao clicar no nome da loja, mostrar apenas os itens dessa loja
-2. **"Ir para Preparo" bloqueado até clicar "Iniciar"** - O botão nos cards só fica ativo após o usuário clicar "Iniciar" na loja
-3. **Lojas inativas até porcionamento** - Após "Iniciar" uma loja, as demais ficam bloqueadas até que TODOS os itens dessa loja estejam em "porcionamento"
+Quando o usuário clica "Iniciar" em uma loja que enviou contagem, o sistema mostra "Nenhum item para produzir" porque:
+
+1. A loja aparece corretamente no **Status das Contagens** (contagem foi salva)
+2. Mas os **cards de produção** ainda não foram gerados no Kanban
+3. O botão "Iniciar" tenta buscar registros em `columns.a_produzir` que está vazio
+
+**Causa raiz:** Há uma desconexão entre:
+- O indicador de contagem (lê diretamente de `contagem_porcionados`)
+- Os cards de produção (dependem de trigger/recálculo)
 
 ---
 
-## Arquitetura da Solução
+## Solução Proposta
+
+Quando o usuário clicar "Iniciar" e não houver cards, **disparar automaticamente o recálculo** para gerar os cards antes de prosseguir.
+
+### Fluxo Corrigido
 
 ```text
-FLUXO PROPOSTO:
-┌─────────────────────────────────────────────────────────────┐
-│ Status das Contagens de Hoje                                │
-├─────────────────────────────────────────────────────────────┤
-│ ┌────────────────────────────────────────────────────────┐ │
-│ │ ★ UNIDADE ALEIXO  📦 8 itens • 1016 un                 │ │
-│ │   Atualizado: 23:04                                    │ │
-│ │   [🚀 Iniciar]  ← Usuário clica para ativar produção   │ │
-│ └────────────────────────────────────────────────────────┘ │
-│                                                             │
-│ ┌────────────────────────────────────────────────────────┐ │
-│ │ ⏳ UNIDADE JAPIIM               📦 2 itens • 50 un     │ │
-│ │   [BLOQUEADA]  ← Inativa até ALEIXO concluir           │ │
-│ └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│ A PRODUZIR (Filtrando: UNIDADE ALEIXO)                ✕    │
-├─────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ PEPPERONI - PORCIONADO                                  │ │
-│ │ [▶ Ir para Preparo] ← HABILITADO (loja foi iniciada)    │ │
-│ └─────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Estado Global Necessário
-
-Novo estado em `ResumoDaProducao.tsx`:
-
-```typescript
-// Loja que teve "Iniciar" clicado (controla habilitação dos cards)
-const [lojaIniciada, setLojaIniciada] = useState<{ id: string; nome: string } | null>(null);
+1. Usuário clica "Iniciar" na loja ALEIXO
+2. Sistema verifica: columns.a_produzir.filter(loja === ALEIXO)
+3. Se vazio → Chamar recalcular_producao_dia automaticamente
+4. Aguardar recálculo concluir
+5. Recarregar dados
+6. Tentar novamente: buscar cards em a_produzir
+7. Se ainda vazio → Mostrar mensagem orientando usuário
+8. Se encontrou → Prosseguir com handleIniciarTudoLoja
 ```
 
 ---
 
 ## Mudanças Técnicas
 
-### 1. `ResumoDaProducao.tsx`
+### Arquivo: `src/pages/ResumoDaProducao.tsx`
 
-**Adicionar estado `lojaIniciada`:**
+**Modificar o handler `onIniciarProducaoLoja` para:**
+
 ```typescript
-// Estado para controlar qual loja teve produção iniciada
-const [lojaIniciada, setLojaIniciada] = useState<{ id: string; nome: string } | null>(null);
-```
-
-**Modificar lógica do botão "Iniciar":**
-- Ao clicar em "Iniciar", definir `lojaIniciada`
-- Também definir `lojaFiltrada` para mostrar apenas itens dessa loja
-- Verificar se todos os itens da loja atual estão em "em_porcionamento" para desbloquear outras lojas
-
-**Passar `lojaIniciada` para componentes filhos:**
-```typescript
-<ProductGroupedStacks
-  lojaFiltradaId={lojaFiltrada?.id}
-  lojaIniciadaId={lojaIniciada?.id}  // NOVO
-/>
-```
-
-**Lógica para verificar se loja completou:**
-```typescript
-// Verificar se todos os itens da lojaIniciada já passaram para porcionamento
-useEffect(() => {
-  if (lojaIniciada) {
-    const itensNaAProduzir = columns.a_produzir.filter(
-      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
-    );
-    const itensEmPreparo = columns.em_preparo.filter(
-      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
+onIniciarProducaoLoja={async (lojaId, lojaNome) => {
+  // Buscar registros da loja na coluna a_produzir
+  let registrosDaLoja = columns.a_produzir.filter(
+    r => r.detalhes_lojas?.[0]?.loja_id === lojaId
+  );
+  
+  // Se não encontrou cards, tentar recalcular produção primeiro
+  if (registrosDaLoja.length === 0) {
+    toast.info(`Gerando produção para ${lojaNome}...`);
+    
+    // Chamar recálculo
+    const { error } = await supabase.rpc('recalcular_producao_dia', {
+      p_organization_id: organizationId,
+      p_usuario_id: user?.id,
+      p_usuario_nome: profile?.nome || 'Sistema'
+    });
+    
+    if (error) {
+      toast.error('Erro ao gerar produção. Tente clicar em "Recalcular".');
+      return;
+    }
+    
+    // Recarregar dados
+    await loadProducaoRegistros(true);
+    
+    // Tentar buscar novamente após recálculo
+    const novosDados = columns.a_produzir.filter(
+      r => r.detalhes_lojas?.[0]?.loja_id === lojaId
     );
     
-    // Se não há mais itens em a_produzir nem em_preparo, desbloquear outras lojas
-    if (itensNaAProduzir.length === 0 && itensEmPreparo.length === 0) {
-      setLojaIniciada(null);
-      setLojaFiltrada(null);
-      toast.success(`✅ Produção de ${lojaIniciada.nome} concluída!`);
+    if (novosDados.length === 0) {
+      toast.warning(`Nenhum item gerado para ${lojaNome}. Verifique as contagens.`);
+      return;
     }
+    
+    registrosDaLoja = novosDados;
   }
-}, [columns, lojaIniciada]);
+  
+  handleIniciarTudoLoja(lojaId, lojaNome, registrosDaLoja);
+}}
 ```
+
+**Alternativa mais simples (sem recálculo automático):**
+
+Mostrar um botão "Gerar Produção" ao invés de bloquear silenciosamente.
 
 ---
 
-### 2. `ContagemStatusIndicator.tsx`
+## Problema Secundário: Estado `lojaIniciada` não Persiste
 
-**Remover botão "Ver Todos":**
-- Clicar no card da loja = filtrar pelos itens dessa loja (mantém)
-- Remover botão separado "Ver" / "Ver Todos"
+O estado `lojaIniciada` é perdido ao recarregar a página. Isso pode causar confusão mas não é o problema principal reportado.
 
-**Adicionar props para controle:**
-```typescript
-interface ContagemStatusIndicatorProps {
-  lojas: Loja[];
-  contagensHoje: ContagemData[];
-  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
-  onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void;
-  lojaFiltradaId?: string | null;
-  lojaIniciadaId?: string | null;  // NOVO: qual loja foi iniciada
-}
-```
-
-**Lógica de bloqueio visual:**
-- Se `lojaIniciadaId` está definido e é diferente da loja atual, mostrar como "bloqueada"
-- Desabilitar botão "Iniciar" de outras lojas enquanto uma está em produção
-
-```typescript
-const isLojaAtual = lojaIniciadaId === loja.id;
-const estaBloqueada = lojaIniciadaId !== null && !isLojaAtual;
-
-{estaBloqueada ? (
-  <Badge variant="outline" className="text-xs text-muted-foreground">
-    🔒 Aguardando
-  </Badge>
-) : (
-  <Button onClick={() => onIniciarProducaoLoja(loja.id, loja.nome)}>
-    {isLojaAtual ? '✓ Em Produção' : 'Iniciar'}
-  </Button>
-)}
-```
-
----
-
-### 3. `ProductGroupedStacks.tsx`
-
-**Receber nova prop `lojaIniciadaId`:**
-```typescript
-interface ProductGroupedStacksProps {
-  // ... props existentes
-  lojaIniciadaId?: string | null;  // NOVO
-}
-```
-
-**Passar para KanbanCard:**
-```typescript
-<KanbanCard
-  registro={registro}
-  producaoHabilitada={lojaIniciadaId === registro.detalhes_lojas?.[0]?.loja_id}
-/>
-```
-
----
-
-### 4. `KanbanCard.tsx`
-
-**Nova prop para controlar botão:**
-```typescript
-interface KanbanCardProps {
-  // ... props existentes
-  producaoHabilitada?: boolean;  // NOVO: se false, botão "Ir para Preparo" fica desabilitado
-}
-```
-
-**Desabilitar botão quando não habilitado:**
-```typescript
-const botaoDesabilitado = columnId === 'a_produzir' && 
-  (estaBloqueado || !producaoHabilitada);
-
-<Button
-  disabled={botaoDesabilitado}
-  className={botaoDesabilitado ? 'opacity-50 cursor-not-allowed' : ''}
->
-  {!producaoHabilitada && columnId === 'a_produzir' 
-    ? 'Aguardando Iniciar' 
-    : buttonConfig.label}
-</Button>
-```
+**Opção futura:** Persistir `lojaIniciada` no localStorage ou detectar automaticamente baseado em cards em `em_preparo`.
 
 ---
 
@@ -188,65 +101,22 @@ const botaoDesabilitado = columnId === 'a_produzir' &&
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ResumoDaProducao.tsx` | Adicionar estado `lojaIniciada`, lógica de desbloqueio automático, passar props |
-| `src/components/kanban/ContagemStatusIndicator.tsx` | Remover "Ver Todos", adicionar lógica de bloqueio entre lojas |
-| `src/components/kanban/ProductGroupedStacks.tsx` | Receber e propagar `lojaIniciadaId` |
-| `src/components/kanban/KanbanCard.tsx` | Nova prop `producaoHabilitada` para bloquear "Ir para Preparo" |
+| `src/pages/ResumoDaProducao.tsx` | Adicionar lógica de recálculo automático quando não há cards ao clicar "Iniciar" |
 
 ---
 
-## Fluxo Completo
+## Benefícios
 
-```text
-1. Usuário vê lojas disponíveis
-   └── ALEIXO ★ [Iniciar]
-   └── JAPIIM [Iniciar]
-
-2. Clica "Iniciar" em ALEIXO
-   └── lojaIniciada = ALEIXO
-   └── lojaFiltrada = ALEIXO
-   └── JAPIIM mostra [🔒 Aguardando]
-   └── Cards de ALEIXO mostram [▶ Ir para Preparo]
-
-3. Operador processa cada card
-   └── Clica "Ir para Preparo" → card vai para EM PREPARO
-   └── Conclui preparo → card vai para EM PORCIONAMENTO
-
-4. Quando TODOS os cards de ALEIXO estão em PORCIONAMENTO
-   └── lojaIniciada = null
-   └── lojaFiltrada = null
-   └── JAPIIM volta a mostrar [Iniciar]
-   └── Operador pode iniciar JAPIIM
-```
+| Antes | Depois |
+|-------|--------|
+| "Nenhum item para produzir" mesmo com contagem | Recálculo automático gera os cards |
+| Usuário precisa clicar "Recalcular" manualmente | Sistema faz automaticamente |
+| Confusão sobre por que não funciona | Feedback claro e ação automática |
 
 ---
 
-## Resultado Visual Final
+## Considerações de UX
 
-**Status das Contagens (loja bloqueada):**
-```
-┌────────────────────────────────────────────────────────┐
-│ ★ UNIDADE ALEIXO   📦 8 itens • 1016 un                │
-│   [✓ EM PRODUÇÃO]  ← Verde, indicando ativa           │
-└────────────────────────────────────────────────────────┘
-┌────────────────────────────────────────────────────────┐
-│ ⏳ UNIDADE JAPIIM   📦 2 itens • 50 un                 │
-│   [🔒 Aguardando]  ← Cinza/desabilitado               │
-└────────────────────────────────────────────────────────┘
-```
-
-**Card antes de Iniciar loja:**
-```
-┌────────────────────────────────────┐
-│ PEPPERONI - PORCIONADO            │
-│ [Aguardando Iniciar] ← Desabilitado│
-└────────────────────────────────────┘
-```
-
-**Card depois de Iniciar loja:**
-```
-┌────────────────────────────────────┐
-│ PEPPERONI - PORCIONADO            │
-│ [▶ Ir para Preparo] ← Habilitado  │
-└────────────────────────────────────┘
-```
+- Mostrar loading enquanto recalcula ("Gerando produção...")
+- Se recálculo falhar, orientar usuário a usar botão "Recalcular"
+- Após recálculo bem-sucedido, cards aparecem e produção é iniciada automaticamente
