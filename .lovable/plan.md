@@ -1,73 +1,74 @@
 
-# Plano: Separar Produção por Loja no Resumo da Produção
+# Plano: Exibir Data/Hora da Última Contagem por Loja
 
-## ✅ IMPLEMENTADO
+## Problema
+No indicador de status das contagens, o usuário não consegue ver quando foi a última vez que cada loja enviou/atualizou sua contagem. Isso dificulta saber se a contagem está atualizada.
 
-### 1. Função RPC: `criar_ou_atualizar_producao_registro` ✅
-Modificada para criar UM registro de produção POR LOJA (não mais agregado).
-
-| Antes | Depois |
-|-------|--------|
-| 1 card com 80 unidades (Loja A + B) | 2 cards: 30 un (Loja A) + 50 un (Loja B) |
-| `detalhes_lojas` contém array com todas as lojas | `detalhes_lojas` contém apenas 1 loja |
-
-### 2. Frontend: Filtro por Loja no Kanban ✅
-- `LojaFilterTabs.tsx`: Sistema de abas para filtrar por loja na coluna "A PRODUZIR"
-- Estrela (★) indica a loja com maior demanda (recomendada para iniciar primeiro)
-- Botão "Iniciar Produção da Loja" para processar todos os cards de uma loja
-
-### 3. Indicador de Status por Loja ✅
-- `ContagemStatusIndicator.tsx`: Exibe quais lojas já enviaram contagem
-- ✅ Verde = Loja enviou contagem (com total de itens e unidades)
-- ⏳ Aguardando = Loja ainda não enviou
-
-### 4. Badge da Loja nos Cards ✅
-- `KanbanCard.tsx`: Badge proeminente com nome da loja no header de cada card
+## Solução
+Adicionar a exibição do horário da última atualização (`updated_at`) para cada loja que já enviou contagem.
 
 ---
 
-## Arquivos Modificados
+## Mudanças Necessárias
+
+### 1. Interface `ContagemData` - Adicionar campo de timestamp
+
+Atualizar a interface no componente `ContagemStatusIndicator.tsx`:
+
+```typescript
+interface ContagemData {
+  loja_id: string;
+  loja_nome: string;
+  totalItens: number;
+  totalUnidades: number;
+  ultimaAtualizacao?: string; // Novo campo: ISO timestamp
+}
+```
+
+### 2. Consulta na página `ResumoDaProducao.tsx`
+
+Modificar a lógica que calcula `contagensHoje` para buscar o MAX do `updated_at` diretamente da tabela `contagem_porcionados`:
+
+```typescript
+// Buscar contagens agrupadas por loja com timestamp mais recente
+const { data: contagemDireta } = await supabase
+  .from('contagem_porcionados')
+  .select('loja_id, updated_at')
+  .eq('organization_id', organizationId)
+  .eq('dia_operacional', diaOperacional);
+
+// Agregar por loja e pegar o MAX de updated_at
+```
+
+### 3. Exibição no Card da Loja
+
+Adicionar o horário formatado abaixo do nome da loja:
+
+```
+┌────────────────────────────────────────────────────────┐
+│ ✅ UNIDADE JAPIIM                   📦 6 itens • 423 un │
+│    Atualizado: 14:32                                    │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/migrations/...` | Nova função RPC que cria cards por loja |
-| `src/pages/ResumoDaProducao.tsx` | Integração do filtro e indicador |
-| `src/components/kanban/ProductGroupedStacks.tsx` | Agrupamento por loja + filtro |
-| `src/components/kanban/KanbanCard.tsx` | Badge com nome da loja |
-| `src/components/kanban/LojaFilterTabs.tsx` | **NOVO** - Abas de filtro por loja |
-| `src/components/kanban/ContagemStatusIndicator.tsx` | **NOVO** - Indicador de status |
+| `src/components/kanban/ContagemStatusIndicator.tsx` | Adicionar campo `ultimaAtualizacao` na interface e exibir timestamp formatado |
+| `src/pages/ResumoDaProducao.tsx` | Modificar cálculo de `contagensHoje` para incluir MAX(updated_at) por loja |
 
 ---
 
-## Fluxo Operacional Resultante
+## Formato de Exibição
 
+- Se contagem de hoje: **"Atualizado: HH:mm"** (apenas hora)
+- Se contagem de outro dia: **"Atualizado: DD/MM HH:mm"** (data e hora)
+
+Exemplo visual:
 ```
-1. Lojas enviam contagens individualmente
-   ├── JAPIIM envia às 15:00 → Cards JAPIIM aparecem no Kanban
-   ├── CACHOEIRINHA envia às 16:00 → Cards CACHOEIRINHA aparecem
-   └── ALEIXO envia às 17:00 → Cards ALEIXO aparecem
-
-2. CPD visualiza cards separados por loja
-   ├── Aba "JAPIIM" mostra: Frango (64), Bacon (70), Pepperoni (75)...
-   └── Aba "CACHOEIRINHA" mostra: Carne (27), Mussarela (19)...
-
-3. Operador clica "Iniciar Produção - JAPIIM"
-   ├── Confirma insumos consolidados
-   ├── Todos os cards JAPIIM movem para EM PREPARO
-   └── Após finalizar, romaneio fica vinculado à JAPIIM
-
-4. Operador clica "Iniciar Produção - CACHOEIRINHA"
-   └── Mesma lógica, separado
+✅ UNIDADE JAPIIM              📦 6 itens • 423 un
+   Atualizado: 14:32
 ```
-
----
-
-## Benefícios Alcançados
-
-| Problema Anterior | Solução Implementada |
-|-------------------|----------------------|
-| Não sabia se loja enviou contagem | Indicador visual claro (verde/aguardando) |
-| Produzia tudo misturado | Produção focada por loja |
-| Romaneio complexo | Cada produção já vinculada à loja de destino |
-| Priorização manual | Sistema destaca loja com maior demanda (★) |
-| Erros de distribuição | Rastreabilidade ponta-a-ponta |
