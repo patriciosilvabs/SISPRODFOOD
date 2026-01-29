@@ -1,162 +1,103 @@
 
-# Plano: Melhorar Layout do Resumo da Produção
 
-## Análise da Referência
+# Plano: Corrigir Trigger para Permitir Limpeza das Contagens
 
-A imagem de referência mostra um layout aprimorado com:
+## Problema Identificado
 
-1. **Header com ações à direita**: Botões "Limpar Produção", "Recalcular" e "Atualizar" agrupados horizontalmente
-2. **Painel de Status com cards coloridos de destaque**: Cards das lojas com cores vibrantes (amarelo, verde) e layout mais visual
-3. **Cards de loja maiores e mais visuais**: Cada loja com ícone circular, contador grande, horário e botão "Iniciar"
-4. **Colunas do Kanban com header colorido**: Cada coluna tem um header com cor de fundo correspondente ao status
-5. **Indicador de maior demanda**: Card da loja com maior demanda em destaque amarelo com estrela
+Ao clicar em "Limpar Produção", o UPDATE para zerar `ideal_amanha` falha com o erro:
 
-## Alterações Propostas
+```
+"record \"old\" has no field \"estoque_inicial\""
+```
 
-### 1. Componente `ContagemStatusIndicator.tsx`
+### Causa Raiz
 
-**Layout atual:** Grid 2 colunas com cards pequenos
-**Layout proposto:** Grid 4 colunas (responsivo) com cards maiores e mais visuais
+O trigger `trigger_criar_producao_apos_contagem` contém uma referência à coluna `estoque_inicial` que **não existe mais** na tabela `contagem_porcionados`:
 
-Mudanças:
-- Cards maiores com padding aumentado
-- Ícone circular à esquerda (CheckCircle ou Star)
-- Nome da loja em destaque
-- Estatísticas maiores: "X itens • Y un"
-- Horário de atualização abaixo
-- Botão "Iniciar" dentro do card com ícone de play
-- Cores mais vibrantes: amarelo para maior demanda, verde para demais
-- Card da loja com maior demanda terá nota "Maior demanda - recomendamos iniciar por aqui"
+```sql
+-- Linha problemática no trigger
+IF (OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha) OR
+   (OLD.estoque_inicial IS DISTINCT FROM NEW.estoque_inicial) THEN  -- ❌ Coluna não existe!
+```
 
-### 2. Colunas do Kanban na página `ResumoDaProducao.tsx`
+### Estrutura Atual da Tabela
 
-**Layout atual:** Cards com background de cor clara
-**Layout proposto:** Header de cada coluna com cor de fundo mais marcante
+A tabela `contagem_porcionados` possui estas colunas:
+- `id`, `loja_id`, `item_porcionado_id`
+- `final_sobra`, `peso_total_g`, `ideal_amanha`, `a_produzir`
+- `usuario_id`, `usuario_nome`, `organization_id`
+- `preenchido_na_sessao`, `dia_operacional`
+- `created_at`, `updated_at`
 
-Mudanças:
-- Headers das colunas com cores de fundo mais intensas
-- Badge de contagem posicionado à direita
-- Texto "Nenhum item nesta coluna" centralizado quando vazio
+**Nota:** A coluna `estoque_inicial` foi removida em alguma migração anterior.
+
+## Solução
+
+Atualizar a função do trigger removendo a referência à coluna inexistente `estoque_inicial`.
+
+## Alteração Necessária
+
+### Migração SQL
+
+```sql
+-- Atualizar função do trigger removendo referência a estoque_inicial
+CREATE OR REPLACE FUNCTION trigger_criar_producao_apos_contagem()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Para INSERTs, sempre recalcular
+    IF TG_OP = 'INSERT' THEN
+        PERFORM criar_ou_atualizar_producao_registro(
+            NEW.item_porcionado_id,
+            NEW.organization_id,
+            NEW.usuario_id,
+            NEW.usuario_nome
+        );
+        RETURN NEW;
+    END IF;
+    
+    -- Para UPDATEs, verificar se campos relevantes mudaram
+    IF TG_OP = 'UPDATE' THEN
+        -- Só recalcular se ideal_amanha mudou (loja atualizou estoque ideal)
+        IF OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha THEN
+            PERFORM criar_ou_atualizar_producao_registro(
+                NEW.item_porcionado_id,
+                NEW.organization_id,
+                NEW.usuario_id,
+                NEW.usuario_nome
+            );
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+## Fluxo Corrigido
+
+```text
+Antes:
+Limpar Produção → UPDATE ideal_amanha = 0 → TRIGGER dispara → 
+→ Acessa OLD.estoque_inicial → ❌ ERRO: campo não existe
+
+Depois:
+Limpar Produção → UPDATE ideal_amanha = 0 → TRIGGER dispara → 
+→ Verifica apenas ideal_amanha → ✅ Funciona → Contagens zeradas
+```
+
+## Resultado Esperado
+
+| Ação | Antes | Depois |
+|------|-------|--------|
+| Clicar "Limpar Produção" | Erro no trigger, contagens mantidas | Contagens zeradas com sucesso |
+| Cards do painel de status | Continuam aparecendo | Desaparecem (a_produzir = 0) |
+| Próxima contagem | Funciona | Funciona normalmente |
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/kanban/ContagemStatusIndicator.tsx` | Layout completo dos cards de loja |
-| `src/pages/ResumoDaProducao.tsx` | Estilos do header e colunas do Kanban |
+| Tipo | Descrição |
+|------|-----------|
+| Migração SQL | Atualizar função `trigger_criar_producao_apos_contagem` |
 
-## Detalhes Técnicos
+Esta é uma correção de banco de dados que não requer alterações no código frontend.
 
-### ContagemStatusIndicator.tsx - Novo Layout
-
-```tsx
-// Grid responsivo: 1 col mobile, 2 cols tablet, 4 cols desktop
-<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-  {enviaram.map((loja) => (
-    <div className={cn(
-      "rounded-lg p-4 transition-all cursor-pointer",
-      isMaiorDemanda 
-        ? "bg-amber-100 dark:bg-amber-900/40 border-2 border-amber-300" 
-        : "bg-emerald-100 dark:bg-emerald-900/40 border-2 border-emerald-300"
-    )}>
-      {/* Ícone circular + Nome */}
-      <div className="flex items-center gap-2 mb-2">
-        <div className={cn(
-          "w-6 h-6 rounded-full flex items-center justify-center",
-          isMaiorDemanda ? "bg-amber-500" : "bg-emerald-500"
-        )}>
-          {isMaiorDemanda ? <Star /> : <Check />}
-        </div>
-        <span className="font-semibold truncate">{loja.nome}</span>
-      </div>
-      
-      {/* Estatísticas grandes */}
-      <div className="text-xl font-bold mb-1">
-        {loja.totalItens} itens • {loja.totalUnidades} un
-      </div>
-      
-      {/* Horário */}
-      <div className="text-xs text-muted-foreground mb-3">
-        Atualizado: {horarioFormatado}
-      </div>
-      
-      {/* Nota de maior demanda */}
-      {isMaiorDemanda && (
-        <div className="text-xs text-amber-700 mb-2 flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" />
-          Maior demanda - recomendamos iniciar por aqui
-        </div>
-      )}
-      
-      {/* Botão Iniciar */}
-      <Button className="w-full">
-        <Play className="h-4 w-4 mr-2" />
-        Iniciar
-      </Button>
-    </div>
-  ))}
-</div>
-```
-
-### ResumoDaProducao.tsx - Colunas do Kanban
-
-```tsx
-// Header das colunas mais visual
-const columnConfig: Record<StatusColumn, { title: string; bgColor: string; textColor: string }> = {
-  a_produzir: { 
-    title: 'A PRODUZIR', 
-    bgColor: 'bg-slate-200 dark:bg-slate-700',
-    textColor: 'text-slate-700 dark:text-slate-200'
-  },
-  em_preparo: { 
-    title: 'EM PREPARO', 
-    bgColor: 'bg-amber-200 dark:bg-amber-800',
-    textColor: 'text-amber-800 dark:text-amber-100'
-  },
-  em_porcionamento: { 
-    title: 'EM PORCIONAMENTO', 
-    bgColor: 'bg-yellow-200 dark:bg-yellow-800',
-    textColor: 'text-yellow-800 dark:text-yellow-100'
-  },
-  finalizado: { 
-    title: 'FINALIZADO', 
-    bgColor: 'bg-emerald-200 dark:bg-emerald-800',
-    textColor: 'text-emerald-800 dark:text-emerald-100'
-  },
-};
-```
-
-## Resultado Visual Esperado
-
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│  Resumo da Produção                    [Limpar] [Recalcular] [Atualizar] │
-│  Gerencie o fluxo de produção...                                        │
-├────────────────────────────────────────────────────────────────────────┤
-│  📦 Status das Contagens de Hoje                              4/4 lojas │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │ ⭐ ALEIXO    │ │ ✓ ARMAZÉM   │ │ ✓ CACHOEIRA │ │ ✓ JAPIIM     │   │
-│  │ 5 itens•445  │ │ 2 itens•152 │ │ 3 itens•46  │ │ 2 itens•33   │   │
-│  │ Atualiz 13:04│ │ Atualiz 14:03│ │ Atualiz 13:33│ │ Atualiz 13:39│   │
-│  │ ⚠️ Maior...  │ │             │ │              │ │              │   │
-│  │ [▶ Iniciar]  │ │ [▶ Iniciar] │ │ [▶ Iniciar] │ │ [▶ Iniciar] │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-├──────────────────┬────────────────┬─────────────────┬──────────────────┤
-│ A PRODUZIR    0  │ EM PREPARO  0  │ EM PORCIO...  0 │ FINALIZADO    0  │
-│ (cinza escuro)   │ (amarelo)      │ (amarelo)       │ (verde)          │
-│                  │                │                 │                  │
-│   Nenhum item    │  Nenhum item   │   Nenhum item   │   Nenhum item    │
-│   nesta coluna   │  nesta coluna  │   nesta coluna  │   nesta coluna   │
-└──────────────────┴────────────────┴─────────────────┴──────────────────┘
-```
-
-## Resumo das Alterações
-
-| Componente | Mudança |
-|------------|---------|
-| Cards de loja | Grid 4 colunas, cards maiores, cores vibrantes |
-| Ícones | Círculo colorido com check/star |
-| Estatísticas | Texto maior e mais visível |
-| Botão Iniciar | Dentro do card, full-width, com ícone de play |
-| Maior demanda | Destaque amarelo com aviso |
-| Colunas Kanban | Headers com cores de fundo mais intensas |
