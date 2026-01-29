@@ -1476,12 +1476,17 @@ const ResumoDaProducao = () => {
             .single();
 
           if (cpdLoja) {
-            // Buscar contagem existente (unique por loja_id + item_porcionado_id)
+            // CORREÇÃO: Buscar data do servidor para consistência de fuso horário
+            const { data: dataServidor } = await supabase.rpc('get_current_date');
+            const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+
+            // Buscar contagem existente DO DIA ATUAL
             const { data: contagemExistente } = await supabase
               .from('contagem_porcionados')
               .select('id, final_sobra')
               .eq('loja_id', cpdLoja.id)
               .eq('item_porcionado_id', selectedRegistro.item_id)
+              .eq('dia_operacional', diaOperacional)
               .maybeSingle();
             
             if (contagemExistente) {
@@ -1490,16 +1495,19 @@ const ResumoDaProducao = () => {
                 .from('contagem_porcionados')
                 .update({ 
                   final_sobra: contagemExistente.final_sobra + data.unidades_reais,
-                  updated_at: new Date().toISOString()
+                  updated_at: new Date().toISOString(),
+                  usuario_id: user?.id || '',
+                  usuario_nome: profile?.nome || 'Sistema',
                 })
                 .eq('id', contagemExistente.id);
             } else {
-              // Criar nova contagem
+              // Criar nova contagem PARA O DIA ATUAL
               await supabase
                 .from('contagem_porcionados')
                 .insert({
                   loja_id: cpdLoja.id,
                   item_porcionado_id: selectedRegistro.item_id,
+                  dia_operacional: diaOperacional,
                   final_sobra: data.unidades_reais,
                   ideal_amanha: 0,
                   usuario_id: user?.id || '',
@@ -1507,7 +1515,7 @@ const ResumoDaProducao = () => {
                   organization_id: organizationId
                 });
             }
-            console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome}`);
+            console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome} (dia: ${diaOperacional})`);
           }
         } catch (contagemError) {
           console.warn('Aviso: falha ao atualizar contagem_porcionados do CPD:', contagemError);
