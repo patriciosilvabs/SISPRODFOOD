@@ -743,6 +743,7 @@ const Romaneio = () => {
           itens_porcionados!inner(nome)
         `)
         .eq('loja_id', lojaCPD.id)
+        .eq('dia_operacional', serverDate)
         .gt('final_sobra', 0);
 
       if (contagemError) throw contagemError;
@@ -778,6 +779,7 @@ const Romaneio = () => {
           itens_porcionados!inner(id, nome)
         `)
         .in('loja_id', lojasIds)
+        .eq('dia_operacional', serverDate)
         .gt('a_produzir', 0);
       
       if (contagensLojasError) throw contagensLojasError;
@@ -1217,11 +1219,16 @@ const Romaneio = () => {
 
         if (romaneioItem?.item_porcionado_id && lojaCPDData?.id) {
           // Buscar estoque da contagem física do CPD (unique por loja_id + item_porcionado_id)
+          // Buscar data do servidor para filtrar pelo dia operacional atual
+          const { data: serverDateDebit } = await supabase.rpc('get_current_date');
+          const currentDate = serverDateDebit || new Date().toISOString().split('T')[0];
+          
           const { data: contagem } = await supabase
             .from('contagem_porcionados')
             .select('id, final_sobra')
             .eq('loja_id', lojaCPDData.id)
             .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
+            .eq('dia_operacional', currentDate)
             .maybeSingle();
 
           const estoqueAtual = contagem?.final_sobra || 0;
@@ -1301,12 +1308,17 @@ const Romaneio = () => {
         .maybeSingle();
 
       // Validar estoque CPD (contagem física) antes de enviar
+      // Buscar data do servidor para filtrar pelo dia operacional atual
+      const { data: serverDateValidar } = await supabase.rpc('get_current_date');
+      const currentDateValidar = serverDateValidar || new Date().toISOString().split('T')[0];
+      
       for (const item of itens) {
         const { data: contagemValidar } = await supabase
           .from('contagem_porcionados')
           .select('final_sobra')
           .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
+          .eq('dia_operacional', currentDateValidar)
           .maybeSingle();
         
         const estoqueAtual = contagemValidar?.final_sobra || 0;
@@ -1360,6 +1372,7 @@ const Romaneio = () => {
           .select('id, final_sobra')
           .eq('loja_id', lojaCPDValidar?.id)
           .eq('item_porcionado_id', item.item_id)
+          .eq('dia_operacional', currentDateValidar)
           .maybeSingle();
         
         if (contagemAtual) {
