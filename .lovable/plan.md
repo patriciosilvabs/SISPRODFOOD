@@ -1,77 +1,52 @@
 
-# Plano: Corrigir Erro de `usuario_id` NULL nos Registros de Produção
+
+# Plano: Corrigir Erro de Foreign Key para Usuário Sistema
 
 ## Problema Identificado
 
-O erro `null value in column "usuario_id" of relation "producao_registros" violates not-null constraint` ocorre porque:
+O erro `Key (usuario_id)=(00000000-0000-0000-0000-000000000000) is not present in table "profiles"` ocorre porque:
 
-1. As triggers `trigger_recalcular_producao_apos_estoque_ideal` e `trigger_recalcular_producao_apos_reserva_diaria` chamam a função RPC com `NULL::uuid` como `p_usuario_id`
-2. A função `criar_ou_atualizar_producao_registro` usa esse valor diretamente no INSERT sem nenhum tratamento de fallback
-3. A coluna `usuario_id` da tabela `producao_registros` tem constraint `NOT NULL`
+1. A correção anterior implementou um UUID de sistema como fallback (`00000000-0000-0000-0000-000000000000`)
+2. Existe uma constraint de foreign key (`producao_registros_usuario_id_fkey`) que exige que o `usuario_id` exista na tabela `profiles`
+3. O UUID de sistema não existe na tabela `profiles`
 
 ```text
-┌─────────────────────┐     ┌──────────────────────────────────┐
-│  Trigger Estoque    │────▶│ criar_ou_atualizar_producao_...  │
-│  (NULL::uuid)       │     │ INSERT usuario_id = NULL ❌       │
-└─────────────────────┘     └──────────────────────────────────┘
+┌─────────────────────────────┐     ┌──────────────────────────────────┐
+│  Trigger com fallback       │────▶│ INSERT usuario_id = 00000...000  │
+│  (UUID Sistema)             │     │ FK constraint → profiles ❌       │
+└─────────────────────────────┘     └──────────────────────────────────┘
 ```
 
 ---
 
 ## Solução Proposta
 
-Atualizar a função `criar_ou_atualizar_producao_registro` para usar um UUID de sistema como fallback quando `p_usuario_id` for NULL:
+Criar um perfil de sistema na tabela `profiles` com o UUID reservado, permitindo que registros automáticos (triggers) usem esse usuário.
+
+### Migração SQL
 
 ```sql
--- No início da função, definir fallback
-v_usuario_id uuid := COALESCE(p_usuario_id, '00000000-0000-0000-0000-000000000000');
-v_usuario_nome_final text := COALESCE(p_usuario_nome, 'Sistema');
-
--- No INSERT, usar as variáveis com fallback
-usuario_id = v_usuario_id,
-usuario_nome = v_usuario_nome_final
+-- Criar perfil de sistema para suportar registros automáticos
+INSERT INTO profiles (id, nome, email)
+VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    'Sistema',
+    'sistema@interno.local'
+)
+ON CONFLICT (id) DO NOTHING;
 ```
 
 ---
 
-## Migração SQL
+## Alternativas Consideradas
 
-```sql
-CREATE OR REPLACE FUNCTION public.criar_ou_atualizar_producao_registro(
-    p_item_id uuid,
-    p_organization_id uuid,
-    p_usuario_id uuid,
-    p_usuario_nome text
-)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-    -- Fallback para usuário sistema quando NULL
-    v_usuario_id uuid := COALESCE(p_usuario_id, '00000000-0000-0000-0000-000000000000');
-    v_usuario_nome_final text := COALESCE(p_usuario_nome, 'Sistema');
-    -- ... demais variáveis ...
-BEGIN
-    -- ... lógica existente ...
-    
-    INSERT INTO producao_registros (
-        -- ...
-        usuario_id,
-        usuario_nome,
-        -- ...
-    ) VALUES (
-        -- ...
-        v_usuario_id,       -- Usar variável com fallback
-        v_usuario_nome_final, -- Usar variável com fallback
-        -- ...
-    );
-    
-    -- ... resto da lógica ...
-END;
-$$;
-```
+| Opção | Vantagem | Desvantagem |
+|-------|----------|-------------|
+| **Criar perfil sistema** ✅ | Simples, mantém integridade referencial | Perfil "fantasma" na tabela |
+| Remover FK constraint | Permite qualquer UUID | Perde integridade referencial |
+| Tornar `usuario_id` nullable | Mais flexível | Quebra código existente, mudança maior |
+
+A opção de criar um perfil de sistema é a mais simples e segura.
 
 ---
 
@@ -85,7 +60,7 @@ $$;
 Após a migração:
 1. Salvar estoques ideais semanais funcionará sem erro
 2. Os registros criados por triggers terão `usuario_nome = 'Sistema'`
-3. Registros criados pelo frontend manterão o usuário real
+3. O perfil de sistema será identificável pelo email `sistema@interno.local`
 
 ---
 
@@ -93,4 +68,5 @@ Após a migração:
 
 | Arquivo | Mudança |
 |---------|---------|
-| Nova migração SQL | Atualiza a função RPC para tratar `NULL` em `usuario_id` e `usuario_nome` usando COALESCE com valores padrão |
+| Nova migração SQL | Insere perfil de sistema na tabela `profiles` |
+
