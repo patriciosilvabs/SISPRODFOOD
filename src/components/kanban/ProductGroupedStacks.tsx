@@ -1,9 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { KanbanCard } from "./KanbanCard";
 import { CardStack } from "./CardStack";
-import { LojaFilterTabs } from "./LojaFilterTabs";
-import { Badge } from "@/components/ui/badge";
-import { Layers, Store } from "lucide-react";
 
 interface InsumoExtraComEstoque {
   nome: string;
@@ -72,12 +69,6 @@ interface ProducaoRegistro {
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
-interface LojaGroup {
-  lojaId: string;
-  lojaNome: string;
-  registros: ProducaoRegistro[];
-}
-
 interface ProductGroup {
   itemId: string;
   itemNome: string;
@@ -92,6 +83,7 @@ interface ProductGroupedStacksProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
+  lojaFiltradaId?: string | null;
 }
 
 export function ProductGroupedStacks({
@@ -101,37 +93,13 @@ export function ProductGroupedStacks({
   onTimerFinished,
   onCancelarPreparo,
   onRegistrarPerda,
+  lojaFiltradaId,
 }: ProductGroupedStacksProps) {
-  const [selectedLojaId, setSelectedLojaId] = useState<string | null>(null);
-
-  // Primeiro agrupar por loja
-  const groupedByLoja = useMemo((): LojaGroup[] => {
-    const groups = new Map<string, ProducaoRegistro[]>();
-    
-    registros.forEach(registro => {
-      // Cada card agora tem apenas 1 loja em detalhes_lojas
-      const loja = registro.detalhes_lojas?.[0];
-      if (loja) {
-        const key = loja.loja_id;
-        if (!groups.has(key)) {
-          groups.set(key, []);
-        }
-        groups.get(key)!.push(registro);
-      }
-    });
-    
-    return Array.from(groups.entries()).map(([lojaId, regs]) => ({
-      lojaId,
-      lojaNome: regs[0].detalhes_lojas?.[0]?.loja_nome || 'Loja',
-      registros: regs,
-    }));
-  }, [registros]);
-
-  // Filtrar registros pela loja selecionada
+  // Filtrar registros pela loja selecionada (controle externo via prop)
   const filteredRegistros = useMemo(() => {
-    if (!selectedLojaId) return registros;
-    return registros.filter(r => r.detalhes_lojas?.[0]?.loja_id === selectedLojaId);
-  }, [registros, selectedLojaId]);
+    if (!lojaFiltradaId) return registros;
+    return registros.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaFiltradaId);
+  }, [registros, lojaFiltradaId]);
 
   // Agrupar registros filtrados por item_id (para stacks de lotes)
   const groupedByItem = useMemo((): ProductGroup[] => {
@@ -161,63 +129,39 @@ export function ProductGroupedStacks({
       .sort((a, b) => b.registros.length - a.registros.length);
   }, [filteredRegistros]);
 
-  if (registros.length === 0) {
+  if (filteredRegistros.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-        Nenhum item nesta coluna
+        {lojaFiltradaId ? 'Nenhum item para esta loja' : 'Nenhum item nesta coluna'}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Filtro por loja */}
-      <LojaFilterTabs
-        registros={registros}
-        selectedLojaId={selectedLojaId}
-        onSelectLoja={setSelectedLojaId}
-      />
-
-      {/* Cards agrupados */}
-      <div className="space-y-4">
-        {groupedByItem.map((group) => (
-          <div key={`${group.itemId}-${selectedLojaId || 'all'}`} className="animate-fade-in">
-            {/* Badge da loja no topo do card (se filtrado) */}
-            {selectedLojaId && group.registros[0]?.detalhes_lojas?.[0] && (
-              <div className="flex items-center gap-1.5 mb-1.5 text-xs text-muted-foreground">
-                <Store className="h-3 w-3" />
-                <span>{group.registros[0].detalhes_lojas[0].loja_nome}</span>
-              </div>
-            )}
-            
-            {group.isStack ? (
-              <CardStack
-                registros={group.registros}
-                columnId={columnId}
-                onAction={onAction}
-                onTimerFinished={onTimerFinished}
-                onCancelarPreparo={onCancelarPreparo}
-                onRegistrarPerda={onRegistrarPerda}
-              />
-            ) : (
-              <KanbanCard
-                registro={group.registros[0]}
-                columnId={columnId}
-                onAction={() => onAction(group.registros[0])}
-                onTimerFinished={onTimerFinished}
-                onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
-                onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
-              />
-            )}
-          </div>
-        ))}
-
-        {filteredRegistros.length === 0 && selectedLojaId && (
-          <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">
-            Nenhum item para esta loja
-          </div>
-        )}
-      </div>
+    <div className="space-y-3">
+      {groupedByItem.map((group) => (
+        <div key={`${group.itemId}-${lojaFiltradaId || 'all'}`} className="animate-fade-in">
+          {group.isStack ? (
+            <CardStack
+              registros={group.registros}
+              columnId={columnId}
+              onAction={onAction}
+              onTimerFinished={onTimerFinished}
+              onCancelarPreparo={onCancelarPreparo}
+              onRegistrarPerda={onRegistrarPerda}
+            />
+          ) : (
+            <KanbanCard
+              registro={group.registros[0]}
+              columnId={columnId}
+              onAction={() => onAction(group.registros[0])}
+              onTimerFinished={onTimerFinished}
+              onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
+              onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
+            />
+          )}
+        </div>
+      ))}
     </div>
   );
 }
