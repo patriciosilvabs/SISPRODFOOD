@@ -483,76 +483,16 @@ const ResumoDaProducao = () => {
       )
       .subscribe();
 
-    // Listener realtime para contagem_porcionados - quando lojas inserem contagens
-    const contagemChannel = supabase
-      .channel('contagem-porcionados-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'contagem_porcionados'
-        },
-        () => {
-          if (!isMounted) return;
-          console.log('[ResumoDaProducao] Contagem atualizada - recarregando produção');
-          if (reloadTimeout) clearTimeout(reloadTimeout);
-          reloadTimeout = setTimeout(() => {
-            if (isMounted) loadProducaoRegistros(true);
-          }, 500);
-        }
-      )
-      .subscribe();
-
-    // Listener realtime para estoques_ideais_semanais - quando admin altera configurações
-    const estoqueIdealChannel = supabase
-      .channel('estoque-ideal-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'estoques_ideais_semanais'
-        },
-        () => {
-          if (!isMounted) return;
-          console.log('[ResumoDaProducao] Estoque ideal alterado - aguardando recálculo');
-          if (reloadTimeout) clearTimeout(reloadTimeout);
-          reloadTimeout = setTimeout(() => {
-            if (isMounted) loadProducaoRegistros(true);
-          }, 800);
-        }
-      )
-      .subscribe();
-
-    // Listener realtime para itens_reserva_diaria - quando admin altera reserva CPD
-    const reservaDiariaChannel = supabase
-      .channel('reserva-diaria-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'itens_reserva_diaria'
-        },
-        () => {
-          if (!isMounted) return;
-          console.log('[ResumoDaProducao] Reserva diária alterada - aguardando recálculo');
-          if (reloadTimeout) clearTimeout(reloadTimeout);
-          reloadTimeout = setTimeout(() => {
-            if (isMounted) loadProducaoRegistros(true);
-          }, 800);
-        }
-      )
-      .subscribe();
+    // NOTA: Listeners para contagem_porcionados, estoques_ideais_semanais e itens_reserva_diaria
+    // foram REMOVIDOS para evitar loop infinito de atualizações.
+    // Os triggers no banco (trg_criar_producao_apos_contagem e trigger_recalcular_producao_apos_estoque_ideal)
+    // já garantem que mudanças nessas tabelas resultem em atualizações em producao_registros,
+    // que é o único listener necessário.
 
     return () => {
       isMounted = false;
       if (reloadTimeout) clearTimeout(reloadTimeout);
       producaoChannel.unsubscribe().then(() => supabase.removeChannel(producaoChannel));
-      contagemChannel.unsubscribe().then(() => supabase.removeChannel(contagemChannel));
-      estoqueIdealChannel.unsubscribe().then(() => supabase.removeChannel(estoqueIdealChannel));
-      reservaDiariaChannel.unsubscribe().then(() => supabase.removeChannel(reservaDiariaChannel));
     };
   }, [organizationId, playNewCardNotification]);
 
