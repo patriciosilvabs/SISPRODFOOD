@@ -191,8 +191,11 @@ const ContagemPorcionados = () => {
       
       if (itensError) throw itensError;
 
+      // Buscar data do servidor (respeita fuso horário da organização)
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const today = dataServidor || new Date().toISOString().split('T')[0];
+      
       // Carregar contagens do dia atual
-      const today = new Date().toISOString().split('T')[0];
       const { data: contagensData, error: contagensError } = await supabase
         .from('contagem_porcionados')
         .select('*')
@@ -530,9 +533,9 @@ const ContagemPorcionados = () => {
       
       const aProduzir = Math.max(0, idealAmanha - finalSobra);
 
-      // Obter o dia operacional (data de hoje no timezone de São Paulo)
-      const today = new Date();
-      const diaOperacional = today.toISOString().split('T')[0]; // formato YYYY-MM-DD
+      // Buscar data do servidor (respeita fuso horário da organização)
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
 
       const dataToSave = {
         loja_id: lojaId,
