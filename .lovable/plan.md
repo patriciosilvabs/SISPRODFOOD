@@ -1,94 +1,57 @@
 
-# Plano: Corrigir Status das Contagens - Buscar Diretamente da Tabela
+# Plano: Corrigir Inconsistência de Fuso Horário no Dia Operacional
 
 ## Problema Identificado
 
-O "Status das Contagens de Hoje" está **incorretamente** calculando quais lojas enviaram contagem.
+Existe uma **inconsistência de fuso horário** entre as duas páginas:
 
-**Lógica Atual (Errada):**
-```
-contagensHoje ← Baseado nos CARDS de produção (producao_registros)
-             ← Olha detalhes_lojas dos cards a_produzir
-```
+| Página | Como calcula `dia_operacional` | Resultado às 23:59 SP |
+|--------|--------------------------------|----------------------|
+| **Contagem** | `new Date().toISOString().split('T')[0]` | 2026-01-**29** (UTC) |
+| **Resumo** | `supabase.rpc('get_current_date')` | 2026-01-**28** (SP) |
 
-**Consequência:** Se a loja inseriu contagem mas os cards ainda não foram gerados (ex: falta recalcular, trigger não executou), a loja aparece como "Aguardando" mesmo tendo dados.
-
-**Evidência no banco de dados:**
-- Loja `UNIDADE ALEIXO` tem **9 contagens** com `dia_operacional = 2026-01-29`
-- Mas os cards existentes têm `data_referencia = 2026-01-28` e são de outras lojas
-- Logo, ALEIXO não aparece no status (mostra "Aguardando")
+**Consequência:** A loja salva contagem para o dia 29 (UTC), mas o Resumo busca contagens do dia 28 (São Paulo), resultando em dados não encontrados.
 
 ---
 
 ## Solução
 
-Calcular `contagensHoje` diretamente da tabela `contagem_porcionados`, **não** dos cards de produção.
+Padronizar ambas as páginas para usar a **mesma fonte de data** - a função do servidor `get_current_date()`.
 
-**Lógica Nova (Correta):**
-```sql
-SELECT loja_id, loja_nome, COUNT(*) as totalItens, SUM(a_produzir) as totalUnidades
-FROM contagem_porcionados
-WHERE dia_operacional = <dia_atual>
-  AND a_produzir > 0
-GROUP BY loja_id
-```
+Isso garante que:
+1. O dia operacional seja calculado de forma consistente em todo o sistema
+2. A lógica respeite o fuso horário da organização (São Paulo)
+3. A transição de dia aconteça no horário correto (meia-noite em SP, não em UTC)
 
 ---
 
 ## Mudanças Técnicas
 
-### Arquivo: `src/pages/ResumoDaProducao.tsx`
+### Arquivo: `src/pages/ContagemPorcionados.tsx`
 
-**Substituir** a lógica das linhas ~840-858 por uma consulta direta:
+**Modificar a função `handleSave`** para buscar a data do servidor antes de salvar:
+
+**Antes (errado):**
+```typescript
+const today = new Date();
+const diaOperacional = today.toISOString().split('T')[0]; // UTC!
+```
+
+**Depois (correto):**
+```typescript
+// Buscar data do servidor (respeita fuso horário da organização)
+const { data: dataServidor } = await supabase.rpc('get_current_date');
+const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+```
+
+### Arquivo: `src/pages/ContagemPorcionados.tsx` - loadData
+
+Também atualizar a função `loadData` que busca contagens existentes para usar a mesma data do servidor:
 
 ```typescript
-// ANTES (errado - baseado em cards):
-const contagemStats = new Map();
-organizedColumns.a_produzir.forEach(reg => {
-  // Olha detalhes_lojas dos cards
-});
-setContagensHoje(Array.from(contagemStats.values()));
-
-// DEPOIS (correto - baseado na tabela de contagens):
-const { data: contagensAgrupadas } = await supabase
-  .from('contagem_porcionados')
-  .select('loja_id, a_produzir, updated_at')
-  .eq('organization_id', organizationId)
-  .eq('dia_operacional', diaOperacionalAtual)
-  .gt('a_produzir', 0);
-
-// Agregar por loja
-const contagemStats = new Map<string, {
-  loja_id: string;
-  loja_nome: string;
-  totalItens: number;
-  totalUnidades: number;
-  ultimaAtualizacao?: string;
-}>();
-
-// Buscar nomes das lojas
-const lojasMap = new Map(lojasData?.map(l => [l.id, l.nome]) || []);
-
-contagensAgrupadas?.forEach(c => {
-  if (!contagemStats.has(c.loja_id)) {
-    contagemStats.set(c.loja_id, {
-      loja_id: c.loja_id,
-      loja_nome: lojasMap.get(c.loja_id) || 'Loja Desconhecida',
-      totalItens: 0,
-      totalUnidades: 0,
-      ultimaAtualizacao: c.updated_at,
-    });
-  }
-  const stats = contagemStats.get(c.loja_id)!;
-  stats.totalItens += 1;
-  stats.totalUnidades += c.a_produzir;
-  // Atualizar timestamp se for mais recente
-  if (c.updated_at > (stats.ultimaAtualizacao || '')) {
-    stats.ultimaAtualizacao = c.updated_at;
-  }
-});
-
-setContagensHoje(Array.from(contagemStats.values()));
+// No início da função loadData:
+const { data: dataServidor } = await supabase.rpc('get_current_date');
+const today = dataServidor || new Date().toISOString().split('T')[0];
 ```
 
 ---
@@ -97,20 +60,20 @@ setContagensHoje(Array.from(contagemStats.values()));
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ LOJA INSERE CONTAGEM (contagem_porcionados)                │
-│ • a_produzir = 158, dia_operacional = 2026-01-29           │
+│ HORÁRIO: 23:59 em São Paulo (02:59 UTC)                    │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ TELA RESUMO DA PRODUÇÃO                                    │
-│ • Busca contagem_porcionados WHERE dia_operacional = hoje  │
-│ • Agrupa por loja_id                                       │
-│ • Loja aparece como ✅ (enviou contagem)                   │
+│ LOJA SALVA CONTAGEM                                        │
+│ • supabase.rpc('get_current_date') → 2026-01-28            │
+│ • dia_operacional = 2026-01-28                             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ TRIGGER/RECALCULO gera cards em producao_registros         │
-│ • Cards aparecem na coluna A PRODUZIR                      │
+│ RESUMO DA PRODUÇÃO                                         │
+│ • supabase.rpc('get_current_date') → 2026-01-28            │
+│ • Busca contagens WHERE dia_operacional = 2026-01-28       │
+│ • ENCONTRA os dados corretamente!                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,15 +83,22 @@ setContagensHoje(Array.from(contagemStats.values()));
 
 | Antes | Depois |
 |-------|--------|
-| Loja aparece só se cards existem | Loja aparece assim que salva contagem |
-| Dependente de trigger/recalculo | Independente dos cards |
-| Dados podem estar desatualizados | Sempre reflete estado real |
+| Contagem usa UTC | Contagem usa fuso SP (igual Resumo) |
+| Dados não batem entre páginas | Dados consistentes |
+| Bug às 21h-00h (horário crítico) | Funciona 24h |
 
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ResumoDaProducao.tsx` | Alterar lógica de cálculo de `contagensHoje` para buscar diretamente de `contagem_porcionados` |
+| `src/pages/ContagemPorcionados.tsx` | Alterar `loadData` e `handleSave` para usar `supabase.rpc('get_current_date')` |
 
+---
+
+## Nota sobre dados existentes
+
+As contagens já salvas com `dia_operacional = 2026-01-29` permanecerão no banco. Quando o horário em SP virar meia-noite (01:00 UTC), o `get_current_date()` retornará 2026-01-29 e os dados aparecerão normalmente.
+
+**Alternativa imediata** (se precisar ver os dados agora): Podemos também ajustar a consulta no Resumo para usar `CURRENT_DATE` (UTC) em vez de `get_current_date()` (SP), mas isso causaria outros problemas de consistência. A solução correta é padronizar na Contagem.
