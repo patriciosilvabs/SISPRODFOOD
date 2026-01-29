@@ -202,6 +202,9 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     }
   }, [timerState.isFinished, columnId, registro.id, registro.timer_status, onTimerFinished]);
 
+  // Verificar se é um card de estoque disponível (CPD cobre demanda) - DEVE VIR ANTES de getButtonConfig
+  const isEstoqueDisponivel = registro.status === 'estoque_disponivel';
+
   const getButtonConfig = () => {
     // Botão especial para estoque disponível
     if (isEstoqueDisponivel) {
@@ -259,9 +262,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
-
-  // Verificar se é um card de estoque disponível (CPD cobre demanda)
-  const isEstoqueDisponivel = registro.status === 'estoque_disponivel';
 
   // Cores da borda lateral por status
   const borderColorByColumn = {
