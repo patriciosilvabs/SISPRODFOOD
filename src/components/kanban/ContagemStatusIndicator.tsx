@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Clock, Store, Package, Play, Star, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Clock, Store, Package, Star, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, parseISO } from "date-fns";
 
@@ -23,7 +22,6 @@ interface ContagemData {
 interface ContagemStatusIndicatorProps {
   lojas: Loja[];
   contagensHoje: ContagemData[];
-  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
   onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void;
   lojaFiltradaId?: string | null;
 }
@@ -31,7 +29,6 @@ interface ContagemStatusIndicatorProps {
 export function ContagemStatusIndicator({
   lojas,
   contagensHoje,
-  onIniciarProducaoLoja,
   onSelecionarLoja,
   lojaFiltradaId,
 }: ContagemStatusIndicatorProps) {
@@ -172,30 +169,10 @@ export function ContagemStatusIndicator({
                 
                 {/* Nota de maior demanda */}
                 {isMaiorDemanda && (
-                  <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 mb-3 bg-amber-200/50 dark:bg-amber-800/50 rounded px-2 py-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 bg-amber-200/50 dark:bg-amber-800/50 rounded px-2 py-1.5">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
-                    <span>Maior demanda - recomendamos iniciar</span>
+                    <span>Maior demanda</span>
                   </div>
-                )}
-                
-                {/* Botão Iniciar */}
-                {onIniciarProducaoLoja && loja.totalItens > 0 && (
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onIniciarProducaoLoja(loja.id, loja.nome);
-                    }}
-                    className={cn(
-                      "w-full gap-2",
-                      isMaiorDemanda 
-                        ? "bg-amber-600 hover:bg-amber-700 text-white" 
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                    )}
-                  >
-                    <Play className="h-4 w-4" />
-                    Iniciar
-                  </Button>
                 )}
               </div>
             );
@@ -220,7 +197,7 @@ export function ContagemStatusIndicator({
         
         {aguardando.length > 0 && enviaram.length > 0 && (
           <p className="text-xs text-muted-foreground mt-4 italic text-center">
-            💡 Clique em um card para filtrar a produção por loja ou em "Iniciar" para começar.
+            💡 Clique em um card para filtrar a produção por loja.
           </p>
         )}
       </CardContent>
