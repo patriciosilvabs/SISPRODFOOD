@@ -2039,68 +2039,13 @@ const ResumoDaProducao = () => {
           </div>
         </div>
 
-        {/* Indicador de status das contagens por loja - com botões de iniciar produção e filtro */}
+        {/* Indicador de status das contagens por loja */}
         <ContagemStatusIndicator 
           lojas={lojas}
           contagensHoje={contagensHoje}
           lojaFiltradaId={lojaFiltrada?.id}
           onSelecionarLoja={(lojaId, lojaNome) => {
             setLojaFiltrada(lojaId ? { id: lojaId, nome: lojaNome } : null);
-          }}
-          onIniciarProducaoLoja={async (lojaId, lojaNome) => {
-            // Buscar registros da loja na coluna a_produzir
-            let registrosDaLoja = columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaId);
-            
-            // Se não encontrou cards, tentar recalcular produção primeiro (gera cards automaticamente)
-            if (registrosDaLoja.length === 0) {
-              toast.info(`Gerando produção para ${lojaNome}...`);
-              
-              // Chamar recálculo
-              const { error } = await supabase.rpc('recalcular_producao_dia', {
-                p_organization_id: organizationId,
-                p_usuario_id: user?.id,
-                p_usuario_nome: profile?.nome || 'Sistema'
-              });
-              
-              if (error) {
-                console.error('Erro ao recalcular produção:', error);
-                toast.error('Erro ao gerar produção. Tente clicar em "Recalcular".');
-                return;
-              }
-              
-              // Recarregar dados e aguardar
-              await loadProducaoRegistros(true);
-              
-              // Aguardar um pouco para garantir que o state atualizou
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Buscar diretamente do banco após recálculo (não depender do state)
-              const { data: novosRegistros } = await supabase
-                .from('producao_registros')
-                .select('*')
-                .eq('organization_id', organizationId)
-                .eq('status', 'a_produzir');
-              
-              const registrosFiltrados = novosRegistros?.filter(r => {
-                const detalhes = r.detalhes_lojas as unknown as DetalheLojaProducao[] | undefined;
-                return detalhes?.[0]?.loja_id === lojaId;
-              }) || [];
-              
-              if (registrosFiltrados.length === 0) {
-                toast.warning(`Nenhum item gerado para ${lojaNome}. Verifique se há demanda (Ideal - Sobra > 0).`);
-                return;
-              }
-              
-              // Mapear para o formato esperado
-              registrosDaLoja = registrosFiltrados.map(r => ({
-                ...r,
-                detalhes_lojas: r.detalhes_lojas as unknown as DetalheLojaProducao[] | undefined,
-              })) as ProducaoRegistro[];
-              
-              toast.success(`✅ ${registrosDaLoja.length} itens gerados para ${lojaNome}`);
-            }
-            
-            handleIniciarTudoLoja(lojaId, lojaNome, registrosDaLoja);
           }}
         />
 
