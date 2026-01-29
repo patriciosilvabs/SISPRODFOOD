@@ -1,55 +1,77 @@
 
-# Plano: Exibir Data/Hora da Última Contagem por Loja
+# Plano: Mover Botões de Iniciar Produção para o Status das Contagens
 
-## Problema
-No indicador de status das contagens, o usuário não consegue ver quando foi a última vez que cada loja enviou/atualizou sua contagem. Isso dificulta saber se a contagem está atualizada.
+## Problema Atual
 
-## Solução
-Adicionar a exibição do horário da última atualização (`updated_at`) para cada loja que já enviou contagem.
+Atualmente existem dois elementos de UI duplicados:
+1. **LojaFilterTabs** (dentro da coluna "A PRODUZIR") - mostra abas de filtro por loja + botão "Iniciar Produção da Loja"
+2. **ContagemStatusIndicator** (acima do Kanban) - mostra status das contagens por loja
 
----
+O usuário quer consolidar: os botões de iniciar produção devem estar junto ao status das contagens, não dentro da coluna A PRODUZIR.
+
+## Solução Proposta
+
+Integrar o botão "Iniciar Produção da Loja" diretamente nos cards de status das contagens:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🏪 Status das Contagens de Hoje                           2/3 lojas   │
+├────────────────────────────────────────────────────────────────────────┤
+│ ┌──────────────────────────────────────────────────────────────────┐  │
+│ │ ✅ UNIDADE JAPIIM         📦 6 itens • 423 un                    │  │
+│ │    Atualizado: 14:32                                             │  │
+│ │                                     [🚀 Iniciar Produção]        │  │
+│ └──────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│ ┌──────────────────────────────────────────────────────────────────┐  │
+│ │ ✅ UNIDADE CACHOEIRINHA   📦 2 itens • 46 un                     │  │
+│ │    Atualizado: 15:10                                             │  │
+│ │                                     [🚀 Iniciar Produção]        │  │
+│ └──────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│ ┌──────────────────────────────────────────────────────────────────┐  │
+│ │ ⏳ UNIDADE ALEIXO                                   [Aguardando] │  │
+│ └──────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Mudanças Necessárias
 
-### 1. Interface `ContagemData` - Adicionar campo de timestamp
+### 1. `ContagemStatusIndicator.tsx` - Adicionar botões de ação
 
-Atualizar a interface no componente `ContagemStatusIndicator.tsx`:
+**Modificações:**
+- Receber nova prop `onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void`
+- Adicionar botão "Iniciar Produção" em cada card de loja que já enviou contagem
+- Destacar visualmente a loja com maior demanda (★) com sugestão de prioridade
+- O botão só aparece se a loja tiver itens a produzir (totalItens > 0)
 
 ```typescript
-interface ContagemData {
-  loja_id: string;
-  loja_nome: string;
-  totalItens: number;
-  totalUnidades: number;
-  ultimaAtualizacao?: string; // Novo campo: ISO timestamp
+interface ContagemStatusIndicatorProps {
+  lojas: Loja[];
+  contagensHoje: ContagemData[];
+  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void; // NOVO
 }
 ```
 
-### 2. Consulta na página `ResumoDaProducao.tsx`
+### 2. `LojaFilterTabs.tsx` - Simplificar para filtro puro
 
-Modificar a lógica que calcula `contagensHoje` para buscar o MAX do `updated_at` diretamente da tabela `contagem_porcionados`:
+**Modificações:**
+- Remover prop `onIniciarTudoLoja`
+- Remover botão "Iniciar Produção da Loja"
+- Manter apenas as abas de filtro por loja (para navegação nos cards)
+- Manter a dica visual de qual loja tem maior demanda
 
-```typescript
-// Buscar contagens agrupadas por loja com timestamp mais recente
-const { data: contagemDireta } = await supabase
-  .from('contagem_porcionados')
-  .select('loja_id, updated_at')
-  .eq('organization_id', organizationId)
-  .eq('dia_operacional', diaOperacional);
+### 3. `ProductGroupedStacks.tsx` - Remover handler de batch
 
-// Agregar por loja e pegar o MAX de updated_at
-```
+**Modificações:**
+- Remover prop `onIniciarTudoLoja`
+- Atualizar chamada do `LojaFilterTabs` sem o handler de iniciar
 
-### 3. Exibição no Card da Loja
+### 4. `ResumoDaProducao.tsx` - Conectar novo handler
 
-Adicionar o horário formatado abaixo do nome da loja:
-
-```
-┌────────────────────────────────────────────────────────┐
-│ ✅ UNIDADE JAPIIM                   📦 6 itens • 423 un │
-│    Atualizado: 14:32                                    │
-└────────────────────────────────────────────────────────┘
-```
+**Modificações:**
+- Passar `onIniciarProducaoLoja` para `ContagemStatusIndicator`
+- Remover `onIniciarTudoLoja` de `ProductGroupedStacks`
 
 ---
 
@@ -57,18 +79,18 @@ Adicionar o horário formatado abaixo do nome da loja:
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/kanban/ContagemStatusIndicator.tsx` | Adicionar campo `ultimaAtualizacao` na interface e exibir timestamp formatado |
-| `src/pages/ResumoDaProducao.tsx` | Modificar cálculo de `contagensHoje` para incluir MAX(updated_at) por loja |
+| `src/components/kanban/ContagemStatusIndicator.tsx` | Adicionar prop e botão de iniciar produção por loja |
+| `src/components/kanban/LojaFilterTabs.tsx` | Remover botão e prop de iniciar tudo |
+| `src/components/kanban/ProductGroupedStacks.tsx` | Remover prop `onIniciarTudoLoja` |
+| `src/pages/ResumoDaProducao.tsx` | Conectar handler ao novo local |
 
 ---
 
-## Formato de Exibição
+## Benefícios
 
-- Se contagem de hoje: **"Atualizado: HH:mm"** (apenas hora)
-- Se contagem de outro dia: **"Atualizado: DD/MM HH:mm"** (data e hora)
-
-Exemplo visual:
-```
-✅ UNIDADE JAPIIM              📦 6 itens • 423 un
-   Atualizado: 14:32
-```
+| Antes | Depois |
+|-------|--------|
+| Botões duplicados em 2 lugares | Um único local de ação por loja |
+| Usuário precisa navegar para coluna | Ação visível logo no topo da página |
+| Status e ação separados | Status + ação integrados logicamente |
+| Confusão sobre onde clicar | Fluxo claro: ver status → iniciar produção |
