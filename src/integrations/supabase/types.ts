@@ -3284,15 +3284,29 @@ export type Database = {
     }
     Functions: {
       check_slug_exists: { Args: { slug_to_check: string }; Returns: boolean }
-      criar_ou_atualizar_producao_registro: {
-        Args: {
-          p_item_id: string
-          p_organization_id: string
-          p_usuario_id: string
-          p_usuario_nome: string
-        }
-        Returns: string
-      }
+      criar_ou_atualizar_producao_registro:
+        | {
+            Args: {
+              p_item_id: string
+              p_organization_id: string
+              p_usuario_id: string
+              p_usuario_nome: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_item_id: string
+              p_organization_id: string
+              p_usuario_id: string
+              p_usuario_nome: string
+            }
+            Returns: {
+              acao: string
+              detalhes: Json
+              registro_id: string
+            }[]
+          }
       decrementar_estoque_cpd: {
         Args: { p_item_id: string; p_quantidade: number }
         Returns: undefined
