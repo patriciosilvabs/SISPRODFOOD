@@ -1,69 +1,80 @@
 
 
-# Plano: Ocultar "Itens Aguardando Gatilho Mínimo" para Operadores
+# Plano: Corrigir Fonte de Estoque CPD na Função de Produção
 
-## Contexto
+## Problema Identificado
 
-O componente **BacklogIndicator** exibe informações técnicas sobre itens que ainda não atingiram o volume mínimo para iniciar produção. Esta informação é relevante apenas para administradores que precisam entender por que certos itens não estão aparecendo na fila de produção.
+A função `criar_ou_atualizar_producao_registro` usa a tabela **`estoque_cpd`** para verificar o estoque disponível do CPD, mas essa tabela está desatualizada:
 
-Para operadores do CPD, essa informação:
-- É confusa e desnecessária
-- Adiciona ruído visual à interface
-- Não é acionável (operadores não podem modificar gatilhos)
+| Item | Estoque em `estoque_cpd` | Estoque Real (contagem CPD) | Diferença |
+|------|--------------------------|----------------------------|-----------|
+| MASSA - PORCIONADO | 3.341 | 100 | +3.241 |
+| MUSSARELA | 2.838 | 2-314 | +2.500+ |
+| CALABRESA | 1.933 | 1-208 | +1.700+ |
 
----
+**Resultado**: O sistema pensa que há milhares de unidades em estoque e não cria cards de produção, quando na realidade o estoque é muito menor.
+
+## Causa Raiz
+
+Existem **duas tabelas** para estoque do CPD que não estão sincronizadas:
+- `estoque_cpd` (usada pela função de produção) - valores antigos
+- `contagem_porcionados.final_sobra` onde loja é CPD (usada pela tela de ajuste) - valores reais
 
 ## Solução
 
-Adicionar uma verificação condicional para renderizar o `BacklogIndicator` apenas quando o usuário for Admin ou SuperAdmin.
+Atualizar a função RPC para buscar o estoque do CPD da mesma fonte que a tela de ajuste usa: `contagem_porcionados.final_sobra` onde a loja é do tipo CPD e o `dia_operacional` é a data atual.
 
 ---
 
-## Modificação Necessária
+## Modificação na Função SQL
 
-**Arquivo**: `src/pages/ResumoDaProducao.tsx`
-
-**Localização**: Linhas 2044-2051
-
-**Antes**:
-```tsx
-{/* Indicador de itens aguardando gatilho mínimo */}
-<BacklogIndicator 
-  backlogItems={backlogItems}
-  onForcarProducao={...}
-/>
+**Trecho atual** (busca de `estoque_cpd`):
+```sql
+SELECT COALESCE(quantidade, 0)::integer
+INTO v_estoque_cpd
+FROM estoque_cpd
+WHERE item_porcionado_id = p_item_id
+  AND organization_id = p_organization_id;
 ```
 
-**Depois**:
-```tsx
-{/* Indicador de itens aguardando gatilho mínimo - apenas para Admins */}
-{isAdmin() && (
-  <BacklogIndicator 
-    backlogItems={backlogItems}
-    onForcarProducao={...}
-  />
-)}
+**Trecho corrigido** (busca de `contagem_porcionados` do CPD):
+```sql
+SELECT COALESCE(cp.final_sobra, 0)::integer
+INTO v_estoque_cpd
+FROM contagem_porcionados cp
+JOIN lojas l ON l.id = cp.loja_id
+WHERE cp.item_porcionado_id = p_item_id
+  AND cp.organization_id = p_organization_id
+  AND l.tipo = 'cpd'
+  AND cp.dia_operacional = v_data_hoje;
 ```
 
 ---
 
-## Verificação
+## Impacto
 
-O hook `isAdmin()` já está disponível no componente (linha 143):
-```tsx
-const { user, profile, isAdmin } = useAuth();
-```
+Após a correção:
 
-E `isAdmin()` retorna `true` para usuários com role `Admin` ou `SuperAdmin`.
+| Item | Demanda Lojas | Estoque CPD Real | Saldo Líquido | Resultado |
+|------|---------------|------------------|---------------|-----------|
+| MASSA - PORCIONADO | 660 | 100 | **+560** | Cria card de produção |
+| CARNE | 27+ | 40-98 | Depende | Pode criar card |
+| FRANGO | 45+ | 54-115 | Depende | Pode criar card |
 
 ---
 
-## Resultado
+## Arquivos Afetados
 
-| Perfil | Vê "Itens Aguardando Gatilho" |
-|--------|-------------------------------|
-| Admin | ✅ Sim |
-| SuperAdmin | ✅ Sim |
-| Produção (CPD) | ❌ Não |
-| Loja | ❌ Não |
+1. **Migration SQL**: Atualizar função `criar_ou_atualizar_producao_registro` (versão de 4 parâmetros)
+
+---
+
+## Detalhes Técnicos
+
+A correção envolve:
+
+1. Identificar a loja CPD da organização
+2. Buscar o `final_sobra` mais recente do dia operacional atual para cada item
+3. Usar esse valor como `v_estoque_cpd` no cálculo do saldo líquido
+4. Se não houver contagem do CPD para o dia, assumir estoque 0 (ou fallback para `estoque_cpd`)
 
