@@ -20,6 +20,7 @@ import Lojas from "./pages/Lojas";
 import Configuracoes from "./pages/Configuracoes";
 import GerenciarProdutos from "./pages/GerenciarProdutos";
 import EstoqueProdutosCPD from "./pages/EstoqueProdutosCPD";
+import EstoquePorcionadosCPD from "./pages/EstoquePorcionadosCPD";
 // ConfigurarInterface foi removido - sistema simplificado para perfis
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import ResumoDaProducao from "./pages/ResumoDaProducao";
@@ -143,9 +144,17 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/estoque-porcionados-cpd"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <EstoquePorcionadosCPD />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/contagem-porcionados"
                   element={
-                    <ProtectedRoute requiredRoles={['Admin', 'Produção', 'Loja']}>
+                    <ProtectedRoute requiredRoles={['Admin', 'Loja']}>
                       <ContagemPorcionados />
                     </ProtectedRoute>
                   }

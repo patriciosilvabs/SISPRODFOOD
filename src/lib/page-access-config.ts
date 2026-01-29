@@ -23,6 +23,7 @@ export const SYSTEM_PAGES: PageConfig[] = [
   { route: '/atender-pedidos-diarios', label: 'Pedidos Diários', description: 'Atender pedidos', section: 'cpd' },
   { route: '/insumos', label: 'Estoque de Insumos', description: 'Gerenciar insumos', section: 'cpd' },
   { route: '/estoque-produtos-cpd', label: 'Estoque de Produtos CPD', description: 'Produtos no CPD', section: 'cpd' },
+  { route: '/estoque-porcionados-cpd', label: 'Estoque Porcionados (CPD)', description: 'Ajuste de estoque porcionados', section: 'cpd' },
   { route: '/reposicao-loja', label: 'Reposição de Lojas', description: 'Enviar produtos para lojas', section: 'cpd' },
   
   // LOJA
@@ -65,6 +66,7 @@ export const PROFILE_DEFAULT_PAGES: Record<UserProfile, string[]> = {
     '/insumos',
     '/estoque-produtos-cpd',
     '/reposicao-loja',
+    '/estoque-porcionados-cpd',
     '/romaneio',
     '/central-de-relatorios',
     '/relatorios/producao',
