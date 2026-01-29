@@ -92,7 +92,6 @@ interface ProductGroupedStacksProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
-  onIniciarTudoLoja?: (lojaId: string, lojaNome: string, registros: ProducaoRegistro[]) => void;
 }
 
 export function ProductGroupedStacks({
@@ -102,7 +101,6 @@ export function ProductGroupedStacks({
   onTimerFinished,
   onCancelarPreparo,
   onRegistrarPerda,
-  onIniciarTudoLoja,
 }: ProductGroupedStacksProps) {
   const [selectedLojaId, setSelectedLojaId] = useState<string | null>(null);
 
@@ -163,12 +161,6 @@ export function ProductGroupedStacks({
       .sort((a, b) => b.registros.length - a.registros.length);
   }, [filteredRegistros]);
 
-  // Handler para iniciar tudo de uma loja
-  const handleIniciarTudoLoja = (lojaId: string, lojaNome: string) => {
-    const registrosDaLoja = registros.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaId);
-    onIniciarTudoLoja?.(lojaId, lojaNome, registrosDaLoja);
-  };
-
   if (registros.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
@@ -184,7 +176,6 @@ export function ProductGroupedStacks({
         registros={registros}
         selectedLojaId={selectedLojaId}
         onSelectLoja={setSelectedLojaId}
-        onIniciarTudoLoja={onIniciarTudoLoja ? handleIniciarTudoLoja : undefined}
       />
 
       {/* Cards agrupados */}

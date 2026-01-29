@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Clock, Store, Package } from "lucide-react";
+import { CheckCircle2, Clock, Store, Package, Rocket, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, parseISO } from "date-fns";
 
@@ -22,14 +23,16 @@ interface ContagemData {
 interface ContagemStatusIndicatorProps {
   lojas: Loja[];
   contagensHoje: ContagemData[];
+  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
 }
 
 export function ContagemStatusIndicator({
   lojas,
   contagensHoje,
+  onIniciarProducaoLoja,
 }: ContagemStatusIndicatorProps) {
   // Separar lojas que enviaram contagem das que não enviaram
-  const { enviaram, aguardando } = useMemo(() => {
+  const { enviaram, aguardando, lojaMaiorDemanda } = useMemo(() => {
     const lojasNaoCPD = lojas.filter(l => l.tipo !== 'cpd');
     const contagemMap = new Map(contagensHoje.map(c => [c.loja_id, c]));
     
@@ -48,7 +51,10 @@ export function ContagemStatusIndicator({
     // Ordenar enviaram por total de unidades (maior primeiro)
     enviaram.sort((a, b) => b.totalUnidades - a.totalUnidades);
     
-    return { enviaram, aguardando };
+    // Loja com maior demanda
+    const lojaMaiorDemanda = enviaram.length > 0 ? enviaram[0] : null;
+    
+    return { enviaram, aguardando, lojaMaiorDemanda };
   }, [lojas, contagensHoje]);
 
   const totalLojas = enviaram.length + aguardando.length;
@@ -79,7 +85,7 @@ export function ContagemStatusIndicator({
       <CardContent className="px-4 pb-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {/* Lojas que já enviaram */}
-          {enviaram.map(loja => {
+          {enviaram.map((loja, idx) => {
             // Formatar timestamp da última atualização
             let horarioFormatado = '';
             if (loja.ultimaAtualizacao) {
@@ -95,28 +101,78 @@ export function ContagemStatusIndicator({
               }
             }
             
+            const isMaiorDemanda = lojaMaiorDemanda?.id === loja.id && enviaram.length > 1;
+            
             return (
               <div
                 key={loja.id}
-                className="flex flex-col p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md"
+                className={cn(
+                  "flex flex-col p-2 rounded-md border",
+                  isMaiorDemanda 
+                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700" 
+                    : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                )}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300 truncate max-w-[120px]">
+                    {isMaiorDemanda ? (
+                      <Star className="h-4 w-4 text-amber-600 dark:text-amber-400 fill-amber-600 dark:fill-amber-400" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    )}
+                    <span className={cn(
+                      "text-sm font-medium truncate max-w-[120px]",
+                      isMaiorDemanda 
+                        ? "text-amber-700 dark:text-amber-300" 
+                        : "text-emerald-700 dark:text-emerald-300"
+                    )}>
                       {loja.nome}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                  <div className={cn(
+                    "flex items-center gap-1.5 text-xs",
+                    isMaiorDemanda 
+                      ? "text-amber-600 dark:text-amber-400" 
+                      : "text-emerald-600 dark:text-emerald-400"
+                  )}>
                     <Package className="h-3 w-3" />
                     <span>{loja.totalItens} itens</span>
-                    <span className="text-emerald-400">•</span>
+                    <span className={isMaiorDemanda ? "text-amber-400" : "text-emerald-400"}>•</span>
                     <span>{loja.totalUnidades} un</span>
                   </div>
                 </div>
-                {horarioFormatado && (
-                  <span className="text-[10px] text-emerald-500 dark:text-emerald-400/70 ml-6 mt-0.5">
-                    Atualizado: {horarioFormatado}
+                
+                <div className="flex items-center justify-between mt-1.5">
+                  {horarioFormatado && (
+                    <span className={cn(
+                      "text-[10px] ml-6",
+                      isMaiorDemanda 
+                        ? "text-amber-500 dark:text-amber-400/70" 
+                        : "text-emerald-500 dark:text-emerald-400/70"
+                    )}>
+                      Atualizado: {horarioFormatado}
+                    </span>
+                  )}
+                  
+                  {onIniciarProducaoLoja && loja.totalItens > 0 && (
+                    <Button
+                      size="sm"
+                      variant={isMaiorDemanda ? "default" : "outline"}
+                      onClick={() => onIniciarProducaoLoja(loja.id, loja.nome)}
+                      className={cn(
+                        "h-7 gap-1 text-xs ml-auto",
+                        isMaiorDemanda && "bg-amber-500 hover:bg-amber-600 text-white"
+                      )}
+                    >
+                      <Rocket className="h-3 w-3" />
+                      Iniciar Produção
+                    </Button>
+                  )}
+                </div>
+                
+                {isMaiorDemanda && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 ml-6">
+                    ★ Maior demanda - recomendamos iniciar por aqui
                   </span>
                 )}
               </div>

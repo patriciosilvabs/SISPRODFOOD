@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Star, Rocket, Store } from "lucide-react";
+import { Star, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DetalheLojaProducao {
@@ -30,14 +29,12 @@ interface LojaFilterTabsProps {
   registros: ProducaoRegistro[];
   selectedLojaId: string | null; // null = "TODAS"
   onSelectLoja: (lojaId: string | null) => void;
-  onIniciarTudoLoja?: (lojaId: string, lojaNome: string) => void;
 }
 
 export function LojaFilterTabs({
   registros,
   selectedLojaId,
   onSelectLoja,
-  onIniciarTudoLoja,
 }: LojaFilterTabsProps) {
   // Calcular estatísticas por loja
   const lojaStats = useMemo((): LojaStats[] => {
@@ -75,7 +72,7 @@ export function LojaFilterTabs({
     return null;
   }
 
-  // Se há apenas 1 loja, não mostra abas - vai direto
+  // Se há apenas 1 loja, não mostra abas - apenas info simples
   if (lojaStats.length === 1) {
     return (
       <div className="flex items-center justify-between p-2 bg-muted/30 rounded-lg mb-3">
@@ -86,17 +83,6 @@ export function LojaFilterTabs({
             {lojaStats[0].totalItens} {lojaStats[0].totalItens === 1 ? 'item' : 'itens'}
           </Badge>
         </div>
-        {onIniciarTudoLoja && lojaStats[0].totalItens > 1 && (
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => onIniciarTudoLoja(lojaStats[0].lojaId, lojaStats[0].lojaNome)}
-            className="gap-1"
-          >
-            <Rocket className="h-3 w-3" />
-            Iniciar Tudo
-          </Button>
-        )}
       </div>
     );
   }
@@ -145,40 +131,13 @@ export function LojaFilterTabs({
         </TabsList>
       </Tabs>
 
-      {/* Botão "Iniciar Tudo" para a loja selecionada */}
-      {selectedLojaId && onIniciarTudoLoja && (() => {
-        const lojaAtual = lojaStats.find(l => l.lojaId === selectedLojaId);
-        if (!lojaAtual || lojaAtual.totalItens <= 1) return null;
-        
-        return (
-          <div className="flex items-center justify-between p-2 bg-primary/5 border border-primary/20 rounded-lg">
-            <div className="flex items-center gap-2 text-sm">
-              <Store className="h-4 w-4 text-primary" />
-              <span className="font-medium">{lojaAtual.lojaNome}</span>
-              <span className="text-muted-foreground">•</span>
-              <span className="text-muted-foreground">
-                {lojaAtual.totalItens} itens, {lojaAtual.totalUnidades} un
-              </span>
-            </div>
-            <Button
-              size="sm"
-              onClick={() => onIniciarTudoLoja(lojaAtual.lojaId, lojaAtual.lojaNome)}
-              className="gap-1.5"
-            >
-              <Rocket className="h-3.5 w-3.5" />
-              Iniciar Produção da Loja
-            </Button>
-          </div>
-        );
-      })()}
-
       {/* Dica para loja com maior demanda (quando "TODAS" selecionada) */}
       {!selectedLojaId && lojaMaiorDemanda && lojaStats.length > 1 && (
         <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-xs">
           <Star className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-600 dark:fill-amber-400" />
           <span className="text-amber-700 dark:text-amber-300">
             <strong>{lojaMaiorDemanda.lojaNome}</strong> tem a maior demanda 
-            ({lojaMaiorDemanda.totalUnidades} un). Recomendamos iniciar por ela.
+            ({lojaMaiorDemanda.totalUnidades} un). Use o filtro acima ou inicie pelo Status das Contagens.
           </span>
         </div>
       )}
