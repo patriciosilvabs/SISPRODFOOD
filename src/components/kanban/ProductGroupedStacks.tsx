@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { KanbanCard } from "./KanbanCard";
 import { CardStack } from "./CardStack";
+import { LojaFilterTabs } from "./LojaFilterTabs";
 import { Badge } from "@/components/ui/badge";
-import { Layers } from "lucide-react";
+import { Layers, Store } from "lucide-react";
 
 interface InsumoExtraComEstoque {
   nome: string;
@@ -71,6 +72,12 @@ interface ProducaoRegistro {
 
 type StatusColumn = 'a_produzir' | 'em_preparo' | 'em_porcionamento' | 'finalizado';
 
+interface LojaGroup {
+  lojaId: string;
+  lojaNome: string;
+  registros: ProducaoRegistro[];
+}
+
 interface ProductGroup {
   itemId: string;
   itemNome: string;
@@ -85,6 +92,7 @@ interface ProductGroupedStacksProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
+  onIniciarTudoLoja?: (lojaId: string, lojaNome: string, registros: ProducaoRegistro[]) => void;
 }
 
 export function ProductGroupedStacks({
@@ -94,12 +102,44 @@ export function ProductGroupedStacks({
   onTimerFinished,
   onCancelarPreparo,
   onRegistrarPerda,
+  onIniciarTudoLoja,
 }: ProductGroupedStacksProps) {
-  // Agrupar registros por item_id
-  const groupedByItem = useMemo((): ProductGroup[] => {
+  const [selectedLojaId, setSelectedLojaId] = useState<string | null>(null);
+
+  // Primeiro agrupar por loja
+  const groupedByLoja = useMemo((): LojaGroup[] => {
     const groups = new Map<string, ProducaoRegistro[]>();
     
     registros.forEach(registro => {
+      // Cada card agora tem apenas 1 loja em detalhes_lojas
+      const loja = registro.detalhes_lojas?.[0];
+      if (loja) {
+        const key = loja.loja_id;
+        if (!groups.has(key)) {
+          groups.set(key, []);
+        }
+        groups.get(key)!.push(registro);
+      }
+    });
+    
+    return Array.from(groups.entries()).map(([lojaId, regs]) => ({
+      lojaId,
+      lojaNome: regs[0].detalhes_lojas?.[0]?.loja_nome || 'Loja',
+      registros: regs,
+    }));
+  }, [registros]);
+
+  // Filtrar registros pela loja selecionada
+  const filteredRegistros = useMemo(() => {
+    if (!selectedLojaId) return registros;
+    return registros.filter(r => r.detalhes_lojas?.[0]?.loja_id === selectedLojaId);
+  }, [registros, selectedLojaId]);
+
+  // Agrupar registros filtrados por item_id (para stacks de lotes)
+  const groupedByItem = useMemo((): ProductGroup[] => {
+    const groups = new Map<string, ProducaoRegistro[]>();
+    
+    filteredRegistros.forEach(registro => {
       const key = registro.item_id;
       if (!groups.has(key)) {
         groups.set(key, []);
@@ -121,7 +161,13 @@ export function ProductGroupedStacks({
         isStack: regs.length > 1,
       }))
       .sort((a, b) => b.registros.length - a.registros.length);
-  }, [registros]);
+  }, [filteredRegistros]);
+
+  // Handler para iniciar tudo de uma loja
+  const handleIniciarTudoLoja = (lojaId: string, lojaNome: string) => {
+    const registrosDaLoja = registros.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaId);
+    onIniciarTudoLoja?.(lojaId, lojaNome, registrosDaLoja);
+  };
 
   if (registros.length === 0) {
     return (
@@ -132,30 +178,55 @@ export function ProductGroupedStacks({
   }
 
   return (
-    <div className="space-y-6">
-      {groupedByItem.map((group) => (
-        <div key={group.itemId} className="animate-fade-in">
-          {group.isStack ? (
-            <CardStack
-              registros={group.registros}
-              columnId={columnId}
-              onAction={onAction}
-              onTimerFinished={onTimerFinished}
-              onCancelarPreparo={onCancelarPreparo}
-              onRegistrarPerda={onRegistrarPerda}
-            />
-          ) : (
-            <KanbanCard
-              registro={group.registros[0]}
-              columnId={columnId}
-              onAction={() => onAction(group.registros[0])}
-              onTimerFinished={onTimerFinished}
-              onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
-              onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
-            />
-          )}
-        </div>
-      ))}
+    <div className="space-y-4">
+      {/* Filtro por loja */}
+      <LojaFilterTabs
+        registros={registros}
+        selectedLojaId={selectedLojaId}
+        onSelectLoja={setSelectedLojaId}
+        onIniciarTudoLoja={onIniciarTudoLoja ? handleIniciarTudoLoja : undefined}
+      />
+
+      {/* Cards agrupados */}
+      <div className="space-y-4">
+        {groupedByItem.map((group) => (
+          <div key={`${group.itemId}-${selectedLojaId || 'all'}`} className="animate-fade-in">
+            {/* Badge da loja no topo do card (se filtrado) */}
+            {selectedLojaId && group.registros[0]?.detalhes_lojas?.[0] && (
+              <div className="flex items-center gap-1.5 mb-1.5 text-xs text-muted-foreground">
+                <Store className="h-3 w-3" />
+                <span>{group.registros[0].detalhes_lojas[0].loja_nome}</span>
+              </div>
+            )}
+            
+            {group.isStack ? (
+              <CardStack
+                registros={group.registros}
+                columnId={columnId}
+                onAction={onAction}
+                onTimerFinished={onTimerFinished}
+                onCancelarPreparo={onCancelarPreparo}
+                onRegistrarPerda={onRegistrarPerda}
+              />
+            ) : (
+              <KanbanCard
+                registro={group.registros[0]}
+                columnId={columnId}
+                onAction={() => onAction(group.registros[0])}
+                onTimerFinished={onTimerFinished}
+                onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
+                onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
+              />
+            )}
+          </div>
+        ))}
+
+        {filteredRegistros.length === 0 && selectedLojaId && (
+          <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">
+            Nenhum item para esta loja
+          </div>
+        )}
+      </div>
     </div>
   );
 }
