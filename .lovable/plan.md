@@ -1,175 +1,185 @@
 
-# Plano: Indicador Visual de Estoque Suficiente no CPD
+# Plano: Corrigir Atualização de Estoque CPD na Finalização de Produção
 
-## Contexto
+## Problema Identificado
 
-O operador do CPD precisa saber quando a coluna "A PRODUZIR" está vazia porque **já existe estoque suficiente no CPD** para atender as demandas das lojas. Atualmente, quando não há cards na coluna, a mensagem genérica "Nenhum item nesta coluna" não fornece essa informação importante.
+Quando uma produção é finalizada, o sistema deveria atualizar o estoque de porcionados do CPD na tabela `contagem_porcionados`. Porém, a atualização está sendo feita **sem filtrar pelo dia operacional atual**, causando:
 
-## Lógica do Sistema (Arquitetura Existente)
+1. O código busca qualquer registro existente (sem filtro de data)
+2. Se encontra um registro de **dia anterior**, atualiza ele
+3. Como a página "Estoque Porcionados (CPD)" filtra por `dia_operacional = hoje`, o registro antigo não aparece
+4. Resultado: produção finalizada mas estoque aparece como **0 unidades**
 
-Segundo a documentação do projeto:
-- **Saldo Líquido** = Demanda das Lojas - Estoque CPD (`final_sobra` do dia atual)
-- Cards de produção só são gerados quando Saldo Líquido > 0
-- Se o CPD já possui estoque suficiente, **nenhum card é criado**
+## Código Problemático
 
-Portanto, quando a coluna está vazia, pode significar:
-1. **Nenhuma loja enviou contagem ainda** (aguardando demandas)
-2. **CPD já tem estoque suficiente** (cenário que o operador precisa visualizar)
+**Arquivo:** `src/pages/ResumoDaProducao.tsx` - função `handleFinalizarProducao`
 
-## Solução Proposta
+**Linhas 1478-1509 (problema):**
+```typescript
+// PROBLEMA: Não filtra por dia_operacional
+const { data: contagemExistente } = await supabase
+  .from('contagem_porcionados')
+  .select('id, final_sobra')
+  .eq('loja_id', cpdLoja.id)
+  .eq('item_porcionado_id', selectedRegistro.item_id)
+  .maybeSingle(); // ← Pode retornar registro de dia ANTERIOR
 
-Adicionar um indicador visual especial na coluna "A PRODUZIR" quando ela está vazia mas o CPD tem estoque registrado. O indicador mostrará:
-- Ícone de check verde
-- Mensagem: "Estoque CPD suficiente"
-- Lista dos itens com estoque disponível no CPD
+// PROBLEMA: Insert sem dia_operacional
+await supabase
+  .from('contagem_porcionados')
+  .insert({
+    loja_id: cpdLoja.id,
+    item_porcionado_id: selectedRegistro.item_id,
+    final_sobra: data.unidades_reais,
+    // ← FALTA: dia_operacional
+  });
+```
 
-## Arquivos a Criar/Modificar
+## Código Correto (Referência)
 
-| Arquivo | Ação |
-|---------|------|
-| `src/components/kanban/CPDStockIndicator.tsx` | **CRIAR** - Novo componente de indicador |
-| `src/pages/ResumoDaProducao.tsx` | **MODIFICAR** - Buscar estoque CPD e passar ao componente |
-| `src/components/kanban/ProductGroupedStacks.tsx` | **MODIFICAR** - Exibir indicador quando coluna vazia + estoque CPD disponível |
+O modal `AjustarEstoquePorcionadoModal.tsx` já faz corretamente (linhas 113-163):
+
+```typescript
+// 1. Busca data do servidor
+const { data: dataServidor } = await supabase.rpc('get_current_date');
+const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+
+// 2. Busca COM filtro de dia_operacional
+.eq('dia_operacional', diaOperacional)
+
+// 3. Insert COM dia_operacional
+dia_operacional: diaOperacional,
+```
+
+## Solução
+
+Modificar o `handleFinalizarProducao` para:
+
+1. Buscar a data do servidor (`get_current_date`)
+2. Adicionar filtro `.eq('dia_operacional', diaOperacional)` na query de busca
+3. Incluir `dia_operacional: diaOperacional` no insert de nova contagem
+
+## Arquivo a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/ResumoDaProducao.tsx` | Adicionar filtro de dia operacional na atualização de estoque CPD |
 
 ## Alterações Técnicas
 
-### 1. Novo Componente: CPDStockIndicator.tsx
+### Dentro de `handleFinalizarProducao` (linhas ~1469-1515)
 
+**Antes:**
 ```typescript
-// Componente que mostra quando CPD tem estoque suficiente
-// Exibido quando coluna "A PRODUZIR" está vazia
-
-interface CPDStockItem {
-  item_nome: string;
-  quantidade: number;
-}
-
-interface CPDStockIndicatorProps {
-  estoquesCPD: CPDStockItem[];
-  totalItens: number;
-  totalUnidades: number;
-}
-
-// Renderiza:
-// - Badge verde "Estoque suficiente"
-// - Ícone PackageCheck
-// - Lista colapsável com itens e quantidades
-// - Total de itens e unidades disponíveis
-```
-
-### 2. ResumoDaProducao.tsx
-
-Buscar estoque CPD na função `loadProducaoRegistros`:
-
-```typescript
-// Dentro de loadProducaoRegistros, após buscar lojas:
-
-// Buscar estoque atual do CPD (final_sobra > 0 do dia atual)
-const { data: estoqueCPDData } = await supabase
-  .from('contagem_porcionados')
-  .select(`
-    item_porcionado_id,
-    final_sobra,
-    itens_porcionados!inner(nome)
-  `)
-  .eq('loja_id', cpdLoja?.id)
-  .eq('dia_operacional', hoje)
-  .gt('final_sobra', 0);
-
-// Transformar em lista para o indicador
-const estoquesCPD = estoqueCPDData?.map(e => ({
-  item_nome: e.itens_porcionados.nome,
-  quantidade: e.final_sobra,
-})) || [];
-
-setEstoqueCPD(estoquesCPD);
-```
-
-Novo estado:
-```typescript
-const [estoqueCPD, setEstoqueCPD] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
-```
-
-### 3. ProductGroupedStacks.tsx
-
-Adicionar prop e lógica de exibição:
-
-```typescript
-interface ProductGroupedStacksProps {
-  // ... props existentes
-  estoquesCPD?: Array<{ item_nome: string; quantidade: number }>;
-}
-
-// Na renderização quando filteredRegistros.length === 0:
-if (filteredRegistros.length === 0) {
-  // Se tem estoque CPD, mostrar indicador especial
-  if (estoquesCPD && estoquesCPD.length > 0) {
-    return <CPDStockIndicator estoquesCPD={estoquesCPD} />;
-  }
+if (cpdLoja) {
+  // Buscar contagem existente (unique por loja_id + item_porcionado_id)
+  const { data: contagemExistente } = await supabase
+    .from('contagem_porcionados')
+    .select('id, final_sobra')
+    .eq('loja_id', cpdLoja.id)
+    .eq('item_porcionado_id', selectedRegistro.item_id)
+    .maybeSingle();
   
-  // Caso contrário, mensagem padrão
-  return (
-    <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-      {lojaFiltradaId ? 'Nenhum item para esta loja' : 'Nenhum item nesta coluna'}
-    </div>
-  );
+  if (contagemExistente) {
+    // Incrementar final_sobra
+    await supabase
+      .from('contagem_porcionados')
+      .update({ 
+        final_sobra: contagemExistente.final_sobra + data.unidades_reais,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', contagemExistente.id);
+  } else {
+    // Criar nova contagem
+    await supabase
+      .from('contagem_porcionados')
+      .insert({
+        loja_id: cpdLoja.id,
+        item_porcionado_id: selectedRegistro.item_id,
+        final_sobra: data.unidades_reais,
+        ideal_amanha: 0,
+        usuario_id: user?.id || '',
+        usuario_nome: profile?.nome || 'Sistema',
+        organization_id: organizationId
+      });
+  }
+  console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome}`);
 }
 ```
 
-## Design Visual do Indicador
+**Depois:**
+```typescript
+if (cpdLoja) {
+  // CORREÇÃO: Buscar data do servidor para consistência
+  const { data: dataServidor } = await supabase.rpc('get_current_date');
+  const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+
+  // Buscar contagem existente DO DIA ATUAL
+  const { data: contagemExistente } = await supabase
+    .from('contagem_porcionados')
+    .select('id, final_sobra')
+    .eq('loja_id', cpdLoja.id)
+    .eq('item_porcionado_id', selectedRegistro.item_id)
+    .eq('dia_operacional', diaOperacional)  // ✅ Filtrar pelo dia atual
+    .maybeSingle();
+  
+  if (contagemExistente) {
+    // Incrementar final_sobra
+    await supabase
+      .from('contagem_porcionados')
+      .update({ 
+        final_sobra: contagemExistente.final_sobra + data.unidades_reais,
+        updated_at: new Date().toISOString(),
+        usuario_id: user?.id || '',
+        usuario_nome: profile?.nome || 'Sistema',
+      })
+      .eq('id', contagemExistente.id);
+  } else {
+    // Criar nova contagem PARA O DIA ATUAL
+    await supabase
+      .from('contagem_porcionados')
+      .insert({
+        loja_id: cpdLoja.id,
+        item_porcionado_id: selectedRegistro.item_id,
+        dia_operacional: diaOperacional,  // ✅ Incluir dia operacional
+        final_sobra: data.unidades_reais,
+        ideal_amanha: 0,
+        usuario_id: user?.id || '',
+        usuario_nome: profile?.nome || 'Sistema',
+        organization_id: organizationId
+      });
+  }
+  console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome} (dia: ${diaOperacional})`);
+}
+```
+
+## Fluxo Corrigido
 
 ```
-┌─────────────────────────────────────────────┐
-│  ✓ Estoque CPD Suficiente                  │
-│  ─────────────────────────────────          │
-│  📦 5 itens • 127 unidades disponíveis      │
-│                                             │
-│  ▼ Ver itens em estoque                     │
-│  ┌─────────────────────────────────────┐   │
-│  │ BACON PORCIONADO          67 un     │   │
-│  │ CALABRESA FATIADA         32 un     │   │
-│  │ PRESUNTO FATIA FINA       18 un     │   │
-│  │ MUSSARELA RALADA          10 un     │   │
-│  └─────────────────────────────────────┘   │
-│                                             │
-│  💡 Nenhuma produção necessária agora       │
-└─────────────────────────────────────────────┘
+Finalizar Produção
+        │
+        ├─► Buscar data do servidor (get_current_date)
+        │         └── Ex: "2026-01-29"
+        │
+        ├─► Buscar contagem do CPD para HOJE
+        │         └── .eq('dia_operacional', '2026-01-29')
+        │
+        └─► Se encontrou registro de HOJE:
+                  └── Incrementar final_sobra
+            Se NÃO encontrou:
+                  └── Criar novo registro com dia_operacional = '2026-01-29'
 ```
 
-Cores: 
-- Fundo: `bg-emerald-50 dark:bg-emerald-950/30`
-- Borda: `border-emerald-300 dark:border-emerald-700`
-- Ícone e texto: `text-emerald-700 dark:text-emerald-300`
+## Resultado Esperado
 
-## Fluxo de Dados
-
-```
-loadProducaoRegistros()
-         │
-         ├─► Busca producao_registros (cards)
-         │
-         ├─► Busca contagem_porcionados do CPD
-         │      └── Filtra: dia_operacional = hoje
-         │      └── Filtra: final_sobra > 0
-         │
-         └─► Passa estoquesCPD para ProductGroupedStacks
-                  │
-                  └─► Se coluna vazia + estoque > 0:
-                            └── Renderiza CPDStockIndicator
-```
-
-## Comportamento Esperado
-
-| Cenário | Coluna "A PRODUZIR" | Exibição |
-|---------|---------------------|----------|
-| Sem demanda + Sem estoque CPD | Vazia | "Nenhum item nesta coluna" |
-| Sem demanda + Com estoque CPD | Vazia | **Indicador verde com lista de estoque** |
-| Com demanda (cards gerados) | Cards visíveis | Cards normais |
-| Loja filtrada sem itens + CPD tem estoque | Vazia | **Indicador verde** |
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| Finalizar MASSA (57 un) | Estoque CPD: 0 un (tela mostra dia atual) | Estoque CPD: 57 un |
+| Múltiplas finalizações no dia | Pode atualizar registro de ontem | Sempre incrementa registro de hoje |
+| Visualização na página | Inconsistente | Consistente com produção do dia |
 
 ## Impacto
 
-- **UX melhorada**: Operador sabe imediatamente que não há trabalho porque o estoque está ok
-- **Visibilidade**: Lista mostra exatamente quais itens e quantidades estão disponíveis
-- **Zero impacto em lógica existente**: Apenas adiciona visualização
-- **Consistente com design**: Usa padrões visuais já existentes (cores emerald para sucesso)
+- **Zero risco de perda de dados**: Apenas corrige o filtro de busca
+- **Consistência garantida**: Alinha com o padrão já usado em `AjustarEstoquePorcionadoModal`
+- **Arquitetura respeitada**: Segue o princípio de que `contagem_porcionados.final_sobra` do dia atual é a fonte de verdade
