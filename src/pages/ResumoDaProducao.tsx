@@ -178,7 +178,7 @@ const ResumoDaProducao = () => {
   
   // Estados para lojas e contagens
   const [lojas, setLojas] = useState<Array<{ id: string; nome: string; tipo: string }>>([]);
-  const [contagensHoje, setContagensHoje] = useState<Array<{ loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number }>>([]);
+  const [contagensHoje, setContagensHoje] = useState<Array<{ loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number; ultimaAtualizacao?: string }>>([]);
   
   // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
   const knownCardIdsRef = useRef<Set<string>>(new Set());
@@ -817,8 +817,25 @@ const ResumoDaProducao = () => {
         setLojas(lojasData);
       }
       
+      // Buscar última atualização por loja diretamente da tabela contagem_porcionados
+      const { data: contagensRaw } = await supabase
+        .from('contagem_porcionados')
+        .select('loja_id, updated_at')
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', diaOperacionalAtual)
+        .gt('a_produzir', 0);
+      
+      // Agregar por loja: MAX de updated_at
+      const ultimaAtualizacaoPorLoja = new Map<string, string>();
+      contagensRaw?.forEach(c => {
+        const atual = ultimaAtualizacaoPorLoja.get(c.loja_id);
+        if (!atual || c.updated_at > atual) {
+          ultimaAtualizacaoPorLoja.set(c.loja_id, c.updated_at);
+        }
+      });
+      
       // Calcular estatísticas de contagem por loja (baseado nos cards a_produzir)
-      const contagemStats = new Map<string, { loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number }>();
+      const contagemStats = new Map<string, { loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number; ultimaAtualizacao?: string }>();
       organizedColumns.a_produzir.forEach(reg => {
         if (reg.detalhes_lojas && reg.detalhes_lojas.length > 0) {
           const loja = reg.detalhes_lojas[0];
@@ -828,6 +845,7 @@ const ResumoDaProducao = () => {
               loja_nome: loja.loja_nome,
               totalItens: 0,
               totalUnidades: 0,
+              ultimaAtualizacao: ultimaAtualizacaoPorLoja.get(loja.loja_id),
             });
           }
           const stats = contagemStats.get(loja.loja_id)!;
