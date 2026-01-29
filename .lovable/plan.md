@@ -9,9 +9,14 @@
 3. ✅ **Campo de configuração** no formulário de Itens Porcionados
 4. ✅ **BacklogIndicator** componente visual para mostrar itens aguardando
 5. ✅ **Integração** no Resumo da Produção
+6. ✅ **Função RPC** atualizada com lógica de verificação de gatilho e estoque CPD
 
-### Próximos Passos (Fase 2 - Lógica no Backend):
-- Modificar função RPC `criar_ou_atualizar_producao_registro` para implementar a verificação do gatilho
+### ✅ Implementação Concluída!
+A função `criar_ou_atualizar_producao_registro` agora:
+- Calcula o saldo líquido (demanda - estoque CPD)
+- Verifica se atinge o gatilho mínimo configurado
+- Registra no backlog quando abaixo do gatilho
+- Remove automaticamente do backlog quando produção é liberada
 
 ---
 
