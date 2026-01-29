@@ -86,6 +86,7 @@ interface CardStackProps {
   onTimerFinished?: (registroId: string) => void;
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
+  producaoHabilitada?: boolean;
 }
 
 export function CardStack({
@@ -95,6 +96,7 @@ export function CardStack({
   onTimerFinished,
   onCancelarPreparo,
   onRegistrarPerda,
+  producaoHabilitada = true,
 }: CardStackProps) {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [loteVisualizando, setLoteVisualizando] = useState<ProducaoRegistro | null>(null);
@@ -153,6 +155,7 @@ export function CardStack({
               onTimerFinished={onTimerFinished}
               onCancelarPreparo={() => onCancelarPreparo?.(registroAtivo)}
               onRegistrarPerda={() => onRegistrarPerda?.(registroAtivo)}
+              producaoHabilitada={producaoHabilitada}
             />
           </div>
           
@@ -223,6 +226,7 @@ export function CardStack({
                 columnId={columnId}
                 onAction={() => {}}
                 isPreview
+                producaoHabilitada={producaoHabilitada}
               />
             </div>
           )}
