@@ -5,6 +5,7 @@ interface ContagemPageHeaderProps {
   showDetails: boolean;
   isAdmin: boolean;
   loading: boolean;
+  isCPDOnly?: boolean;
   onToggleDetails: () => void;
   onRefresh: () => void;
 }
@@ -13,17 +14,23 @@ export const ContagemPageHeader = ({
   showDetails,
   isAdmin,
   loading,
+  isCPDOnly = false,
   onToggleDetails,
   onRefresh,
 }: ContagemPageHeaderProps) => {
+  const title = isCPDOnly ? 'Estoque de Porcionados' : 'Contagem de Porcionados';
+  const subtitle = isCPDOnly 
+    ? 'Visualize e ajuste o estoque de porcionados do CPD'
+    : 'Registre a sobra do dia e acompanhe a demanda de produção';
+
   return (
     <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">
-          Contagem de Porcionados
+          {title}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Registre a sobra do dia e acompanhe a demanda de produção
+          {subtitle}
         </p>
       </div>
       <div className="flex items-center gap-2">
