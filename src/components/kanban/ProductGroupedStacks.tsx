@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { KanbanCard } from "./KanbanCard";
 import { CardStack } from "./CardStack";
+import { CPDStockIndicator } from "./CPDStockIndicator";
+
+interface CPDStockItem {
+  item_nome: string;
+  quantidade: number;
+}
 
 interface InsumoExtraComEstoque {
   nome: string;
@@ -84,6 +90,7 @@ interface ProductGroupedStacksProps {
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
   lojaFiltradaId?: string | null;
+  estoquesCPD?: CPDStockItem[];
 }
 
 export function ProductGroupedStacks({
@@ -94,6 +101,7 @@ export function ProductGroupedStacks({
   onCancelarPreparo,
   onRegistrarPerda,
   lojaFiltradaId,
+  estoquesCPD,
 }: ProductGroupedStacksProps) {
   // Filtrar registros pela loja selecionada (controle externo via prop)
   const filteredRegistros = useMemo(() => {
@@ -130,6 +138,11 @@ export function ProductGroupedStacks({
   }, [filteredRegistros]);
 
   if (filteredRegistros.length === 0) {
+    // Se é coluna A PRODUZIR e tem estoque CPD, mostrar indicador especial
+    if (columnId === 'a_produzir' && estoquesCPD && estoquesCPD.length > 0) {
+      return <CPDStockIndicator estoquesCPD={estoquesCPD} />;
+    }
+    
     return (
       <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
         {lojaFiltradaId ? 'Nenhum item para esta loja' : 'Nenhum item nesta coluna'}
