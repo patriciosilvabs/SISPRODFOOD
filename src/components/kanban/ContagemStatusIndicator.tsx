@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, Clock, Store, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format, isToday, parseISO } from "date-fns";
 
 interface Loja {
   id: string;
@@ -15,6 +16,7 @@ interface ContagemData {
   loja_nome: string;
   totalItens: number;
   totalUnidades: number;
+  ultimaAtualizacao?: string; // ISO timestamp
 }
 
 interface ContagemStatusIndicatorProps {
@@ -77,25 +79,49 @@ export function ContagemStatusIndicator({
       <CardContent className="px-4 pb-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {/* Lojas que já enviaram */}
-          {enviaram.map(loja => (
-            <div
-              key={loja.id}
-              className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md"
-            >
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300 truncate max-w-[120px]">
-                  {loja.nome}
-                </span>
+          {enviaram.map(loja => {
+            // Formatar timestamp da última atualização
+            let horarioFormatado = '';
+            if (loja.ultimaAtualizacao) {
+              try {
+                const dataAtualizacao = parseISO(loja.ultimaAtualizacao);
+                if (isToday(dataAtualizacao)) {
+                  horarioFormatado = format(dataAtualizacao, 'HH:mm');
+                } else {
+                  horarioFormatado = format(dataAtualizacao, 'dd/MM HH:mm');
+                }
+              } catch {
+                horarioFormatado = '';
+              }
+            }
+            
+            return (
+              <div
+                key={loja.id}
+                className="flex flex-col p-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300 truncate max-w-[120px]">
+                      {loja.nome}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                    <Package className="h-3 w-3" />
+                    <span>{loja.totalItens} itens</span>
+                    <span className="text-emerald-400">•</span>
+                    <span>{loja.totalUnidades} un</span>
+                  </div>
+                </div>
+                {horarioFormatado && (
+                  <span className="text-[10px] text-emerald-500 dark:text-emerald-400/70 ml-6 mt-0.5">
+                    Atualizado: {horarioFormatado}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                <Package className="h-3 w-3" />
-                <span>{loja.totalItens} itens</span>
-                <span className="text-emerald-400">•</span>
-                <span>{loja.totalUnidades} un</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           
           {/* Lojas aguardando */}
           {aguardando.map(loja => (
