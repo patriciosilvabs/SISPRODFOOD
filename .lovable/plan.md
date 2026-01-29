@@ -1,78 +1,115 @@
 
-
-# Plano: Corrigir Exclusão de Lojas (FK sem CASCADE)
+# Plano: Filtrar CPD de Configurações de Estoque por Loja
 
 ## Problema Identificado
 
-Ao tentar excluir uma loja, o banco de dados retorna **409 Conflict** devido à violação de foreign key:
+O CPD (Centro de Produção e Distribuição) está aparecendo incorretamente em modais e listagens onde apenas **lojas comuns** deveriam ser exibidas. Conforme a arquitetura do sistema:
 
-```
-update or delete on table "lojas" violates foreign key constraint 
-"contagem_porcionados_audit_loja_id_fkey" on table "contagem_porcionados_audit"
-```
+- **CPD** = Centro de produção. Produz e envia para lojas.
+- **Loja** = Unidade de venda. Recebe produtos do CPD.
 
-A tabela `contagem_porcionados_audit` tem uma FK para `lojas` **sem** `ON DELETE CASCADE`, diferente de todas as outras tabelas que referenciam `lojas`.
+O CPD **não possui demanda própria** - ele é a fonte de produção, não um destino. Configurar "estoques ideais" ou "estoques mínimos" para o CPD não faz sentido operacional.
 
-## Dados do Problema
+## Arquivos Afetados
 
-- **Loja tentando excluir**: `2e8a2ad8-8e42-4647-939c-4b52ac67e6f0`
-- **Registros de auditoria bloqueando**: 184 registros
-- **Causa**: FK criada sem `ON DELETE CASCADE`
+| Arquivo | Problema | Ação |
+|---------|----------|------|
+| `src/pages/ItensPorcionados.tsx` | Busca lojas sem filtrar CPD (linhas 210-215) e exibe CPD no modal de Estoques Ideais | Adicionar `.neq('tipo', 'cpd')` na query |
+| `src/components/modals/ConfigurarEstoqueMinimoModal.tsx` | Busca lojas sem filtrar CPD (linhas 82-85) | Adicionar `.neq('tipo', 'cpd')` na query |
+| `src/pages/EstoqueLoja.tsx` | Admin vê todas as lojas incluindo CPD (linhas 101-107) | Adicionar `.neq('tipo', 'cpd')` na query |
 
-## Solução Proposta
+## Padrão Já Usado no Sistema
 
-### Migração SQL
+Várias partes do sistema já filtram corretamente o CPD. Exemplos:
 
-Alterar a constraint da tabela `contagem_porcionados_audit` para incluir `ON DELETE CASCADE`:
+```typescript
+// ReposicaoLoja.tsx - linha 142
+.neq('tipo', 'cpd')
 
-```sql
--- 1. Remover a constraint atual (sem CASCADE)
-ALTER TABLE public.contagem_porcionados_audit
-DROP CONSTRAINT contagem_porcionados_audit_loja_id_fkey;
+// Romaneio.tsx - linha 681
+.neq('tipo', 'cpd')
 
--- 2. Recriar com ON DELETE CASCADE
-ALTER TABLE public.contagem_porcionados_audit
-ADD CONSTRAINT contagem_porcionados_audit_loja_id_fkey
-FOREIGN KEY (loja_id) REFERENCES public.lojas(id) ON DELETE CASCADE;
+// GerenciarDestinatariosEmailModal.tsx - linha 104
+.neq('tipo', 'cpd')
 ```
 
-Esta é a abordagem padrão do projeto - todas as outras 14 tabelas que referenciam `lojas` já usam `ON DELETE CASCADE`:
+## Alterações Técnicas
 
-| Tabela | Status |
-|--------|--------|
-| contagem_porcionados | ✅ CASCADE |
-| destinatarios_email_contagem | ✅ CASCADE |
-| erros_devolucoes | ✅ CASCADE |
-| estoque_loja_itens | ✅ CASCADE |
-| estoque_loja_produtos | ✅ CASCADE |
-| estoques_ideais_semanais | ✅ CASCADE |
-| incrementos_producao | ✅ CASCADE |
-| lojas_acesso | ✅ CASCADE |
-| produtos_estoque_minimo_semanal | ✅ CASCADE |
-| romaneios | ✅ CASCADE |
-| romaneios_avulsos (2 FKs) | ✅ CASCADE |
-| romaneios_produtos | ✅ CASCADE |
-| solicitacoes_reposicao | ✅ CASCADE |
-| **contagem_porcionados_audit** | ❌ **SEM CASCADE** |
+### 1. ItensPorcionados.tsx (linhas 209-215)
 
-## Arquivos a Modificar
+**Antes:**
+```typescript
+// Buscar lojas (exceto CPD)
+const { data: lojasData } = await supabase
+  .from('lojas')
+  .select('id, nome, tipo')
+  .order('nome');
+```
 
-| Arquivo | Ação |
-|---------|------|
-| Nova migração SQL | Recriar FK com `ON DELETE CASCADE` |
+**Depois:**
+```typescript
+// Buscar lojas (exceto CPD - não precisa configurar estoque ideal para CPD)
+const { data: lojasData } = await supabase
+  .from('lojas')
+  .select('id, nome, tipo')
+  .neq('tipo', 'cpd')
+  .order('nome');
+```
+
+### 2. ConfigurarEstoqueMinimoModal.tsx (linhas 80-93)
+
+**Antes:**
+```typescript
+const { data, error } = await supabase
+  .from("lojas")
+  .select("id, nome")
+  .order("nome");
+```
+
+**Depois:**
+```typescript
+const { data, error } = await supabase
+  .from("lojas")
+  .select("id, nome, tipo")
+  .neq('tipo', 'cpd')
+  .order("nome");
+```
+
+### 3. EstoqueLoja.tsx (linhas 100-107)
+
+**Antes (Admin):**
+```typescript
+const { data: todasLojas, error: lojasError } = await supabase
+  .from('lojas')
+  .select('id, nome')
+  .order('nome');
+```
+
+**Depois (Admin):**
+```typescript
+const { data: todasLojas, error: lojasError } = await supabase
+  .from('lojas')
+  .select('id, nome, tipo')
+  .neq('tipo', 'cpd')
+  .order('nome');
+```
 
 ## Resultado Esperado
 
-- Exclusão de lojas funcionará sem erro 409
-- Registros de auditoria serão excluídos junto com a loja (comportamento consistente com política de hard-delete do projeto)
-- Nenhuma alteração necessária no código frontend (já deleta corretamente)
+1. **Modal "Configurar Estoques Ideais por Loja"** (ItensPorcionados):
+   - ❌ Antes: Mostra CPD + Lojas comuns
+   - ✅ Depois: Mostra apenas lojas comuns
 
-## Alternativa Considerada (Rejeitada)
+2. **Modal "Configurar Estoque Mínimo Semanal"** (ConfigurarEstoqueMinimoModal):
+   - ❌ Antes: Dropdown de loja inclui CPD
+   - ✅ Depois: Dropdown mostra apenas lojas comuns
 
-Poderia adicionar a exclusão manual de `contagem_porcionados_audit` no frontend antes de deletar a loja. Porém, isso:
-- Seria inconsistente com o padrão do projeto (todas as outras tabelas usam CASCADE)
-- Aumentaria complexidade do código
-- Poderia falhar em cenários de race condition
+3. **Página "Estoque Loja"** (EstoqueLoja):
+   - ❌ Antes: Admin vê CPD na seleção de loja
+   - ✅ Depois: Admin vê apenas lojas comuns
 
-A migração SQL é a solução correta e definitiva.
+## Impacto
 
+- **Zero impacto em dados existentes**: Apenas filtra visualmente
+- **Alinhamento com arquitetura**: CPD não tem demanda própria (memory `production-demand-exclusion-cpd`)
+- **Consistência com padrões existentes**: Várias páginas já aplicam este filtro
