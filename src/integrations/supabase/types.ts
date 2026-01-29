@@ -114,6 +114,66 @@ export type Database = {
           },
         ]
       }
+      backlog_producao: {
+        Row: {
+          created_at: string | null
+          data_referencia: string
+          estoque_cpd: number
+          gatilho_minimo: number
+          id: string
+          item_id: string
+          item_nome: string
+          organization_id: string | null
+          quantidade_pendente: number
+          saldo_liquido: number
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_referencia?: string
+          estoque_cpd?: number
+          gatilho_minimo?: number
+          id?: string
+          item_id: string
+          item_nome: string
+          organization_id?: string | null
+          quantidade_pendente?: number
+          saldo_liquido?: number
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_referencia?: string
+          estoque_cpd?: number
+          gatilho_minimo?: number
+          id?: string
+          item_id?: string
+          item_nome?: string
+          organization_id?: string | null
+          quantidade_pendente?: number
+          saldo_liquido?: number
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backlog_producao_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "backlog_producao_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       configuracao_alertas: {
         Row: {
           alertas_email_ativos: boolean | null
@@ -1248,6 +1308,7 @@ export type Database = {
           peso_minimo_bolinha_g: number | null
           peso_pronto_g: number | null
           peso_unitario_g: number
+          quantidade_minima_producao: number | null
           quantidade_por_lote: number | null
           tempo_timer_minutos: number | null
           timer_ativo: boolean | null
@@ -1280,6 +1341,7 @@ export type Database = {
           peso_minimo_bolinha_g?: number | null
           peso_pronto_g?: number | null
           peso_unitario_g: number
+          quantidade_minima_producao?: number | null
           quantidade_por_lote?: number | null
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null
@@ -1312,6 +1374,7 @@ export type Database = {
           peso_minimo_bolinha_g?: number | null
           peso_pronto_g?: number | null
           peso_unitario_g?: number
+          quantidade_minima_producao?: number | null
           quantidade_por_lote?: number | null
           tempo_timer_minutos?: number | null
           timer_ativo?: boolean | null

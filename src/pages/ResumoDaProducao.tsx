@@ -9,6 +9,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ProductGroupedStacks } from '@/components/kanban/ProductGroupedStacks';
 import { ContagemStatusIndicator } from '@/components/kanban/ContagemStatusIndicator';
+import { BacklogIndicator } from '@/components/kanban/BacklogIndicator';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
@@ -183,6 +184,19 @@ const ResumoDaProducao = () => {
   // Estados para lojas e contagens
   const [lojas, setLojas] = useState<Array<{ id: string; nome: string; tipo: string }>>([]);
   const [contagensHoje, setContagensHoje] = useState<Array<{ loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number; ultimaAtualizacao?: string }>>([]);
+  
+  // Estado para itens aguardando gatilho mínimo (backlog)
+  const [backlogItems, setBacklogItems] = useState<Array<{
+    id: string;
+    item_id: string;
+    item_nome: string;
+    quantidade_pendente: number;
+    gatilho_minimo: number;
+    estoque_cpd: number;
+    saldo_liquido: number;
+    status: string;
+    data_referencia: string;
+  }>>([]);
   
   // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
   const knownCardIdsRef = useRef<Set<string>>(new Set());
@@ -864,6 +878,15 @@ const ResumoDaProducao = () => {
       
       setContagensHoje(Array.from(contagemStats.values()));
       
+      // Buscar itens em backlog (aguardando gatilho mínimo)
+      const { data: backlogData } = await supabase
+        .from('backlog_producao')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('data_referencia', hoje)
+        .eq('status', 'aguardando_gatilho');
+      
+      setBacklogItems(backlogData || []);
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
@@ -2015,6 +2038,15 @@ const ResumoDaProducao = () => {
             }
             
             handleIniciarTudoLoja(lojaId, lojaNome, registrosDaLoja);
+          }}
+        />
+
+        {/* Indicador de itens aguardando gatilho mínimo */}
+        <BacklogIndicator 
+          backlogItems={backlogItems}
+          onForcarProducao={async (itemId, itemNome) => {
+            // Força produção mesmo abaixo do gatilho (implementação futura)
+            toast.info(`Forçar produção de "${itemNome}" ainda não implementado. Aguarde novas contagens.`);
           }}
         />
 

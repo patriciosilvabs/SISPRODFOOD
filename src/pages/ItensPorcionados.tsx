@@ -160,6 +160,8 @@ const ItensPorcionados = () => {
     peso_alvo_bolinha_g: '',
     // Campo de Margem para LOTE_MASSEIRA
     margem_lote_percentual: '',
+    // Gatilho mínimo para produção
+    quantidade_minima_producao: '0',
   });
 
   // Cálculos automáticos para Lote com Perda
@@ -370,6 +372,8 @@ const ItensPorcionados = () => {
         insumo_embalagem_id: formData.usa_embalagem_por_porcao && formData.insumo_embalagem_id ? formData.insumo_embalagem_id : null,
         unidade_embalagem: formData.usa_embalagem_por_porcao ? formData.unidade_embalagem : null,
         fator_consumo_embalagem_por_porcao: formData.usa_embalagem_por_porcao ? parseFloat(formData.fator_consumo_embalagem_por_porcao) || 1 : null,
+        // Gatilho mínimo para produção
+        quantidade_minima_producao: parseInt(formData.quantidade_minima_producao) || 0,
       };
 
       // Adicionar campos específicos de Lote com Perda
@@ -781,6 +785,8 @@ const ItensPorcionados = () => {
       peso_alvo_bolinha_g: item.peso_alvo_bolinha_g?.toString() || '',
       // Campo de Margem
       margem_lote_percentual: item.margem_lote_percentual?.toString() || '',
+      // Gatilho mínimo
+      quantidade_minima_producao: (item as any).quantidade_minima_producao?.toString() || '0',
     });
     await loadInsumosVinculados(item.id);
     setDialogOpen(true);
@@ -811,6 +817,8 @@ const ItensPorcionados = () => {
       peso_alvo_bolinha_g: '',
       // Campo de Margem
       margem_lote_percentual: '',
+      // Gatilho mínimo
+      quantidade_minima_producao: '0',
     });
   };
 
@@ -1276,6 +1284,41 @@ const ItensPorcionados = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* Gatilho Mínimo para Produção */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="space-y-2">
+                      <Label htmlFor="quantidade_minima_producao" className="flex items-center gap-2">
+                        🎯 Qtd Mínima para Produção (Gatilho)
+                      </Label>
+                      <Input
+                        id="quantidade_minima_producao"
+                        type="number"
+                        min="0"
+                        value={formData.quantidade_minima_producao}
+                        onChange={(e) =>
+                          setFormData({ ...formData, quantidade_minima_producao: e.target.value })
+                        }
+                        placeholder="0 = Desativado"
+                        className="max-w-[200px]"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Define o volume mínimo de unidades para autorizar a produção. 
+                        Se a demanda for inferior, o sistema mantém em espera até acumular mais pedidos.
+                      </p>
+                      {parseInt(formData.quantidade_minima_producao) > 0 && (
+                        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                          <p className="text-xs text-amber-800 dark:text-amber-200">
+                            <strong>📌 Exemplo:</strong> Com gatilho de {formData.quantidade_minima_producao} un:
+                          </p>
+                          <ul className="text-xs text-amber-700 dark:text-amber-300 mt-1 list-disc list-inside">
+                            <li>Demanda &lt; {formData.quantidade_minima_producao} un → Aguarda mais pedidos</li>
+                            <li>Demanda ≥ {formData.quantidade_minima_producao} un → Card de produção criado</li>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Seção de Insumos Vinculados - OBRIGATÓRIO */}
                   <div className="space-y-4 pt-4 border-t">
