@@ -1,114 +1,92 @@
 
-# Plano: Corrigir Exclusão de Itens Porcionados
+# Plano: Corrigir Cálculo de Estoque CPD na Função de Trigger
 
 ## Problema Identificado
 
-Ao tentar excluir o item `f4002717-6808-4da8-8401-25041fd49279`, o sistema retorna:
+As demandas da loja **UNIDADE ALEIXO** não estão gerando cards de produção no Resumo da Produção.
 
-```
-Foreign key constraint violation:
-Key is still referenced from table "contagem_porcionados_audit"
-```
+### Análise de Dados
+
+| Item | Demanda Aleixo | Estoque CPD Real | Estoque CPD Usado | Saldo Líquido | Resultado |
+|------|----------------|------------------|-------------------|---------------|-----------|
+| MUSSARELA | 99 | 2 | **2838** (erro!) | -2739 | ❌ Não cria card |
+| MASSA | 99 | 100 | **3341** (erro!) | -3242 | ❌ Não cria card |
 
 ### Causa Raiz
 
-1. **Tabelas faltando na cascata**: A função `handleDelete` atual só deleta de **6 tabelas**, mas existem **16 tabelas** que referenciam `itens_porcionados`
+Existem **3 versões** da função `criar_ou_atualizar_producao_registro`:
+1. **Versão trigger** (sem parâmetros) - não usada
+2. **Versão TABLE** - já corrigida para usar `contagem_porcionados.final_sobra`
+3. **Versão UUID** - **ainda usa tabela `estoque_cpd` desatualizada**
 
-2. **Bloqueio de RLS**: A tabela `contagem_porcionados_audit` não permite DELETE por políticas RLS - apenas INSERT e SELECT
+O trigger `trg_criar_producao_apos_contagem` chama a **versão UUID**, que busca estoque na tabela errada:
 
-### Tabelas que referenciam `itens_porcionados`:
-
-| Tabela | Status Atual | Coluna |
-|--------|--------------|--------|
-| insumos_extras | ✅ Tratada | item_porcionado_id |
-| estoque_cpd | ✅ Tratada | item_porcionado_id |
-| itens_reserva_diaria | ✅ Tratada | item_porcionado_id |
-| estoques_ideais_semanais | ✅ Tratada | item_porcionado_id |
-| estoque_loja_itens | ✅ Tratada | item_porcionado_id |
-| contagem_porcionados | ✅ Tratada | item_porcionado_id |
-| **contagem_porcionados_audit** | ❌ **Faltando** | item_porcionado_id |
-| producao_lotes | ❌ Faltando | item_id |
-| producao_registros | ❌ Faltando | item_id |
-| romaneio_itens | ❌ Faltando | item_porcionado_id |
-| romaneios_avulsos_itens | ❌ Faltando | item_porcionado_id |
-| consumo_historico | ❌ Faltando | item_id |
-| perdas_producao | ❌ Faltando | item_id |
-| producao_massa_historico | ❌ Faltando | item_id |
-| incrementos_producao | ❌ Faltando | item_porcionado_id |
-| backlog_producao | ❌ Faltando | item_id |
+```sql
+-- CÓDIGO ATUAL (ERRADO):
+SELECT COALESCE(quantidade, 0)::integer
+INTO v_estoque_cpd
+FROM estoque_cpd  -- ← Tabela desatualizada com valores 1000x maiores!
+WHERE item_porcionado_id = p_item_id;
+```
 
 ---
 
 ## Solução
 
-Criar uma **Edge Function** `excluir-item-porcionado` usando `service_role` para bypass de RLS, seguindo o padrão já estabelecido para `excluir-usuario`.
+Atualizar a função `criar_ou_atualizar_producao_registro` (versão UUID) para buscar o estoque CPD da fonte correta: `contagem_porcionados.final_sobra` do dia atual.
 
-### Vantagens desta abordagem:
-- Contorna restrições de RLS
-- Centraliza lógica de cascata
-- Consistente com política de hard-delete existente
-- Transação atômica (tudo ou nada)
+### Alteração Necessária
+
+**De:**
+```sql
+-- Buscar estoque CPD atual
+SELECT COALESCE(quantidade, 0)::integer
+INTO v_estoque_cpd
+FROM estoque_cpd
+WHERE item_porcionado_id = p_item_id
+  AND organization_id = p_organization_id;
+```
+
+**Para:**
+```sql
+-- CORREÇÃO: Buscar estoque CPD da contagem_porcionados (fonte real)
+SELECT COALESCE(cp.final_sobra, 0)::integer
+INTO v_estoque_cpd
+FROM contagem_porcionados cp
+JOIN lojas l ON l.id = cp.loja_id
+WHERE cp.item_porcionado_id = p_item_id
+  AND cp.organization_id = p_organization_id
+  AND cp.dia_operacional = v_data_hoje
+  AND l.tipo = 'cpd';
+
+v_estoque_cpd := COALESCE(v_estoque_cpd, 0);
+```
 
 ---
 
 ## Implementação
 
-### 1. Criar Edge Function `excluir-item-porcionado`
+Uma migração SQL será criada para atualizar a função RPC, corrigindo a fonte de estoque CPD de `estoque_cpd` para `contagem_porcionados.final_sobra`.
 
-A função irá:
-1. Validar autenticação e permissão Admin
-2. Deletar em ordem reversa de dependências (tabelas filhas primeiro)
-3. Finalmente deletar o item principal
+### Resultado Esperado
 
-**Ordem de exclusão:**
-```text
-1. contagem_porcionados_audit
-2. perdas_producao
-3. consumo_historico
-4. producao_massa_historico
-5. romaneio_itens
-6. romaneios_avulsos_itens
-7. producao_registros
-8. producao_lotes
-9. incrementos_producao
-10. backlog_producao
-11. contagem_porcionados
-12. estoque_loja_itens
-13. estoques_ideais_semanais
-14. itens_reserva_diaria
-15. estoque_cpd
-16. insumos_extras
-17. itens_porcionados (item principal)
-```
+Após a correção:
 
-### 2. Atualizar `ItensPorcionados.tsx`
-
-Substituir chamadas diretas ao Supabase por chamada à Edge Function:
-
-```typescript
-const handleDelete = async (id: string) => {
-  // ... validações existentes ...
-  
-  const { error } = await supabase.functions.invoke('excluir-item-porcionado', {
-    body: { item_id: id }
-  });
-  
-  if (error) throw error;
-  toast.success('Item excluído permanentemente!');
-};
-```
+| Item | Demanda | Estoque Real | Saldo Líquido | Gatilho | Resultado |
+|------|---------|--------------|---------------|---------|-----------|
+| MUSSARELA | 99 | 2 | **97** | 25 | ✅ Cria 97 cards |
+| MASSA | 99 | 100 | **-1** | 25 | ✅ Não precisa (correto) |
 
 ---
 
-## Arquivos a Criar/Modificar
+## Arquivos a Modificar
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/excluir-item-porcionado/index.ts` | Criar |
-| `src/pages/ItensPorcionados.tsx` | Modificar handleDelete |
+| Nova migração SQL | Atualizar função `criar_ou_atualizar_producao_registro` |
 
 ---
 
 ## Resumo
 
-Esta correção garante exclusão completa e permanente de itens porcionados, deletando todos os dados relacionados em 16 tabelas, respeitando a política de hard-delete estabelecida para o sistema.
+A correção alinha a versão UUID da função (usada pelo trigger) com a versão TABLE (já corrigida), garantindo que ambas usem a fonte de estoque real do CPD. Isso fará com que as demandas do Aleixo e outras lojas gerem cards de produção corretamente quando o estoque do CPD for insuficiente.
