@@ -792,9 +792,18 @@ const GerenciarUsuarios = () => {
                         </TableCell>
                         <TableCell>
                           {usuario.lojas.length > 0 ? (
-                            <div className="flex items-center gap-1">
-                              <Store className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm">{usuario.lojas.length}</span>
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {usuario.lojas.slice(0, 2).map(loja => (
+                                <Badge key={loja.id} variant="outline" className="text-xs flex items-center gap-1">
+                                  {loja.tipo === 'cpd' ? <Factory className="h-3 w-3" /> : <Store className="h-3 w-3" />}
+                                  {loja.nome}
+                                </Badge>
+                              ))}
+                              {usuario.lojas.length > 2 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{usuario.lojas.length - 2}
+                                </Badge>
+                              )}
                             </div>
                           ) : (
                             <span className="text-muted-foreground text-sm">-</span>
@@ -915,21 +924,50 @@ const GerenciarUsuarios = () => {
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="lojas" className="mt-4">
-                    <div className="space-y-2">
-                      {lojas.filter(l => inviteSelectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd').map(loja => (
-                        <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                          <Checkbox
-                            id={`invite-loja-${loja.id}`}
-                            checked={inviteLojas.includes(loja.id)}
-                            onCheckedChange={() => handleInviteLojaToggle(loja.id)}
-                          />
-                          <label htmlFor={`invite-loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
-                            {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
-                            {loja.nome}
-                            {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
-                          </label>
-                        </div>
-                      ))}
+                    <div className="space-y-3">
+                      {(() => {
+                        const lojasDoTipo = lojas.filter(l => inviteSelectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd');
+                        const allSelected = lojasDoTipo.length > 0 && lojasDoTipo.every(l => inviteLojas.includes(l.id));
+                        return (
+                          <>
+                            <div className="flex justify-between items-center">
+                              <Label className="text-sm text-muted-foreground">
+                                {lojasDoTipo.length} loja(s) disponível(is)
+                              </Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (allSelected) {
+                                    setInviteLojas([]);
+                                  } else {
+                                    setInviteLojas(lojasDoTipo.map(l => l.id));
+                                  }
+                                }}
+                              >
+                                {allSelected ? 'Desmarcar Todas' : 'Selecionar Todas'}
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              {lojasDoTipo.map(loja => (
+                                <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                                  <Checkbox
+                                    id={`invite-loja-${loja.id}`}
+                                    checked={inviteLojas.includes(loja.id)}
+                                    onCheckedChange={() => handleInviteLojaToggle(loja.id)}
+                                  />
+                                  <label htmlFor={`invite-loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                                    {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                                    {loja.nome}
+                                    {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </TabsContent>
                   <TabsContent value="pages" className="mt-4">
@@ -1041,21 +1079,50 @@ const GerenciarUsuarios = () => {
                       </TabsTrigger>
                     </TabsList>
                     <TabsContent value="lojas" className="mt-4">
-                      <div className="space-y-2">
-                        {lojas.filter(l => selectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd').map(loja => (
-                          <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
-                            <Checkbox
-                              id={`loja-${loja.id}`}
-                              checked={selectedLojas.includes(loja.id)}
-                              onCheckedChange={() => handleLojaToggle(loja.id)}
-                            />
-                            <label htmlFor={`loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
-                              {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
-                              {loja.nome}
-                              {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
-                            </label>
-                          </div>
-                        ))}
+                      <div className="space-y-3">
+                        {(() => {
+                          const lojasDoTipo = lojas.filter(l => selectedProfile === 'cpd' ? l.tipo === 'cpd' : l.tipo !== 'cpd');
+                          const allSelected = lojasDoTipo.length > 0 && lojasDoTipo.every(l => selectedLojas.includes(l.id));
+                          return (
+                            <>
+                              <div className="flex justify-between items-center">
+                                <Label className="text-sm text-muted-foreground">
+                                  {lojasDoTipo.length} loja(s) disponível(is)
+                                </Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (allSelected) {
+                                      setSelectedLojas([]);
+                                    } else {
+                                      setSelectedLojas(lojasDoTipo.map(l => l.id));
+                                    }
+                                  }}
+                                >
+                                  {allSelected ? 'Desmarcar Todas' : 'Selecionar Todas'}
+                                </Button>
+                              </div>
+                              <div className="space-y-2">
+                                {lojasDoTipo.map(loja => (
+                                  <div key={loja.id} className="flex items-center space-x-3 p-3 rounded-lg border">
+                                    <Checkbox
+                                      id={`loja-${loja.id}`}
+                                      checked={selectedLojas.includes(loja.id)}
+                                      onCheckedChange={() => handleLojaToggle(loja.id)}
+                                    />
+                                    <label htmlFor={`loja-${loja.id}`} className="text-sm cursor-pointer flex-1 flex items-center gap-2">
+                                      {loja.tipo === 'cpd' ? <Factory className="h-4 w-4 text-blue-600" /> : <Store className="h-4 w-4" />}
+                                      {loja.nome}
+                                      {loja.tipo === 'cpd' && <Badge variant="outline" className="text-xs">CPD</Badge>}
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </TabsContent>
                     <TabsContent value="pages" className="mt-4">
