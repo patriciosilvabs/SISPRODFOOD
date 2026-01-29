@@ -206,10 +206,11 @@ const ItensPorcionados = () => {
 
       if (insumosError) throw insumosError;
 
-      // Buscar lojas (exceto CPD)
+      // Buscar lojas (exceto CPD - não precisa configurar estoque ideal para CPD)
       const { data: lojasData } = await supabase
         .from('lojas')
         .select('id, nome, tipo')
+        .neq('tipo', 'cpd')
         .order('nome');
       
       setLojas(lojasData || []);

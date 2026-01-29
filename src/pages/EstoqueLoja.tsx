@@ -100,7 +100,8 @@ const EstoqueLoja = () => {
         if (isUserAdmin) {
           const { data: todasLojas, error: lojasError } = await supabase
             .from('lojas')
-            .select('id, nome')
+            .select('id, nome, tipo')
+            .neq('tipo', 'cpd')
             .order('nome');
 
           if (lojasError) throw lojasError;
