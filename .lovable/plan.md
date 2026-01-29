@@ -1,166 +1,139 @@
 
-# Plano: Corrigir Romaneio - Evitar Loop e Restringir Acesso
+# Plano: Evitar Loop do Romaneio no Trigger de Produção
 
-## Problemas Identificados
+## Problema Identificado
 
-### Problema 1: Romaneio NÃO Deve Movimentar Contagem de Loja Destino
+Quando o romaneio envia itens, ele debita o estoque do CPD atualizando `contagem_porcionados.final_sobra`. Isso dispara o trigger `trg_criar_producao_apos_contagem` que recalcula toda a produção, causando um loop infinito:
 
-**Situação Atual:**
-- O envio de romaneio **debita** do estoque CPD (`contagem_porcionados` do CPD) - linhas 1368-1389
-- Isso dispara o trigger `trg_criar_producao_apos_contagem` no banco de dados
-- O trigger recalcula demandas e pode criar/deletar cards de produção
-- Isso causa um loop: romaneio → debita CPD → trigger → cria cards → listener realtime → atualiza tela
-
-**Solução:**
-O débito do estoque CPD via contagem_porcionados ESTÁ correto (é a fonte de verdade do estoque físico). O problema é que esse update dispara um trigger que não deveria ser disparado para updates feitos pelo romaneio.
-
-Opções:
-1. **Opção A**: Criar uma flag temporária ou usar uma coluna de "bypass" para indicar que o update veio do romaneio
-2. **Opção B**: Modificar o trigger no banco para ignorar updates que apenas alteram `final_sobra`
-3. **Opção C** (RECOMENDADA): Remover o listener de `estoque_cpd` e `estoque_loja_itens` do realtime, pois eles causam loops desnecessários
-
----
-
-### Problema 2: Usuário de Loja Vê Romaneios de Outras Lojas
-
-**Situação Atual:**
-O filtro `fetchRomaneiosEnviados` usa `userLojasIds` que contém TODAS as lojas que o usuário tem acesso via `lojas_acesso`. Se um usuário foi vinculado a múltiplas lojas, ele verá romaneios de todas elas.
-
-**Mas o comportamento esperado é:**
-Usuário de loja (role "Loja") deve ver APENAS romaneios da SUA loja principal (a loja onde ele trabalha).
-
-**Código Atual (linha 942-944):**
-```typescript
-if (!isAdmin() && userLojasIds.length > 0) {
-  query = query.in('loja_id', userLojasIds);
-}
+```
+Romaneio enviado
+    │
+    ├─► UPDATE contagem_porcionados SET final_sobra = X
+    │
+    └─► Trigger dispara criar_ou_atualizar_producao_registro()
+              │
+              ├─► Deleta/cria cards de produção
+              │
+              └─► Listener realtime atualiza tela
+                        │
+                        └─► Loop visual + possível re-trigger
 ```
 
-**Problema:**
-- `userLojasIds` inclui todas as lojas do usuário
-- Se usuário tem acesso a "Loja A" e "Loja B", ele vê romaneios de ambas
+## Causa Raiz
 
-**Solução:**
-Para usuários com role "Loja", filtrar APENAS pela loja principal (`primaryLoja`) e não por todas as lojas.
+O trigger atual dispara em **qualquer** INSERT ou UPDATE:
 
----
-
-## Alterações Propostas
-
-### Arquivo: `src/pages/Romaneio.tsx`
-
-| Alteração | Descrição |
-|-----------|-----------|
-| Linha 602-616 | Remover listeners de `estoque_cpd` e `estoque_loja_itens` para evitar loops |
-| Linha 942-944 | Modificar filtro para usar `primaryLoja` em vez de `userLojasIds` para role "Loja" |
-| Linha 988-990 | Aplicar mesma correção no histórico |
-
-### Mudanças Técnicas
-
-#### 1. Remover Listeners que Causam Loop (linhas 602-616)
-
-```typescript
-// ANTES - Causa loops
-.on('postgres_changes', {
-  event: '*',
-  schema: 'public',
-  table: 'estoque_cpd'
-}, (payload) => {
-  fetchDemandasTodasLojas();
-})
-.on('postgres_changes', {
-  event: '*',
-  schema: 'public',
-  table: 'estoque_loja_itens'
-}, (payload) => {
-  fetchDemandasTodasLojas();
-})
-
-// DEPOIS - Removidos (produção e romaneios já cobrem as necessidades)
-// Apenas manter:
-// - producao_registros
-// - romaneios
-// - romaneio_itens
+```sql
+CREATE TRIGGER trg_criar_producao_apos_contagem
+AFTER INSERT OR UPDATE ON contagem_porcionados
+FOR EACH ROW
+EXECUTE FUNCTION trigger_criar_producao_apos_contagem();
 ```
 
-#### 2. Filtrar Romaneios por Loja Principal (linha 942-944)
+Mas o romaneio só atualiza `final_sobra` e `updated_at` - ele NÃO deveria disparar recálculo de produção porque:
+- O estoque CPD diminuiu, mas isso não afeta a DEMANDA das lojas
+- A demanda é calculada pelo campo `a_produzir`, que é gerado a partir de `ideal_amanha - final_sobra`
+- O trigger serve para quando a LOJA envia sua contagem (alterando `ideal_amanha`)
 
-```typescript
-// ANTES
-if (!isAdmin() && userLojasIds.length > 0) {
-  query = query.in('loja_id', userLojasIds);
-}
+## Solução
 
-// DEPOIS
-// Para usuário de LOJA, filtrar APENAS pela loja principal
-// Para usuário de PRODUÇÃO, mantém o comportamento atual
-if (!isAdmin()) {
-  if (hasRole('Loja') && primaryLoja) {
-    // Loja vê apenas romaneios da SUA loja
-    query = query.eq('loja_id', primaryLoja.loja_id);
-  } else if (userLojasIds.length > 0) {
-    // Produção vê todas as lojas que tem acesso
-    query = query.in('loja_id', userLojasIds);
-  }
-}
+Modificar a **função do trigger** para verificar se a mudança é relevante antes de recalcular a produção.
+
+### Lógica de Bypass
+
+Apenas recalcular produção se:
+1. É um INSERT (nova contagem), OU
+2. É um UPDATE que alterou campos relevantes (`ideal_amanha`, `a_produzir`)
+
+NÃO recalcular se:
+- Apenas `final_sobra` ou `updated_at` mudaram (típico de romaneio ou finalização de produção)
+
+## Migração SQL
+
+```sql
+-- Atualizar função do trigger para ignorar updates irrelevantes
+CREATE OR REPLACE FUNCTION trigger_criar_producao_apos_contagem()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+    -- Para INSERTs, sempre recalcular
+    IF TG_OP = 'INSERT' THEN
+        PERFORM criar_ou_atualizar_producao_registro(
+            NEW.item_porcionado_id,
+            NEW.organization_id,
+            NEW.usuario_id,
+            NEW.usuario_nome
+        );
+        RETURN NEW;
+    END IF;
+    
+    -- Para UPDATEs, verificar se campos relevantes mudaram
+    -- Ignorar se apenas final_sobra ou updated_at mudou (típico de romaneio/produção)
+    IF TG_OP = 'UPDATE' THEN
+        -- Só recalcular se ideal_amanha mudou (loja atualizou estoque ideal)
+        -- ou se a_produzir mudou diretamente
+        IF (OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha) OR
+           (OLD.estoque_inicial IS DISTINCT FROM NEW.estoque_inicial) THEN
+            PERFORM criar_ou_atualizar_producao_registro(
+                NEW.item_porcionado_id,
+                NEW.organization_id,
+                NEW.usuario_id,
+                NEW.usuario_nome
+            );
+        END IF;
+        -- Se apenas final_sobra mudou, NÃO recalcular
+        -- (romaneio debitando estoque ou produção creditando)
+    END IF;
+    
+    RETURN NEW;
+END;
+$$;
 ```
-
-#### 3. Aplicar Mesma Lógica no Histórico (linha 988-990)
-
-```typescript
-// Mesma lógica para fetchRomaneiosHistorico
-if (!isAdmin()) {
-  if (hasRole('Loja') && primaryLoja) {
-    query = query.eq('loja_id', primaryLoja.loja_id);
-  } else if (userLojasIds.length > 0) {
-    query = query.in('loja_id', userLojasIds);
-  }
-}
-```
-
----
 
 ## Fluxo Corrigido
 
-### Envio de Romaneio (sem loop)
+### Romaneio (SEM trigger)
 ```
-Operador CPD envia romaneio
-       │
-       ├─► Debita contagem_porcionados do CPD (final_sobra -= quantidade)
-       │
-       └─► SEM listener de estoque_cpd/estoque_loja_itens
-                 │
-                 └─► Apenas listeners de romaneios atualizam a tela
-```
-
-### Visualização para Usuário de Loja
-```
-Usuário logado (role: Loja, primaryLoja: "ARMAZÉM")
-       │
-       └─► fetchRomaneiosEnviados()
-                 │
-                 └─► WHERE loja_id = "ARMAZÉM"
-                           │
-                           └─► Vê APENAS romaneios destinados ao ARMAZÉM
+Romaneio enviado
+    │
+    └─► UPDATE contagem_porcionados SET final_sobra = X
+              │
+              └─► Trigger verifica: apenas final_sobra mudou?
+                        │
+                        └─► SIM → Ignora (não recalcula produção)
 ```
 
----
+### Contagem de Loja (COM trigger)
+```
+Loja salva contagem
+    │
+    └─► UPDATE contagem_porcionados SET ideal_amanha = Y, final_sobra = Z
+              │
+              └─► Trigger verifica: ideal_amanha mudou?
+                        │
+                        └─► SIM → Recalcula produção
+```
 
-## Resultado Esperado
+## Alterações
+
+| Tipo | Descrição |
+|------|-----------|
+| Migração SQL | Atualizar `trigger_criar_producao_apos_contagem` com lógica condicional |
+
+## Impacto
 
 | Cenário | Antes | Depois |
 |---------|-------|--------|
-| Enviar romaneio | Dispara loop infinito via listeners | Apenas atualiza tela do romaneio |
-| Loja ARMAZÉM logada | Vê romaneios de todas as lojas vinculadas | Vê APENAS romaneios do ARMAZÉM |
-| Produção logada | Vê romaneios de todas as lojas | Mantém comportamento (correto) |
-| Admin logado | Vê todos os romaneios | Mantém comportamento (correto) |
+| Romaneio debita CPD | Dispara recálculo de produção | **Ignora** (sem loop) |
+| Loja salva contagem | Recalcula produção | Recalcula produção (mantém) |
+| Produção credita CPD | Dispara recálculo | **Ignora** (correto) |
+| Reserva diária atualizada | Recalcula via outro trigger | Mantém (outro trigger) |
 
----
+## Testes Recomendados
 
-## Observação sobre Triggers
-
-O trigger `trg_criar_producao_apos_contagem` pode ainda disparar quando o romaneio debita o estoque. Se isso continuar causando problemas, será necessário modificar o trigger no banco para:
-- Ignorar updates que apenas alteram `final_sobra`
-- Ou adicionar uma condição que só recria cards quando `ideal_amanha` ou `a_produzir` muda
-
-Essa modificação de trigger seria um passo adicional se os problemas persistirem após as correções no frontend.
+1. Enviar romaneio → Verificar que Resumo da Produção NÃO pisca/atualiza
+2. Salvar contagem de loja → Verificar que cards de produção são recalculados normalmente
+3. Finalizar produção → Verificar que estoque CPD aumenta SEM loop
