@@ -962,7 +962,12 @@ const Romaneio = () => {
         };
       });
       
-      setRomaneiosEnviados(romaneiosFormatados);
+      // Filtrar romaneios "fantasmas" sem itens (dados corrompidos)
+      const romaneiosFiltrados = romaneiosFormatados.filter(r => 
+        r.romaneio_itens && r.romaneio_itens.length > 0
+      );
+      
+      setRomaneiosEnviados(romaneiosFiltrados);
     } catch (error) {
       console.error('Erro ao buscar romaneios enviados:', error);
     }
