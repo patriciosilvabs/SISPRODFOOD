@@ -1,147 +1,167 @@
 
-
-# Plano: Limitar Quantidade de Envio ao Estoque Disponível
-
-## Contexto
-
-O romaneio já é manual (usuário informa quantidades e loja), mas o sistema não impede visualmente que o usuário digite uma quantidade maior do que o estoque disponível no CPD. A validação só ocorre no momento do envio, o que causa frustração.
+# Plano: Botão "Criar Romaneio" com Seleção de Loja e Itens
 
 ## Objetivo
 
-Limitar em tempo real a quantidade máxima que pode ser enviada, baseado no estoque físico do CPD (contagem_porcionados.final_sobra).
+Adicionar um botão "Criar Romaneio" na tela de Romaneio que abre um drawer/modal onde o usuário:
+1. Seleciona a loja de destino
+2. Adiciona itens porcionados disponíveis no estoque CPD
+3. Informa quantidade (limitada ao estoque disponível)
+4. Cria o romaneio manualmente
 
-## Alterações
+## Comportamento Atual
 
-### Arquivo: `src/pages/Romaneio.tsx`
+Atualmente a interface mostra:
+- Grid de lojas com status de demanda
+- Usuário clica na loja para ver/criar romaneio
+- Itens disponíveis baseados nas demandas existentes
 
-| Componente | Alteração |
-|------------|-----------|
-| `SecaoLojaRomaneio` | Receber estoque CPD para limitar quantidade |
-| Input de quantidade | Adicionar atributo `max` e validação |
-| `handleUpdateQuantidadeLoja` | Limitar valor ao máximo disponível |
-| Interface visual | Mostrar "Máx: X un" próximo ao input |
-
-### 1. Atualizar Interface `ItemSelecionadoLoja`
-
-Adicionar campo para rastrear o máximo disponível:
-
-```typescript
-interface ItemSelecionadoLoja {
-  item_id: string;
-  item_nome: string;
-  quantidade: number;
-  quantidade_maxima: number;  // NOVO: limite máximo do estoque
-  peso_g: string;
-  volumes: string;
-  // ... demais campos
-}
-```
-
-### 2. Atualizar Props do `SecaoLojaRomaneio`
-
-Não é necessário alterar props - os dados já vêm em `demanda.itens` com `quantidade_disponivel`.
-
-### 3. Modificar Input de Quantidade
-
-```tsx
-// ANTES: Sem limite máximo
-<Input
-  type="number"
-  value={item.quantidade || ''}
-  onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
-  min={1}
-/>
-
-// DEPOIS: Com limite e indicador visual
-const itemOriginal = demanda.itens.find(i => i.item_id === item.item_id);
-const maxDisponivel = itemOriginal?.quantidade_disponivel || item.quantidade;
-
-<div className="flex flex-col items-center gap-0.5">
-  <Input
-    type="number"
-    value={item.quantidade || ''}
-    onChange={(e) => {
-      const valor = parseInt(e.target.value) || 0;
-      // Limitar automaticamente ao máximo disponível
-      onUpdateQuantidade(demanda.loja_id, item.item_id, Math.min(valor, maxDisponivel));
-    }}
-    min={1}
-    max={maxDisponivel}
-  />
-  <span className="text-xs text-muted-foreground">
-    Máx: {maxDisponivel}
-  </span>
-</div>
-```
-
-### 4. Atualizar `handleUpdateQuantidadeLoja`
-
-```typescript
-const handleUpdateQuantidadeLoja = (lojaId: string, itemId: string, quantidade: number) => {
-  setDemandasPorLoja(prev => prev.map(d => {
-    if (d.loja_id !== lojaId) return d;
-    
-    // Buscar limite máximo do item original
-    const itemOriginal = d.itens.find(i => i.item_id === itemId);
-    const maxDisponivel = itemOriginal?.quantidade_disponivel || 999999;
-    
-    return {
-      ...d,
-      itensSelecionados: d.itensSelecionados.map(item =>
-        item.item_id === itemId 
-          ? { ...item, quantidade: Math.max(1, Math.min(quantidade, maxDisponivel)), salvo: false } 
-          : item
-      )
-    };
-  }));
-};
-```
-
-### 5. Visual de Alerta quando Próximo do Limite
-
-Adicionar indicador visual quando quantidade = máximo:
-
-```tsx
-const estaNolimite = item.quantidade >= maxDisponivel;
-
-<Input
-  className={cn(
-    layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium",
-    estaNolimite && "border-amber-500 bg-amber-50"
-  )}
-/>
-{estaNolimite && (
-  <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">
-    Limite
-  </Badge>
-)}
-```
-
-## Fluxo Visual
+## Comportamento Proposto
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ ESFIHA DE FRANGO                                            │
-│ 📦 10/01 LOTE-20260110-003                                  │
+│ Romaneio de Porcionados                                     │
+│ Gestão de remessas de itens porcionados do CPD para lojas   │
 ├─────────────────────────────────────────────────────────────┤
-│ [  45  ] un  │  [   ] kg  │  [  ] vol  │  ✓  │  🗑️         │
-│  Máx: 45     │            │            │     │             │
-│  ⚠️ Limite    │            │            │     │             │
+│ [Enviar] [Receber] [Histórico] [Avulso]                     │
+│                                                             │
+│                              [+ Criar Romaneio] [Atualizar] │
+│                                                             │
+│ ┌──────── Estoque Disponível no CPD ────────┐              │
+│ │ MASSA - PORCIONADO: 100 un                │              │
+│ └───────────────────────────────────────────┘              │
+│                                                             │
+│ Selecione a Loja para Romaneio (4 lojas)                    │
+│ ...                                                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Ao clicar em "Criar Romaneio":
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Criar Novo Romaneio                                      X  │
+├─────────────────────────────────────────────────────────────┤
+│ Loja Destino:                                               │
+│ [ Selecione a loja ▼ ]                                      │
+│                                                             │
+│ ─────────────────────────────────────────────────────────── │
+│                                                             │
+│ Adicionar Item:                                             │
+│ [ Selecione o item ▼ ]     [ 10 ] un    [+ Adicionar]      │
+│ Estoque CPD: 100 un                                         │
+│                                                             │
+│ ─────────────────────────────────────────────────────────── │
+│                                                             │
+│ Itens do Romaneio (2):                                      │
+│ ┌───────────────────────────────────────────────────────┐  │
+│ │ MASSA - PORCIONADO           45 un          [🗑️]     │  │
+│ │ ESFIHA DE FRANGO             30 un          [🗑️]     │  │
+│ └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│                                                             │
+│ [Cancelar]                           [Criar Romaneio →]    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Arquivos a Modificar
 
-| Arquivo | Linhas | Alteração |
-|---------|--------|-----------|
-| `src/pages/Romaneio.tsx` | ~416-423 | Input com max e indicador visual |
-| `src/pages/Romaneio.tsx` | ~1448-1458 | Handler com validação de limite |
-| `src/pages/Romaneio.tsx` | ~254 | Props para estoque máximo |
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/Romaneio.tsx` | Adicionar botão "Criar Romaneio" e estados do drawer |
+| `src/components/romaneio/CriarRomaneioDrawer.tsx` | **NOVO** - Componente drawer para criar romaneio |
+| `src/components/romaneio/LojaSelectionGrid.tsx` | Opcional: ajustar layout para o novo botão |
+
+## Detalhes Técnicos
+
+### 1. Novo Componente: `CriarRomaneioDrawer.tsx`
+
+```typescript
+interface CriarRomaneioDrawerProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  lojas: Loja[];
+  estoqueCPD: EstoqueItem[];  // { item_id, item_nome, quantidade }
+  onCriarRomaneio: (lojaId: string, itens: ItemRomaneio[]) => Promise<void>;
+}
+```
+
+O componente incluirá:
+- Select para escolher a loja destino
+- Select para escolher item do estoque CPD
+- Input numérico com `max={estoqueDisponivel}`
+- Lista de itens adicionados com botão remover
+- Botão "Criar Romaneio" que chama o handler
+
+### 2. Estados Novos em `Romaneio.tsx`
+
+```typescript
+const [criarRomaneioOpen, setCriarRomaneioOpen] = useState(false);
+```
+
+### 3. Handler `handleCriarRomaneioManual`
+
+```typescript
+const handleCriarRomaneioManual = async (lojaId: string, itens: ItemRomaneio[]) => {
+  // 1. Criar romaneio com status 'aguardando_conferencia'
+  // 2. Adicionar itens ao romaneio_itens
+  // 3. Fechar drawer e atualizar lista
+  // 4. Redirecionar para o fluxo de conferência (peso/volumes)
+};
+```
+
+### 4. Buscar Estoque CPD Disponível
+
+Reutilizar os dados já existentes em `estoqueCPDResumo`, mas com mais detalhes:
+
+```typescript
+interface EstoqueItemCPD {
+  item_porcionado_id: string;
+  item_nome: string;
+  quantidade_disponivel: number;
+}
+```
+
+### 5. Validações
+
+- Loja destino obrigatória
+- Pelo menos 1 item no romaneio
+- Quantidade não pode exceder estoque CPD
+- Validação em tempo real no input
+
+## Fluxo Completo
+
+```text
+1. Usuário clica "Criar Romaneio"
+   ↓
+2. Drawer abre com select de lojas
+   ↓
+3. Usuário seleciona loja destino
+   ↓
+4. Usuário adiciona itens do estoque CPD
+   - Select mostra apenas itens com estoque > 0
+   - Input quantidade limitado ao máximo disponível
+   ↓
+5. Usuário clica "Criar Romaneio"
+   ↓
+6. Sistema cria romaneio com status 'aguardando_conferencia'
+   ↓
+7. Romaneio aparece na seção "Aguardando Conferência"
+   ↓
+8. Usuário informa peso e volumes para cada item
+   ↓
+9. Usuário envia o romaneio
+```
 
 ## Benefícios
 
-1. **Feedback imediato**: Usuário vê o limite enquanto digita
-2. **Impossível ultrapassar**: Input já limita o valor máximo
-3. **Indicador visual**: Cor âmbar quando no limite
-4. **Mantém validação no envio**: Backup de segurança
+1. **Flexibilidade total**: Criar romaneio para qualquer loja, mesmo sem demanda prévia
+2. **Controle de estoque**: Quantidade limitada ao disponível no CPD
+3. **Workflow consistente**: Romaneio criado vai para conferência antes de envio
+4. **UX simplificada**: Drawer mantém contexto da tela principal
 
+## Observações
+
+- O botão ficará ao lado do "Atualizar" na barra de ações
+- O drawer usará o componente `Drawer` já existente no projeto (vaul)
+- Os itens criados terão status 'aguardando_conferencia' para garantir que peso e volumes sejam informados antes do envio
