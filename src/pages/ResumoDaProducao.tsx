@@ -132,11 +132,31 @@ interface KanbanColumns {
   finalizado: ProducaoRegistro[];
 }
 
-const columnConfig: Record<StatusColumn, { title: string; color: string }> = {
-  a_produzir: { title: 'A PRODUZIR', color: 'bg-slate-100 dark:bg-slate-800' },
-  em_preparo: { title: 'EM PREPARO', color: 'bg-blue-100 dark:bg-blue-900' },
-  em_porcionamento: { title: 'EM PORCIONAMENTO', color: 'bg-yellow-100 dark:bg-yellow-900' },
-  finalizado: { title: 'FINALIZADO', color: 'bg-green-100 dark:bg-green-900' },
+const columnConfig: Record<StatusColumn, { title: string; bgColor: string; textColor: string; headerBg: string }> = {
+  a_produzir: { 
+    title: 'A PRODUZIR', 
+    bgColor: 'bg-slate-50 dark:bg-slate-900/50',
+    textColor: 'text-slate-700 dark:text-slate-200',
+    headerBg: 'bg-slate-200 dark:bg-slate-700'
+  },
+  em_preparo: { 
+    title: 'EM PREPARO', 
+    bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+    textColor: 'text-amber-800 dark:text-amber-100',
+    headerBg: 'bg-amber-200 dark:bg-amber-800'
+  },
+  em_porcionamento: { 
+    title: 'EM PORCIONAMENTO', 
+    bgColor: 'bg-yellow-50 dark:bg-yellow-950/30',
+    textColor: 'text-yellow-800 dark:text-yellow-100',
+    headerBg: 'bg-yellow-200 dark:bg-yellow-800'
+  },
+  finalizado: { 
+    title: 'FINALIZADO', 
+    bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+    textColor: 'text-emerald-800 dark:text-emerald-100',
+    headerBg: 'bg-emerald-200 dark:bg-emerald-800'
+  },
 };
 
 const ResumoDaProducao = () => {
@@ -2096,72 +2116,83 @@ const ResumoDaProducao = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (
-            <div key={columnId} className="flex flex-col">
-              <Card className={`${columnConfig[columnId].color} border-2`}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{columnConfig[columnId].title}</span>
-                      {/* Mostrar badge de filtro ativo na coluna A PRODUZIR */}
-                      {columnId === 'a_produzir' && lojaFiltrada && (
-                        <Badge 
-                          variant="outline" 
-                          className="bg-primary/10 text-primary border-primary/30 cursor-pointer hover:bg-primary/20"
-                          onClick={() => {
-                            setLojaFiltrada(null);
-                          }}
-                        >
-                          {lojaFiltrada.nome} ✕
-                        </Badge>
-                      )}
+          {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => {
+            const config = columnConfig[columnId];
+            const columnCount = columnId === 'a_produzir' && lojaFiltrada
+              ? columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaFiltrada.id).length
+              : columns[columnId].length;
+            
+            return (
+              <div key={columnId} className="flex flex-col">
+                <Card className={`${config.bgColor} border-0 shadow-sm overflow-hidden`}>
+                  {/* Header colorido da coluna */}
+                  <div className={`${config.headerBg} px-4 py-3`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold uppercase tracking-wide ${config.textColor}`}>
+                          {config.title}
+                        </span>
+                        {/* Badge de filtro ativo na coluna A PRODUZIR */}
+                        {columnId === 'a_produzir' && lojaFiltrada && (
+                          <Badge 
+                            variant="outline" 
+                            className="bg-white/80 dark:bg-gray-900/80 text-primary border-primary/30 cursor-pointer hover:bg-white dark:hover:bg-gray-900 text-xs"
+                            onClick={() => setLojaFiltrada(null)}
+                          >
+                            {lojaFiltrada.nome} ✕
+                          </Badge>
+                        )}
+                      </div>
+                      <Badge 
+                        className={`${config.textColor} bg-white/50 dark:bg-black/30 border-0 font-bold text-sm min-w-[28px] justify-center`}
+                      >
+                        {columnCount}
+                      </Badge>
                     </div>
-                    <Badge variant="secondary" className="ml-2">
-                      {columnId === 'a_produzir' && lojaFiltrada
-                        ? columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaFiltrada.id).length
-                        : columns[columnId].length
-                      }
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 min-h-[500px]">
-                  {/* Coluna A PRODUZIR usa Stack com filtro por loja */}
-                  {columnId === 'a_produzir' ? (
-                    <ProductGroupedStacks
-                      registros={columns.a_produzir}
-                      columnId="a_produzir"
-                      onAction={(registro) => handleCardAction(registro, 'a_produzir')}
-                      onTimerFinished={handleTimerFinished}
-                      onCancelarPreparo={handleOpenCancelarModal}
-                      onRegistrarPerda={handleOpenPerdaModal}
-                      lojaFiltradaId={lojaFiltrada?.id}
-                      estoquesCPD={estoqueCPD}
-                    />
-                  ) : (
-                    <>
-                      {columns[columnId].map((registro) => (
-                        <KanbanCard
-                          key={registro.id}
-                          registro={registro}
-                          columnId={columnId}
-                          onAction={() => handleCardAction(registro, columnId)}
-                          onTimerFinished={handleTimerFinished}
-                          onCancelarPreparo={() => handleOpenCancelarModal(registro)}
-                          onRegistrarPerda={() => handleOpenPerdaModal(registro)}
-                        />
-                      ))}
-                      
-                      {columns[columnId].length === 0 && (
-                        <div className="text-center py-8 text-muted-foreground text-sm">
-                          Nenhum item nesta coluna
-                        </div>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          ))}
+                  </div>
+                  
+                  <CardContent className="space-y-3 min-h-[500px] p-4">
+                    {/* Coluna A PRODUZIR usa Stack com filtro por loja */}
+                    {columnId === 'a_produzir' ? (
+                      <ProductGroupedStacks
+                        registros={columns.a_produzir}
+                        columnId="a_produzir"
+                        onAction={(registro) => handleCardAction(registro, 'a_produzir')}
+                        onTimerFinished={handleTimerFinished}
+                        onCancelarPreparo={handleOpenCancelarModal}
+                        onRegistrarPerda={handleOpenPerdaModal}
+                        lojaFiltradaId={lojaFiltrada?.id}
+                        estoquesCPD={estoqueCPD}
+                      />
+                    ) : (
+                      <>
+                        {columns[columnId].map((registro) => (
+                          <KanbanCard
+                            key={registro.id}
+                            registro={registro}
+                            columnId={columnId}
+                            onAction={() => handleCardAction(registro, columnId)}
+                            onTimerFinished={handleTimerFinished}
+                            onCancelarPreparo={() => handleOpenCancelarModal(registro)}
+                            onRegistrarPerda={() => handleOpenPerdaModal(registro)}
+                          />
+                        ))}
+                        
+                        {columns[columnId].length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                            <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
+                              <span className="text-2xl">📦</span>
+                            </div>
+                            <span className="text-sm">Nenhum item nesta coluna</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })}
         </div>
       </div>
 

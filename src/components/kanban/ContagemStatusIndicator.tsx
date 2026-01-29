@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Clock, Store, Package, Rocket, Star } from "lucide-react";
+import { CheckCircle2, Clock, Store, Package, Play, Star, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, parseISO } from "date-fns";
 
@@ -65,8 +65,8 @@ export function ContagemStatusIndicator({
   }
 
   return (
-    <Card className="mb-4 border-dashed">
-      <CardHeader className="pb-2 pt-3 px-4">
+    <Card className="border-dashed">
+      <CardHeader className="pb-3 pt-4 px-4">
         <CardTitle className="text-sm font-medium flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Store className="h-4 w-4 text-muted-foreground" />
@@ -83,8 +83,9 @@ export function ContagemStatusIndicator({
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="px-4 pb-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <CardContent className="px-4 pb-4">
+        {/* Grid responsivo: 1 col mobile, 2 cols tablet, 4 cols desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {enviaram.map((loja) => {
             let horarioFormatado = '';
             if (loja.ultimaAtualizacao) {
@@ -107,12 +108,12 @@ export function ContagemStatusIndicator({
               <div
                 key={loja.id}
                 className={cn(
-                  "flex flex-col p-2 rounded-md border transition-all cursor-pointer",
+                  "rounded-lg p-4 transition-all cursor-pointer border-2",
                   isSelected
                     ? "bg-primary/10 border-primary ring-2 ring-primary/30"
                     : isMaiorDemanda 
-                      ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 hover:border-amber-400" 
-                      : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400"
+                      ? "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 hover:border-amber-400 hover:shadow-md" 
+                      : "bg-emerald-100 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-600 hover:border-emerald-400 hover:shadow-md"
                 )}
                 onClick={() => {
                   if (onSelecionarLoja) {
@@ -120,98 +121,106 @@ export function ContagemStatusIndicator({
                   }
                 }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isMaiorDemanda ? (
-                      <Star className="h-4 w-4 text-amber-600 dark:text-amber-400 fill-amber-600 dark:fill-amber-400" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    )}
-                    <span className={cn(
-                      "text-sm font-medium truncate max-w-[120px]",
-                      isMaiorDemanda 
-                        ? "text-amber-700 dark:text-amber-300" 
-                        : "text-emerald-700 dark:text-emerald-300"
-                    )}>
-                      {loja.nome}
-                    </span>
-                  </div>
+                {/* Ícone circular + Nome */}
+                <div className="flex items-center gap-2 mb-2">
                   <div className={cn(
-                    "flex items-center gap-1.5 text-xs",
+                    "w-7 h-7 rounded-full flex items-center justify-center shrink-0",
+                    isMaiorDemanda 
+                      ? "bg-amber-500 dark:bg-amber-600" 
+                      : "bg-emerald-500 dark:bg-emerald-600"
+                  )}>
+                    {isMaiorDemanda ? (
+                      <Star className="h-4 w-4 text-white fill-white" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 text-white" />
+                    )}
+                  </div>
+                  <span className={cn(
+                    "font-semibold truncate",
+                    isMaiorDemanda 
+                      ? "text-amber-800 dark:text-amber-200" 
+                      : "text-emerald-800 dark:text-emerald-200"
+                  )}>
+                    {loja.nome}
+                  </span>
+                </div>
+                
+                {/* Estatísticas grandes */}
+                <div className={cn(
+                  "text-lg font-bold mb-1 flex items-center gap-1",
+                  isMaiorDemanda 
+                    ? "text-amber-900 dark:text-amber-100" 
+                    : "text-emerald-900 dark:text-emerald-100"
+                )}>
+                  <Package className="h-4 w-4" />
+                  <span>{loja.totalItens} itens</span>
+                  <span className="text-muted-foreground mx-1">•</span>
+                  <span>{loja.totalUnidades} un</span>
+                </div>
+                
+                {/* Horário de atualização */}
+                {horarioFormatado && (
+                  <div className={cn(
+                    "text-xs mb-3",
                     isMaiorDemanda 
                       ? "text-amber-600 dark:text-amber-400" 
                       : "text-emerald-600 dark:text-emerald-400"
                   )}>
-                    <Package className="h-3 w-3" />
-                    <span>{loja.totalItens} itens</span>
-                    <span className={isMaiorDemanda ? "text-amber-400" : "text-emerald-400"}>•</span>
-                    <span>{loja.totalUnidades} un</span>
+                    Atualizado: {horarioFormatado}
                   </div>
-                </div>
+                )}
                 
-                <div className="flex items-center justify-between mt-1.5">
-                  {horarioFormatado && (
-                    <span className={cn(
-                      "text-[10px] ml-6",
-                      isMaiorDemanda 
-                        ? "text-amber-500 dark:text-amber-400/70" 
-                        : "text-emerald-500 dark:text-emerald-400/70"
-                    )}>
-                      Atualizado: {horarioFormatado}
-                    </span>
-                  )}
-                  
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    {onIniciarProducaoLoja && loja.totalItens > 0 && (
-                      <Button
-                        size="sm"
-                        variant={isMaiorDemanda ? "default" : "outline"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onIniciarProducaoLoja(loja.id, loja.nome);
-                        }}
-                        className={cn(
-                          "h-7 gap-1 text-xs",
-                          isMaiorDemanda && "bg-amber-500 hover:bg-amber-600 text-white"
-                        )}
-                      >
-                        <Rocket className="h-3 w-3" />
-                        Iniciar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                
+                {/* Nota de maior demanda */}
                 {isMaiorDemanda && (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 ml-6">
-                    ★ Maior demanda - recomendamos iniciar por aqui
-                  </span>
+                  <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 mb-3 bg-amber-200/50 dark:bg-amber-800/50 rounded px-2 py-1.5">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    <span>Maior demanda - recomendamos iniciar</span>
+                  </div>
+                )}
+                
+                {/* Botão Iniciar */}
+                {onIniciarProducaoLoja && loja.totalItens > 0 && (
+                  <Button
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onIniciarProducaoLoja(loja.id, loja.nome);
+                    }}
+                    className={cn(
+                      "w-full gap-2",
+                      isMaiorDemanda 
+                        ? "bg-amber-600 hover:bg-amber-700 text-white" 
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    )}
+                  >
+                    <Play className="h-4 w-4" />
+                    Iniciar
+                  </Button>
                 )}
               </div>
             );
           })}
           
+          {/* Cards de lojas aguardando */}
           {aguardando.map(loja => (
             <div
               key={loja.id}
-              className="flex items-center justify-between p-2 bg-muted/50 border border-border rounded-md"
+              className="rounded-lg p-4 bg-muted/50 border-2 border-dashed border-border flex flex-col items-center justify-center min-h-[140px]"
             >
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground animate-pulse" />
-                <span className="text-sm text-muted-foreground truncate max-w-[120px]">
-                  {loja.nome}
-                </span>
-              </div>
-              <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                Aguardando
+              <Clock className="h-6 w-6 text-muted-foreground animate-pulse mb-2" />
+              <span className="text-sm font-medium text-muted-foreground text-center truncate max-w-full">
+                {loja.nome}
+              </span>
+              <Badge variant="outline" className="text-xs text-muted-foreground mt-2">
+                Aguardando contagem
               </Badge>
             </div>
           ))}
         </div>
         
         {aguardando.length > 0 && enviaram.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-2 italic">
-            💡 Clique em "Iniciar" para começar a produção de uma loja.
+          <p className="text-xs text-muted-foreground mt-4 italic text-center">
+            💡 Clique em um card para filtrar a produção por loja ou em "Iniciar" para começar.
           </p>
         )}
       </CardContent>
