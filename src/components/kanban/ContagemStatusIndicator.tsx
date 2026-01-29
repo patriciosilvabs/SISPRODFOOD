@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Clock, Store, Package, Rocket, Star } from "lucide-react";
+import { CheckCircle2, Clock, Store, Package, Rocket, Star, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, parseISO } from "date-fns";
 
@@ -24,12 +24,16 @@ interface ContagemStatusIndicatorProps {
   lojas: Loja[];
   contagensHoje: ContagemData[];
   onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
+  onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void;
+  lojaFiltradaId?: string | null;
 }
 
 export function ContagemStatusIndicator({
   lojas,
   contagensHoje,
   onIniciarProducaoLoja,
+  onSelecionarLoja,
+  lojaFiltradaId,
 }: ContagemStatusIndicatorProps) {
   // Separar lojas que enviaram contagem das que não enviaram
   const { enviaram, aguardando, lojaMaiorDemanda } = useMemo(() => {
@@ -102,16 +106,20 @@ export function ContagemStatusIndicator({
             }
             
             const isMaiorDemanda = lojaMaiorDemanda?.id === loja.id && enviaram.length > 1;
+            const isSelected = lojaFiltradaId === loja.id;
             
             return (
               <div
                 key={loja.id}
                 className={cn(
-                  "flex flex-col p-2 rounded-md border",
-                  isMaiorDemanda 
-                    ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700" 
-                    : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
+                  "flex flex-col p-2 rounded-md border transition-all cursor-pointer",
+                  isSelected
+                    ? "bg-primary/10 border-primary ring-2 ring-primary/30"
+                    : isMaiorDemanda 
+                      ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 hover:border-amber-400" 
+                      : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400"
                 )}
+                onClick={() => onSelecionarLoja?.(isSelected ? null : loja.id, loja.nome)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -154,20 +162,40 @@ export function ContagemStatusIndicator({
                     </span>
                   )}
                   
-                  {onIniciarProducaoLoja && loja.totalItens > 0 && (
-                    <Button
-                      size="sm"
-                      variant={isMaiorDemanda ? "default" : "outline"}
-                      onClick={() => onIniciarProducaoLoja(loja.id, loja.nome)}
-                      className={cn(
-                        "h-7 gap-1 text-xs ml-auto",
-                        isMaiorDemanda && "bg-amber-500 hover:bg-amber-600 text-white"
-                      )}
-                    >
-                      <Rocket className="h-3 w-3" />
-                      Iniciar Produção
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    {onSelecionarLoja && loja.totalItens > 0 && (
+                      <Button
+                        size="sm"
+                        variant={isSelected ? "secondary" : "ghost"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelecionarLoja(isSelected ? null : loja.id, loja.nome);
+                        }}
+                        className="h-7 gap-1 text-xs"
+                      >
+                        <Eye className="h-3 w-3" />
+                        {isSelected ? 'Ver Todos' : 'Ver'}
+                      </Button>
+                    )}
+                    
+                    {onIniciarProducaoLoja && loja.totalItens > 0 && (
+                      <Button
+                        size="sm"
+                        variant={isMaiorDemanda ? "default" : "outline"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onIniciarProducaoLoja(loja.id, loja.nome);
+                        }}
+                        className={cn(
+                          "h-7 gap-1 text-xs",
+                          isMaiorDemanda && "bg-amber-500 hover:bg-amber-600 text-white"
+                        )}
+                      >
+                        <Rocket className="h-3 w-3" />
+                        Iniciar
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
                 {isMaiorDemanda && (

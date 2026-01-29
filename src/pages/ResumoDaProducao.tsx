@@ -152,6 +152,9 @@ const ResumoDaProducao = () => {
     em_porcionamento: [],
     finalizado: [],
   });
+  
+  // Estado para filtro de loja (controlado pelo ContagemStatusIndicator)
+  const [lojaFiltrada, setLojaFiltrada] = useState<{ id: string; nome: string } | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -1941,10 +1944,14 @@ const ResumoDaProducao = () => {
           </div>
         </div>
 
-        {/* Indicador de status das contagens por loja - com botões de iniciar produção */}
+        {/* Indicador de status das contagens por loja - com botões de iniciar produção e filtro */}
         <ContagemStatusIndicator 
           lojas={lojas}
           contagensHoje={contagensHoje}
+          lojaFiltradaId={lojaFiltrada?.id}
+          onSelecionarLoja={(lojaId, lojaNome) => {
+            setLojaFiltrada(lojaId ? { id: lojaId, nome: lojaNome } : null);
+          }}
           onIniciarProducaoLoja={(lojaId, lojaNome) => {
             // Buscar registros da loja na coluna a_produzir
             const registrosDaLoja = columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaId);
@@ -1962,9 +1969,24 @@ const ResumoDaProducao = () => {
               <Card className={`${columnConfig[columnId].color} border-2`}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                    <span>{columnConfig[columnId].title}</span>
+                    <div className="flex items-center gap-2">
+                      <span>{columnConfig[columnId].title}</span>
+                      {/* Mostrar badge de filtro ativo na coluna A PRODUZIR */}
+                      {columnId === 'a_produzir' && lojaFiltrada && (
+                        <Badge 
+                          variant="outline" 
+                          className="cursor-pointer bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
+                          onClick={() => setLojaFiltrada(null)}
+                        >
+                          {lojaFiltrada.nome} ✕
+                        </Badge>
+                      )}
+                    </div>
                     <Badge variant="secondary" className="ml-2">
-                      {columns[columnId].length}
+                      {columnId === 'a_produzir' && lojaFiltrada
+                        ? columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaFiltrada.id).length
+                        : columns[columnId].length
+                      }
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -1978,6 +2000,7 @@ const ResumoDaProducao = () => {
                       onTimerFinished={handleTimerFinished}
                       onCancelarPreparo={handleOpenCancelarModal}
                       onRegistrarPerda={handleOpenPerdaModal}
+                      lojaFiltradaId={lojaFiltrada?.id}
                     />
                   ) : (
                     <>
