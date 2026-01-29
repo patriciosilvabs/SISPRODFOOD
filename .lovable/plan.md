@@ -1,136 +1,175 @@
 
-# Plano: Corrigir Duplicação de Itens no Estoque CPD (Romaneio)
+# Plano: Indicador Visual de Estoque Suficiente no CPD
 
-## Problema Identificado
+## Contexto
 
-Na página de Romaneio, a seção "Estoque Disponível no CPD" exibe **itens duplicados** com quantidades diferentes. Isso ocorre porque as queries buscam registros da tabela `contagem_porcionados` **sem filtrar pelo dia operacional atual**, retornando o histórico de múltiplos dias.
+O operador do CPD precisa saber quando a coluna "A PRODUZIR" está vazia porque **já existe estoque suficiente no CPD** para atender as demandas das lojas. Atualmente, quando não há cards na coluna, a mensagem genérica "Nenhum item nesta coluna" não fornece essa informação importante.
 
-**Exemplo do problema:**
-- BACON - PORCIONADO: 7 un (dia 22)
-- BACON - PORCIONADO: 23 un (dia 23)
-- BACON - PORCIONADO: 20 un (dia 28)
-- BACON - PORCIONADO: 67 un (dia 29) ← **Valor correto (hoje)**
+## Lógica do Sistema (Arquitetura Existente)
 
-A página "Estoque Porcionados (CPD)" funciona corretamente porque **filtra por dia_operacional**, mostrando apenas os 67 un.
+Segundo a documentação do projeto:
+- **Saldo Líquido** = Demanda das Lojas - Estoque CPD (`final_sobra` do dia atual)
+- Cards de produção só são gerados quando Saldo Líquido > 0
+- Se o CPD já possui estoque suficiente, **nenhum card é criado**
 
-## Causa Raiz
+Portanto, quando a coluna está vazia, pode significar:
+1. **Nenhuma loja enviou contagem ainda** (aguardando demandas)
+2. **CPD já tem estoque suficiente** (cenário que o operador precisa visualizar)
 
-No arquivo `src/pages/Romaneio.tsx`, duas queries não incluem o filtro de dia operacional:
+## Solução Proposta
 
-**Query 1 - Estoque CPD (linhas 738-746):**
-```typescript
-// PROBLEMA: Falta .eq('dia_operacional', serverDate)
-const { data: contagemCPD } = await supabase
-  .from('contagem_porcionados')
-  .select(...)
-  .eq('loja_id', lojaCPD.id)
-  .gt('final_sobra', 0);  // ❌ Retorna TODOS os dias
-```
+Adicionar um indicador visual especial na coluna "A PRODUZIR" quando ela está vazia mas o CPD tem estoque registrado. O indicador mostrará:
+- Ícone de check verde
+- Mensagem: "Estoque CPD suficiente"
+- Lista dos itens com estoque disponível no CPD
 
-**Query 2 - Demandas das Lojas (linhas 772-781):**
-```typescript
-// PROBLEMA: Falta .eq('dia_operacional', serverDate)
-const { data: contagensData } = await supabase
-  .from('contagem_porcionados')
-  .select(...)
-  .in('loja_id', lojasIds)
-  .gt('a_produzir', 0);  // ❌ Retorna TODOS os dias
-```
+## Arquivos a Criar/Modificar
 
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/Romaneio.tsx` | Adicionar `.eq('dia_operacional', serverDate)` nas queries de contagem |
+| Arquivo | Ação |
+|---------|------|
+| `src/components/kanban/CPDStockIndicator.tsx` | **CRIAR** - Novo componente de indicador |
+| `src/pages/ResumoDaProducao.tsx` | **MODIFICAR** - Buscar estoque CPD e passar ao componente |
+| `src/components/kanban/ProductGroupedStacks.tsx` | **MODIFICAR** - Exibir indicador quando coluna vazia + estoque CPD disponível |
 
 ## Alterações Técnicas
 
-### Query 1 - Estoque CPD (linhas 738-746)
+### 1. Novo Componente: CPDStockIndicator.tsx
 
-**Antes:**
 ```typescript
-const { data: contagemCPD, error: contagemError } = await supabase
+// Componente que mostra quando CPD tem estoque suficiente
+// Exibido quando coluna "A PRODUZIR" está vazia
+
+interface CPDStockItem {
+  item_nome: string;
+  quantidade: number;
+}
+
+interface CPDStockIndicatorProps {
+  estoquesCPD: CPDStockItem[];
+  totalItens: number;
+  totalUnidades: number;
+}
+
+// Renderiza:
+// - Badge verde "Estoque suficiente"
+// - Ícone PackageCheck
+// - Lista colapsável com itens e quantidades
+// - Total de itens e unidades disponíveis
+```
+
+### 2. ResumoDaProducao.tsx
+
+Buscar estoque CPD na função `loadProducaoRegistros`:
+
+```typescript
+// Dentro de loadProducaoRegistros, após buscar lojas:
+
+// Buscar estoque atual do CPD (final_sobra > 0 do dia atual)
+const { data: estoqueCPDData } = await supabase
   .from('contagem_porcionados')
   .select(`
-    item_porcionado_id, 
+    item_porcionado_id,
     final_sobra,
     itens_porcionados!inner(nome)
   `)
-  .eq('loja_id', lojaCPD.id)
+  .eq('loja_id', cpdLoja?.id)
+  .eq('dia_operacional', hoje)
   .gt('final_sobra', 0);
+
+// Transformar em lista para o indicador
+const estoquesCPD = estoqueCPDData?.map(e => ({
+  item_nome: e.itens_porcionados.nome,
+  quantidade: e.final_sobra,
+})) || [];
+
+setEstoqueCPD(estoquesCPD);
 ```
 
-**Depois:**
+Novo estado:
 ```typescript
-const { data: contagemCPD, error: contagemError } = await supabase
-  .from('contagem_porcionados')
-  .select(`
-    item_porcionado_id, 
-    final_sobra,
-    itens_porcionados!inner(nome)
-  `)
-  .eq('loja_id', lojaCPD.id)
-  .eq('dia_operacional', serverDate)  // ✅ Filtrar pelo dia atual
-  .gt('final_sobra', 0);
+const [estoqueCPD, setEstoqueCPD] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
 ```
 
-### Query 2 - Demandas das Lojas (linhas 772-781)
+### 3. ProductGroupedStacks.tsx
 
-**Antes:**
+Adicionar prop e lógica de exibição:
+
 ```typescript
-const { data: contagensData, error: contagensLojasError } = await supabase
-  .from('contagem_porcionados')
-  .select(`
-    loja_id,
-    item_porcionado_id,
-    a_produzir,
-    itens_porcionados!inner(id, nome)
-  `)
-  .in('loja_id', lojasIds)
-  .gt('a_produzir', 0);
+interface ProductGroupedStacksProps {
+  // ... props existentes
+  estoquesCPD?: Array<{ item_nome: string; quantidade: number }>;
+}
+
+// Na renderização quando filteredRegistros.length === 0:
+if (filteredRegistros.length === 0) {
+  // Se tem estoque CPD, mostrar indicador especial
+  if (estoquesCPD && estoquesCPD.length > 0) {
+    return <CPDStockIndicator estoquesCPD={estoquesCPD} />;
+  }
+  
+  // Caso contrário, mensagem padrão
+  return (
+    <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+      {lojaFiltradaId ? 'Nenhum item para esta loja' : 'Nenhum item nesta coluna'}
+    </div>
+  );
+}
 ```
 
-**Depois:**
-```typescript
-const { data: contagensData, error: contagensLojasError } = await supabase
-  .from('contagem_porcionados')
-  .select(`
-    loja_id,
-    item_porcionado_id,
-    a_produzir,
-    itens_porcionados!inner(id, nome)
-  `)
-  .in('loja_id', lojasIds)
-  .eq('dia_operacional', serverDate)  // ✅ Filtrar pelo dia atual
-  .gt('a_produzir', 0);
+## Design Visual do Indicador
+
+```
+┌─────────────────────────────────────────────┐
+│  ✓ Estoque CPD Suficiente                  │
+│  ─────────────────────────────────          │
+│  📦 5 itens • 127 unidades disponíveis      │
+│                                             │
+│  ▼ Ver itens em estoque                     │
+│  ┌─────────────────────────────────────┐   │
+│  │ BACON PORCIONADO          67 un     │   │
+│  │ CALABRESA FATIADA         32 un     │   │
+│  │ PRESUNTO FATIA FINA       18 un     │   │
+│  │ MUSSARELA RALADA          10 un     │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  💡 Nenhuma produção necessária agora       │
+└─────────────────────────────────────────────┘
 ```
 
-### Queries de Validação/Débito (linhas 1220, 1305, 1358)
+Cores: 
+- Fundo: `bg-emerald-50 dark:bg-emerald-950/30`
+- Borda: `border-emerald-300 dark:border-emerald-700`
+- Ícone e texto: `text-emerald-700 dark:text-emerald-300`
 
-As queries de validação e débito de estoque também precisam de filtro para garantir que estão operando no registro correto do dia:
+## Fluxo de Dados
 
-- Linha 1220-1225: `.eq('dia_operacional', serverDate)`
-- Linha 1305-1310: `.eq('dia_operacional', serverDate)`
-- Linha 1358-1363: `.eq('dia_operacional', serverDate)`
+```
+loadProducaoRegistros()
+         │
+         ├─► Busca producao_registros (cards)
+         │
+         ├─► Busca contagem_porcionados do CPD
+         │      └── Filtra: dia_operacional = hoje
+         │      └── Filtra: final_sobra > 0
+         │
+         └─► Passa estoquesCPD para ProductGroupedStacks
+                  │
+                  └─► Se coluna vazia + estoque > 0:
+                            └── Renderiza CPDStockIndicator
+```
 
-> **Nota:** Essas queries usam `.maybeSingle()`, então já retornam um registro único. Porém, sem o filtro de dia, podem retornar um registro de dia anterior. Isso é crítico para garantir que o débito seja feito no registro correto.
+## Comportamento Esperado
 
-## Resultado Esperado
-
-| Local | Antes | Depois |
-|-------|-------|--------|
-| "Estoque Disponível no CPD" | 8x BACON com quantidades diferentes | 1x BACON: 67 un |
-| Demandas das lojas | Duplicadas por dia | Apenas demandas do dia atual |
-| Débito de estoque | Pode debitar registro antigo | Sempre debita registro do dia |
-
-## Alinhamento com Arquitetura
-
-Esta correção segue a documentação existente:
-
-> "O fluxo de estoque entre CPD e lojas utiliza o campo `final_sobra` na tabela `contagem_porcionados` (dia operacional atual) como fonte única de verdade" - memory `inventory-flow-cpd-stores-sync`
+| Cenário | Coluna "A PRODUZIR" | Exibição |
+|---------|---------------------|----------|
+| Sem demanda + Sem estoque CPD | Vazia | "Nenhum item nesta coluna" |
+| Sem demanda + Com estoque CPD | Vazia | **Indicador verde com lista de estoque** |
+| Com demanda (cards gerados) | Cards visíveis | Cards normais |
+| Loja filtrada sem itens + CPD tem estoque | Vazia | **Indicador verde** |
 
 ## Impacto
 
-- **Zero risco de perda de dados**: Apenas adiciona filtro de leitura
-- **Comportamento correto**: Alinha Romaneio com padrão já usado em outras páginas (AjusteEstoquePorcionadosCPD, ContagemPorcionados)
-- **Performance**: Melhora performance ao filtrar menos registros
+- **UX melhorada**: Operador sabe imediatamente que não há trabalho porque o estoque está ok
+- **Visibilidade**: Lista mostra exatamente quais itens e quantidades estão disponíveis
+- **Zero impacto em lógica existente**: Apenas adiciona visualização
+- **Consistente com design**: Usa padrões visuais já existentes (cores emerald para sucesso)
