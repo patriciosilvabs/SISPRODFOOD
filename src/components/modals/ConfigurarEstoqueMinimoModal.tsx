@@ -81,7 +81,8 @@ export function ConfigurarEstoqueMinimoModal({ open, onOpenChange }: ConfigurarE
     try {
       const { data, error } = await supabase
         .from("lojas")
-        .select("id, nome")
+        .select("id, nome, tipo")
+        .neq('tipo', 'cpd')
         .order("nome");
 
       if (error) throw error;
