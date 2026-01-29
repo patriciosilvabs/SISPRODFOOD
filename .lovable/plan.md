@@ -1,72 +1,80 @@
 
 
-# Plano: Corrigir Erro de Foreign Key para Usuário Sistema
+# Plano: Corrigir Romaneios "Fantasmas" Sem Itens
 
 ## Problema Identificado
 
-O erro `Key (usuario_id)=(00000000-0000-0000-0000-000000000000) is not present in table "profiles"` ocorre porque:
+Ao tentar receber porcionados, o usuário de loja vê romaneios vazios (sem itens para conferir). O botão "Confirmar Recebimento" não funciona porque não há itens salvos.
 
-1. A correção anterior implementou um UUID de sistema como fallback (`00000000-0000-0000-0000-000000000000`)
-2. Existe uma constraint de foreign key (`producao_registros_usuario_id_fkey`) que exige que o `usuario_id` exista na tabela `profiles`
-3. O UUID de sistema não existe na tabela `profiles`
+**Causa Raiz:**
+- Existem **5 romaneios corrompidos** no banco de dados com status `enviado` mas **zero itens** associados
+- Esses romaneios foram criados por um fluxo automático antigo (`observacao: "Criado automaticamente ao finalizar produção"`) que foi removido ou falhou silenciosamente ao inserir itens
+- O frontend exibe esses romaneios normalmente, mas a lista de itens está vazia
 
-```text
-┌─────────────────────────────┐     ┌──────────────────────────────────┐
-│  Trigger com fallback       │────▶│ INSERT usuario_id = 00000...000  │
-│  (UUID Sistema)             │     │ FK constraint → profiles ❌       │
-└─────────────────────────────┘     └──────────────────────────────────┘
-```
+**Romaneios Afetados:**
+| ID | Loja | Data Criação |
+|----|------|-------------|
+| 5c83f5b6-... | UNIDADE ALEIXO | 23/01/2026 05:19 |
+| 225e8472-... | UNIDADE CACHOEIRINHA | 23/01/2026 05:19 |
+| e557999d-... | UNIDADE JAPIIM | 23/01/2026 05:19 |
+| 65d8c58a-... | UNIDADE ALEIXO | 23/01/2026 04:18 |
+| 9c1dfb74-... | UNIDADE JAPIIM | 23/01/2026 04:18 |
 
 ---
 
 ## Solução Proposta
 
-Criar um perfil de sistema na tabela `profiles` com o UUID reservado, permitindo que registros automáticos (triggers) usem esse usuário.
+### 1. Limpeza de Dados Corrompidos (Migração SQL)
 
-### Migração SQL
+Marcar os romaneios sem itens como `cancelado` para que não apareçam mais na aba "Receber":
 
 ```sql
--- Criar perfil de sistema para suportar registros automáticos
-INSERT INTO profiles (id, nome, email)
-VALUES (
-    '00000000-0000-0000-0000-000000000000',
-    'Sistema',
-    'sistema@interno.local'
-)
-ON CONFLICT (id) DO NOTHING;
+UPDATE romaneios
+SET status = 'cancelado',
+    observacao = COALESCE(observacao, '') || ' [Cancelado automaticamente: romaneio sem itens]'
+WHERE status = 'enviado'
+AND id NOT IN (SELECT DISTINCT romaneio_id FROM romaneio_itens);
 ```
 
----
+### 2. Proteção no Frontend (Opcional mas Recomendado)
 
-## Alternativas Consideradas
+Adicionar filtro para ignorar romaneios sem itens na consulta:
 
-| Opção | Vantagem | Desvantagem |
-|-------|----------|-------------|
-| **Criar perfil sistema** ✅ | Simples, mantém integridade referencial | Perfil "fantasma" na tabela |
-| Remover FK constraint | Permite qualquer UUID | Perde integridade referencial |
-| Tornar `usuario_id` nullable | Mais flexível | Quebra código existente, mudança maior |
+```typescript
+// Em fetchRomaneiosEnviados - filtrar romaneios vazios
+const romaneiosFiltrados = romaneiosFormatados.filter(r => 
+  r.romaneio_itens && r.romaneio_itens.length > 0
+);
+```
 
-A opção de criar um perfil de sistema é a mais simples e segura.
+Ou exibir mensagem clara quando romaneio não tem itens:
+
+```typescript
+{romaneio.romaneio_itens.length === 0 && (
+  <div className="p-4 text-center text-muted-foreground bg-amber-50 rounded border border-amber-200">
+    <AlertCircle className="w-5 h-5 mx-auto mb-2 text-amber-500" />
+    <p className="font-medium">Romaneio sem itens</p>
+    <p className="text-sm">Este romaneio foi criado sem itens associados e não pode ser recebido.</p>
+  </div>
+)}
+```
 
 ---
 
 ## Resultado Esperado
 
-| Cenário | Comportamento |
-|---------|---------------|
-| Chamada do Frontend (usuário logado) | `usuario_id` = ID do usuário real |
-| Chamada de Trigger (sistema) | `usuario_id` = `00000000-0000-0000-0000-000000000000` (Sistema) |
-
-Após a migração:
-1. Salvar estoques ideais semanais funcionará sem erro
-2. Os registros criados por triggers terão `usuario_nome = 'Sistema'`
-3. O perfil de sistema será identificável pelo email `sistema@interno.local`
+| Antes | Depois |
+|-------|--------|
+| Usuário vê cards de romaneio vazios | Romaneios corrompidos marcados como "cancelado" |
+| Botão "Confirmar Recebimento" não funciona | Apenas romaneios válidos (com itens) aparecem |
+| Confusão e erro de operação | Interface clara e funcional |
 
 ---
 
 ## Detalhes Técnicos
 
-| Arquivo | Mudança |
-|---------|---------|
-| Nova migração SQL | Insere perfil de sistema na tabela `profiles` |
+| Arquivo/Área | Mudança |
+|--------------|---------|
+| **Migração SQL** | Cancelar romaneios sem itens associados |
+| **src/pages/Romaneio.tsx** | Filtrar romaneios vazios ou exibir mensagem explicativa |
 
