@@ -82,8 +82,9 @@ export const Layout = ({ children }: LayoutProps) => {
   const canSeeProducao = hasPageAccess('/resumo-da-producao');
   const canSeeInsumos = hasPageAccess('/insumos');
   const canSeeEstoqueProdutosCPD = hasPageAccess('/estoque-produtos-cpd');
+  const canSeeEstoquePorcionadosCPD = hasPageAccess('/estoque-porcionados-cpd');
   const canSeeReposicaoLoja = hasPageAccess('/reposicao-loja');
-  const canSeeCPD = canSeeProducao || canSeeInsumos || canSeeEstoqueProdutosCPD || canSeeReposicaoLoja;
+  const canSeeCPD = canSeeProducao || canSeeInsumos || canSeeEstoqueProdutosCPD || canSeeEstoquePorcionadosCPD || canSeeReposicaoLoja;
   
   // Loja
   const canSeeContagem = hasPageAccess('/contagem-porcionados');
@@ -124,6 +125,9 @@ export const Layout = ({ children }: LayoutProps) => {
           )}
           {canSeeEstoqueProdutosCPD && (
             <NavLink to="/estoque-produtos-cpd" icon={Warehouse}>Estoque de Produtos</NavLink>
+          )}
+          {canSeeEstoquePorcionadosCPD && (
+            <NavLink to="/estoque-porcionados-cpd" icon={Boxes}>Estoque Porcionados</NavLink>
           )}
           {canSeeReposicaoLoja && (
             <NavLink to="/reposicao-loja" icon={Store}>Reposição de Lojas</NavLink>
