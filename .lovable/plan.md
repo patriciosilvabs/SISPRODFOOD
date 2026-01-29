@@ -1,185 +1,123 @@
 
-# Plano: Corrigir Atualização de Estoque CPD na Finalização de Produção
+# Plano: Corrigir Inconsistências no Estoque CPD e Lotes que Desaparecem
 
-## Problema Identificado
+## Problemas Identificados
 
-Quando uma produção é finalizada, o sistema deveria atualizar o estoque de porcionados do CPD na tabela `contagem_porcionados`. Porém, a atualização está sendo feita **sem filtrar pelo dia operacional atual**, causando:
+### Problema 1: Indicador "Estoque CPD Suficiente" mostra dados incorretos
 
-1. O código busca qualquer registro existente (sem filtro de data)
-2. Se encontra um registro de **dia anterior**, atualiza ele
-3. Como a página "Estoque Porcionados (CPD)" filtra por `dia_operacional = hoje`, o registro antigo não aparece
-4. Resultado: produção finalizada mas estoque aparece como **0 unidades**
+**Causa raiz**: O `loadProducaoRegistros` busca o estoque CPD corretamente, MAS o problema está em outro lugar. Ao finalizar uma produção, o código nas **linhas 1549-1565** faz:
 
-## Código Problemático
-
-**Arquivo:** `src/pages/ResumoDaProducao.tsx` - função `handleFinalizarProducao`
-
-**Linhas 1478-1509 (problema):**
 ```typescript
-// PROBLEMA: Não filtra por dia_operacional
-const { data: contagemExistente } = await supabase
+// Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
+const { data: contagensAtuais } = await supabase
   .from('contagem_porcionados')
   .select('id, final_sobra')
-  .eq('loja_id', cpdLoja.id)
-  .eq('item_porcionado_id', selectedRegistro.item_id)
-  .maybeSingle(); // ← Pode retornar registro de dia ANTERIOR
+  .eq('item_porcionado_id', selectedRegistro.item_id); // SEM FILTRO!
 
-// PROBLEMA: Insert sem dia_operacional
-await supabase
-  .from('contagem_porcionados')
-  .insert({
-    loja_id: cpdLoja.id,
-    item_porcionado_id: selectedRegistro.item_id,
-    final_sobra: data.unidades_reais,
-    // ← FALTA: dia_operacional
-  });
+for (const contagem of contagensAtuais) {
+  await supabase
+    .from('contagem_porcionados')
+    .update({ ideal_amanha: contagem.final_sobra }) // Zera a_produzir = ideal - sobra = 0
+    .eq('id', contagem.id);
+}
 ```
 
-## Código Correto (Referência)
+Isso **zera a demanda (`a_produzir`) de TODAS as lojas e TODOS os dias** para aquele item! Resultado:
+- A loja UNIDADE ALEIXO que tinha demanda de 99 unidades agora mostra 0
+- O sistema interpreta que não há demanda pendente
+- O indicador "Estoque CPD Suficiente" aparece mesmo quando as lojas precisam de itens
 
-O modal `AjustarEstoquePorcionadoModal.tsx` já faz corretamente (linhas 113-163):
+### Problema 2: Segundo lote de MASSA desaparece
 
-```typescript
-// 1. Busca data do servidor
-const { data: dataServidor } = await supabase.rpc('get_current_date');
-const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+**Causa raiz**: Quando o primeiro lote é finalizado:
+1. O código zera o `ideal_amanha` de todas as contagens
+2. Isso faz `a_produzir = 0` para todas as lojas
+3. O trigger `trg_criar_producao_apos_contagem` é disparado
+4. A função `criar_ou_atualizar_producao_registro` recalcula: demanda = 0, portanto **deleta os cards pendentes**
+5. O segundo lote de MASSA (que ainda não foi produzido) é deletado!
 
-// 2. Busca COM filtro de dia_operacional
-.eq('dia_operacional', diaOperacional)
-
-// 3. Insert COM dia_operacional
-dia_operacional: diaOperacional,
+**Evidência no banco de dados**:
 ```
+MASSA - PORCIONADO: total_tracos_lote = 2, mas só existe 1 registro (status: finalizado)
+```
+
+O segundo lote foi deletado pela função RPC quando ela verificou que `saldo_liquido <= 0`.
 
 ## Solução
 
-Modificar o `handleFinalizarProducao` para:
+### O que NÃO deve acontecer
 
-1. Buscar a data do servidor (`get_current_date`)
-2. Adicionar filtro `.eq('dia_operacional', diaOperacional)` na query de busca
-3. Incluir `dia_operacional: diaOperacional` no insert de nova contagem
+O código de "resetar a_produzir" após finalizar produção **NÃO deveria existir**. Essa lógica foi introduzida incorretamente e causa os dois problemas.
 
-## Arquivo a Modificar
+A arquitetura correta é:
+- A demanda das lojas (`ideal_amanha`) deve permanecer inalterada até nova contagem
+- O estoque produzido é creditado no CPD
+- O Romaneio debita o estoque CPD e envia para as lojas
+- Após receber, a loja faz nova contagem atualizando `final_sobra`
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/ResumoDaProducao.tsx` | Adicionar filtro de dia operacional na atualização de estoque CPD |
+### Alteração Necessária
 
-## Alterações Técnicas
+**Arquivo**: `src/pages/ResumoDaProducao.tsx`
 
-### Dentro de `handleFinalizarProducao` (linhas ~1469-1515)
+**Remover completamente** as linhas 1549-1565 que fazem o reset incorreto do `ideal_amanha`.
 
-**Antes:**
+**Antes (linhas 1549-1565)**:
 ```typescript
-if (cpdLoja) {
-  // Buscar contagem existente (unique por loja_id + item_porcionado_id)
-  const { data: contagemExistente } = await supabase
-    .from('contagem_porcionados')
-    .select('id, final_sobra')
-    .eq('loja_id', cpdLoja.id)
-    .eq('item_porcionado_id', selectedRegistro.item_id)
-    .maybeSingle();
-  
-  if (contagemExistente) {
-    // Incrementar final_sobra
+// Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
+// (a_produzir é coluna gerada, não pode ser atualizada diretamente)
+const { data: contagensAtuais, error: fetchError } = await supabase
+  .from('contagem_porcionados')
+  .select('id, final_sobra')
+  .eq('item_porcionado_id', selectedRegistro.item_id);
+
+if (fetchError) {
+  console.error('Erro ao buscar contagens para reset:', fetchError);
+} else if (contagensAtuais) {
+  for (const contagem of contagensAtuais) {
     await supabase
       .from('contagem_porcionados')
-      .update({ 
-        final_sobra: contagemExistente.final_sobra + data.unidades_reais,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', contagemExistente.id);
-  } else {
-    // Criar nova contagem
-    await supabase
-      .from('contagem_porcionados')
-      .insert({
-        loja_id: cpdLoja.id,
-        item_porcionado_id: selectedRegistro.item_id,
-        final_sobra: data.unidades_reais,
-        ideal_amanha: 0,
-        usuario_id: user?.id || '',
-        usuario_nome: profile?.nome || 'Sistema',
-        organization_id: organizationId
-      });
+      .update({ ideal_amanha: contagem.final_sobra })
+      .eq('id', contagem.id);
   }
-  console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome}`);
 }
 ```
 
-**Depois:**
-```typescript
-if (cpdLoja) {
-  // CORREÇÃO: Buscar data do servidor para consistência
-  const { data: dataServidor } = await supabase.rpc('get_current_date');
-  const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+**Depois**: Remover completamente esse bloco de código.
 
-  // Buscar contagem existente DO DIA ATUAL
-  const { data: contagemExistente } = await supabase
-    .from('contagem_porcionados')
-    .select('id, final_sobra')
-    .eq('loja_id', cpdLoja.id)
-    .eq('item_porcionado_id', selectedRegistro.item_id)
-    .eq('dia_operacional', diaOperacional)  // ✅ Filtrar pelo dia atual
-    .maybeSingle();
-  
-  if (contagemExistente) {
-    // Incrementar final_sobra
-    await supabase
-      .from('contagem_porcionados')
-      .update({ 
-        final_sobra: contagemExistente.final_sobra + data.unidades_reais,
-        updated_at: new Date().toISOString(),
-        usuario_id: user?.id || '',
-        usuario_nome: profile?.nome || 'Sistema',
-      })
-      .eq('id', contagemExistente.id);
-  } else {
-    // Criar nova contagem PARA O DIA ATUAL
-    await supabase
-      .from('contagem_porcionados')
-      .insert({
-        loja_id: cpdLoja.id,
-        item_porcionado_id: selectedRegistro.item_id,
-        dia_operacional: diaOperacional,  // ✅ Incluir dia operacional
-        final_sobra: data.unidades_reais,
-        ideal_amanha: 0,
-        usuario_id: user?.id || '',
-        usuario_nome: profile?.nome || 'Sistema',
-        organization_id: organizationId
-      });
-  }
-  console.log(`Contagem CPD atualizada: +${data.unidades_reais} unidades de ${selectedRegistro.item_nome} (dia: ${diaOperacional})`);
-}
-```
-
-## Fluxo Corrigido
+## Fluxo Correto Após Correção
 
 ```
 Finalizar Produção
-        │
-        ├─► Buscar data do servidor (get_current_date)
-        │         └── Ex: "2026-01-29"
-        │
-        ├─► Buscar contagem do CPD para HOJE
-        │         └── .eq('dia_operacional', '2026-01-29')
-        │
-        └─► Se encontrou registro de HOJE:
-                  └── Incrementar final_sobra
-            Se NÃO encontrou:
-                  └── Criar novo registro com dia_operacional = '2026-01-29'
+       │
+       ├─► Atualiza estoque CPD (tabela estoque_cpd)
+       │
+       ├─► Atualiza contagem_porcionados do CPD (final_sobra += unidades_reais)
+       │
+       └─► NÃO toca nas contagens das lojas (ideal_amanha permanece inalterado)
+       
+       ↓ Resultado:
+       
+- Demanda das lojas permanece visível
+- Cards pendentes NÃO são deletados
+- Saldo líquido é calculado corretamente: demanda - estoque_cpd
+- Segundo lote continua aguardando produção
 ```
 
-## Resultado Esperado
+## Por Que Essa Lógica Estava Incorreta
 
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Finalizar MASSA (57 un) | Estoque CPD: 0 un (tela mostra dia atual) | Estoque CPD: 57 un |
-| Múltiplas finalizações no dia | Pode atualizar registro de ontem | Sempre incrementa registro de hoje |
-| Visualização na página | Inconsistente | Consistente com produção do dia |
+O código parece ter sido adicionado com a intenção de "limpar" a demanda após produzir. Mas isso quebra o modelo:
 
-## Impacto
+| Aspecto | Comportamento Incorreto | Comportamento Correto |
+|---------|------------------------|----------------------|
+| Demanda da loja | Zerada imediatamente | Permanece até romaneio/recebimento |
+| Lotes pendentes | Deletados pelo trigger | Mantidos para produção |
+| Indicador CPD | Mostra "suficiente" incorretamente | Compara demanda real vs estoque |
+| Romaneio | Não tem mais demandas | Mostra itens pendentes para envio |
 
-- **Zero risco de perda de dados**: Apenas corrige o filtro de busca
-- **Consistência garantida**: Alinha com o padrão já usado em `AjustarEstoquePorcionadoModal`
-- **Arquitetura respeitada**: Segue o princípio de que `contagem_porcionados.final_sobra` do dia atual é a fonte de verdade
+## Impacto da Correção
+
+- ✅ Cards de produção não serão mais deletados incorretamente
+- ✅ Lotes múltiplos (ex: 2/2 de MASSA) permanecerão para produção
+- ✅ Indicador "Estoque CPD Suficiente" só aparecerá quando realmente não há demanda pendente
+- ✅ Demandas das lojas permanecerão corretas para o fluxo de Romaneio
+- ✅ Alinhamento com a arquitetura documentada do sistema
