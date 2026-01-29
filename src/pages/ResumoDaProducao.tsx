@@ -1941,10 +1941,19 @@ const ResumoDaProducao = () => {
           </div>
         </div>
 
-        {/* Indicador de status das contagens por loja */}
+        {/* Indicador de status das contagens por loja - com botões de iniciar produção */}
         <ContagemStatusIndicator 
           lojas={lojas}
           contagensHoje={contagensHoje}
+          onIniciarProducaoLoja={(lojaId, lojaNome) => {
+            // Buscar registros da loja na coluna a_produzir
+            const registrosDaLoja = columns.a_produzir.filter(r => r.detalhes_lojas?.[0]?.loja_id === lojaId);
+            if (registrosDaLoja.length > 0) {
+              handleIniciarTudoLoja(lojaId, lojaNome, registrosDaLoja);
+            } else {
+              toast.info(`Nenhum item para produzir da ${lojaNome}`);
+            }
+          }}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1969,7 +1978,6 @@ const ResumoDaProducao = () => {
                       onTimerFinished={handleTimerFinished}
                       onCancelarPreparo={handleOpenCancelarModal}
                       onRegistrarPerda={handleOpenPerdaModal}
-                      onIniciarTudoLoja={handleIniciarTudoLoja}
                     />
                   ) : (
                     <>
