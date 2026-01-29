@@ -1,139 +1,109 @@
 
-# Plano: Evitar Loop do Romaneio no Trigger de Produção
+
+# Plano: Limpar Contagens ao Limpar Produção
 
 ## Problema Identificado
 
-Quando o romaneio envia itens, ele debita o estoque do CPD atualizando `contagem_porcionados.final_sobra`. Isso dispara o trigger `trg_criar_producao_apos_contagem` que recalcula toda a produção, causando um loop infinito:
+Quando o usuário clica em "Limpar Produção", apenas os registros de `producao_registros` são deletados. Porém, o **painel de status das contagens** continua mostrando as informações das lojas (itens, unidades, última atualização) porque esses dados vêm da tabela `contagem_porcionados`.
+
+## Fluxo Atual
 
 ```
-Romaneio enviado
-    │
-    ├─► UPDATE contagem_porcionados SET final_sobra = X
-    │
-    └─► Trigger dispara criar_ou_atualizar_producao_registro()
-              │
-              ├─► Deleta/cria cards de produção
-              │
-              └─► Listener realtime atualiza tela
-                        │
-                        └─► Loop visual + possível re-trigger
+Botão "Limpar Produção"
+       │
+       └─► DELETE producao_registros
+                 │
+                 └─► Recarrega dados
+                           │
+                           └─► Painel status AINDA mostra contagens
+                               (pois contagem_porcionados mantém a_produzir > 0)
 ```
-
-## Causa Raiz
-
-O trigger atual dispara em **qualquer** INSERT ou UPDATE:
-
-```sql
-CREATE TRIGGER trg_criar_producao_apos_contagem
-AFTER INSERT OR UPDATE ON contagem_porcionados
-FOR EACH ROW
-EXECUTE FUNCTION trigger_criar_producao_apos_contagem();
-```
-
-Mas o romaneio só atualiza `final_sobra` e `updated_at` - ele NÃO deveria disparar recálculo de produção porque:
-- O estoque CPD diminuiu, mas isso não afeta a DEMANDA das lojas
-- A demanda é calculada pelo campo `a_produzir`, que é gerado a partir de `ideal_amanha - final_sobra`
-- O trigger serve para quando a LOJA envia sua contagem (alterando `ideal_amanha`)
 
 ## Solução
 
-Modificar a **função do trigger** para verificar se a mudança é relevante antes de recalcular a produção.
+Atualizar a função `handleLimparProducao` para **também zerar** o campo `a_produzir` da tabela `contagem_porcionados` do dia operacional atual.
 
-### Lógica de Bypass
+## Alterações Propostas
 
-Apenas recalcular produção se:
-1. É um INSERT (nova contagem), OU
-2. É um UPDATE que alterou campos relevantes (`ideal_amanha`, `a_produzir`)
+### Arquivo: `src/pages/ResumoDaProducao.tsx`
 
-NÃO recalcular se:
-- Apenas `final_sobra` ou `updated_at` mudaram (típico de romaneio ou finalização de produção)
+**Modificar a função `handleLimparProducao` (linhas 285-313):**
 
-## Migração SQL
-
-```sql
--- Atualizar função do trigger para ignorar updates irrelevantes
-CREATE OR REPLACE FUNCTION trigger_criar_producao_apos_contagem()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-BEGIN
-    -- Para INSERTs, sempre recalcular
-    IF TG_OP = 'INSERT' THEN
-        PERFORM criar_ou_atualizar_producao_registro(
-            NEW.item_porcionado_id,
-            NEW.organization_id,
-            NEW.usuario_id,
-            NEW.usuario_nome
-        );
-        RETURN NEW;
-    END IF;
+```typescript
+const handleLimparProducao = async () => {
+  if (!organizationId) return;
+  
+  setIsLimpando(true);
+  try {
+    // 1. Buscar data atual do servidor
+    const { data: dataServidor } = await supabase.rpc('get_current_date');
+    const hoje = dataServidor || new Date().toISOString().split('T')[0];
     
-    -- Para UPDATEs, verificar se campos relevantes mudaram
-    -- Ignorar se apenas final_sobra ou updated_at mudou (típico de romaneio/produção)
-    IF TG_OP = 'UPDATE' THEN
-        -- Só recalcular se ideal_amanha mudou (loja atualizou estoque ideal)
-        -- ou se a_produzir mudou diretamente
-        IF (OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha) OR
-           (OLD.estoque_inicial IS DISTINCT FROM NEW.estoque_inicial) THEN
-            PERFORM criar_ou_atualizar_producao_registro(
-                NEW.item_porcionado_id,
-                NEW.organization_id,
-                NEW.usuario_id,
-                NEW.usuario_nome
-            );
-        END IF;
-        -- Se apenas final_sobra mudou, NÃO recalcular
-        -- (romaneio debitando estoque ou produção creditando)
-    END IF;
+    // 2. Deletar todos os registros de produção
+    const { error, count } = await supabase
+      .from('producao_registros')
+      .delete()
+      .eq('organization_id', organizationId);
     
-    RETURN NEW;
-END;
-$$;
+    if (error) throw error;
+    
+    // 3. NOVO: Zerar a_produzir nas contagens do dia atual
+    // Isso limpa o painel de status das contagens
+    const { error: errorContagem } = await supabase
+      .from('contagem_porcionados')
+      .update({ a_produzir: 0 })
+      .eq('organization_id', organizationId)
+      .eq('dia_operacional', hoje);
+    
+    if (errorContagem) {
+      console.error('Erro ao limpar contagens:', errorContagem);
+    }
+    
+    // 4. Registrar no audit log
+    await log('producao.limpar', 'producao_registros', null, { 
+      acao: 'limpar_tudo',
+      registros_removidos: String(count || 0),
+      contagens_zeradas: hoje,
+    });
+    
+    toast.success(`Produção limpa! ${count || 0} registros removidos.`);
+    await loadProducaoRegistros();
+  } catch (error) {
+    console.error('Erro ao limpar produção:', error);
+    toast.error('Erro ao limpar produção');
+  } finally {
+    setIsLimpando(false);
+  }
+};
 ```
 
 ## Fluxo Corrigido
 
-### Romaneio (SEM trigger)
 ```
-Romaneio enviado
-    │
-    └─► UPDATE contagem_porcionados SET final_sobra = X
-              │
-              └─► Trigger verifica: apenas final_sobra mudou?
-                        │
-                        └─► SIM → Ignora (não recalcula produção)
+Botão "Limpar Produção"
+       │
+       ├─► DELETE producao_registros
+       │
+       └─► UPDATE contagem_porcionados SET a_produzir = 0 WHERE dia_operacional = hoje
+                 │
+                 └─► Recarrega dados
+                           │
+                           └─► Painel status VAZIO
+                               (pois não há contagens com a_produzir > 0)
 ```
-
-### Contagem de Loja (COM trigger)
-```
-Loja salva contagem
-    │
-    └─► UPDATE contagem_porcionados SET ideal_amanha = Y, final_sobra = Z
-              │
-              └─► Trigger verifica: ideal_amanha mudou?
-                        │
-                        └─► SIM → Recalcula produção
-```
-
-## Alterações
-
-| Tipo | Descrição |
-|------|-----------|
-| Migração SQL | Atualizar `trigger_criar_producao_apos_contagem` com lógica condicional |
 
 ## Impacto
 
 | Cenário | Antes | Depois |
 |---------|-------|--------|
-| Romaneio debita CPD | Dispara recálculo de produção | **Ignora** (sem loop) |
-| Loja salva contagem | Recalcula produção | Recalcula produção (mantém) |
-| Produção credita CPD | Dispara recálculo | **Ignora** (correto) |
-| Reserva diária atualizada | Recalcula via outro trigger | Mantém (outro trigger) |
+| Limpar Produção | Cards removidos, painel status mantém contagens | Cards removidos E painel status limpo |
+| Lojas que salvaram contagem | Continuam aparecendo no painel | Não aparecem mais (a_produzir = 0) |
+| Próxima contagem da loja | Funciona normalmente | Funciona normalmente |
 
-## Testes Recomendados
+## Observação
 
-1. Enviar romaneio → Verificar que Resumo da Produção NÃO pisca/atualiza
-2. Salvar contagem de loja → Verificar que cards de produção são recalculados normalmente
-3. Finalizar produção → Verificar que estoque CPD aumenta SEM loop
+A limpeza zera apenas o campo `a_produzir`, mantendo o registro de `contagem_porcionados` intacto. Isso significa que:
+- O histórico de `final_sobra` e `ideal_amanha` é preservado
+- As lojas podem refazer a contagem normalmente
+- Não há perda de dados estruturais
+
