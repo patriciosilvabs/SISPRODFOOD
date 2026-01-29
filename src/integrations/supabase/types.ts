@@ -2365,13 +2365,6 @@ export type Database = {
             referencedRelation: "producao_lotes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "producao_registros_usuario_id_fkey"
-            columns: ["usuario_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
         ]
       }
       produtos: {
