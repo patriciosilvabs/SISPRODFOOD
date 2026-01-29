@@ -476,49 +476,12 @@ const ItensPorcionados = () => {
     if (!confirm('⚠️ ATENÇÃO: Tem certeza que deseja EXCLUIR PERMANENTEMENTE este item?\n\nEsta ação é IRREVERSÍVEL e todos os dados relacionados serão perdidos.')) return;
 
     try {
-      // 1. Deletar insumos_extras vinculados
-      await supabase
-        .from('insumos_extras')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 2. Deletar estoque_cpd
-      await supabase
-        .from('estoque_cpd')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 3. Deletar itens_reserva_diaria
-      await supabase
-        .from('itens_reserva_diaria')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 4. Deletar estoques_ideais_semanais
-      await supabase
-        .from('estoques_ideais_semanais')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 5. Deletar estoque_loja_itens
-      await supabase
-        .from('estoque_loja_itens')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 6. Deletar contagem_porcionados
-      await supabase
-        .from('contagem_porcionados')
-        .delete()
-        .eq('item_porcionado_id', id);
-
-      // 7. Finalmente deletar o item porcionado
-      const { error } = await supabase
-        .from('itens_porcionados')
-        .delete()
-        .eq('id', id);
+      const { data, error } = await supabase.functions.invoke('excluir-item-porcionado', {
+        body: { item_id: id }
+      });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       
       toast.success('Item excluído permanentemente!');
       fetchData();
