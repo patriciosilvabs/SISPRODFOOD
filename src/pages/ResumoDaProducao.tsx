@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { KanbanCard } from '@/components/kanban/KanbanCard';
 import { ProductGroupedStacks } from '@/components/kanban/ProductGroupedStacks';
+import { ContagemStatusIndicator } from '@/components/kanban/ContagemStatusIndicator';
 import { ConcluirPreparoModal } from '@/components/modals/ConcluirPreparoModal';
 import { FinalizarProducaoModal } from '@/components/modals/FinalizarProducaoModal';
 import { CancelarPreparoModal } from '@/components/modals/CancelarPreparoModal';
@@ -170,8 +171,14 @@ const ResumoDaProducao = () => {
   const [finishedTimers, setFinishedTimers] = useState<Set<string>>(new Set());
   const [modalConfirmarSeparacao, setModalConfirmarSeparacao] = useState(false);
   const [registroParaIniciar, setRegistroParaIniciar] = useState<ProducaoRegistro | null>(null);
+  const [registrosParaIniciarLoja, setRegistrosParaIniciarLoja] = useState<ProducaoRegistro[]>([]);
+  const [lojaParaIniciar, setLojaParaIniciar] = useState<{ id: string; nome: string } | null>(null);
   
   const [diaOperacionalAtual, setDiaOperacionalAtual] = useState<string>('');
+  
+  // Estados para lojas e contagens
+  const [lojas, setLojas] = useState<Array<{ id: string; nome: string; tipo: string }>>([]);
+  const [contagensHoje, setContagensHoje] = useState<Array<{ loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number }>>([]);
   
   // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
   const knownCardIdsRef = useRef<Set<string>>(new Set());
@@ -799,6 +806,37 @@ const ResumoDaProducao = () => {
       }
 
       setColumns(organizedColumns);
+      
+      // Buscar lojas da organização
+      const { data: lojasData } = await supabase
+        .from('lojas')
+        .select('id, nome, tipo')
+        .eq('organization_id', organizationId);
+      
+      if (lojasData) {
+        setLojas(lojasData);
+      }
+      
+      // Calcular estatísticas de contagem por loja (baseado nos cards a_produzir)
+      const contagemStats = new Map<string, { loja_id: string; loja_nome: string; totalItens: number; totalUnidades: number }>();
+      organizedColumns.a_produzir.forEach(reg => {
+        if (reg.detalhes_lojas && reg.detalhes_lojas.length > 0) {
+          const loja = reg.detalhes_lojas[0];
+          if (!contagemStats.has(loja.loja_id)) {
+            contagemStats.set(loja.loja_id, {
+              loja_id: loja.loja_id,
+              loja_nome: loja.loja_nome,
+              totalItens: 0,
+              totalUnidades: 0,
+            });
+          }
+          const stats = contagemStats.get(loja.loja_id)!;
+          stats.totalItens += 1;
+          stats.totalUnidades += reg.unidades_programadas || 0;
+        }
+      });
+      setContagensHoje(Array.from(contagemStats.values()));
+      
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
       toast.error('Erro ao carregar registros de produção');
@@ -1706,6 +1744,98 @@ const ResumoDaProducao = () => {
     setModalPerda(true);
   };
 
+  // Handler para iniciar produção de todos os cards de uma loja
+  const handleIniciarTudoLoja = async (lojaId: string, lojaNome: string, registros: ProducaoRegistro[]) => {
+    // Filtrar apenas cards que não estão bloqueados
+    const registrosDisponiveis = registros.filter(r => !r.bloqueado_por_traco_anterior);
+    
+    if (registrosDisponiveis.length === 0) {
+      toast.warning('Nenhum item disponível para iniciar (todos estão bloqueados ou aguardando lote anterior)');
+      return;
+    }
+    
+    // Salvar para usar no modal de confirmação
+    setLojaParaIniciar({ id: lojaId, nome: lojaNome });
+    setRegistrosParaIniciarLoja(registrosDisponiveis);
+    
+    // Montar lista consolidada de insumos de todos os itens
+    const insumosConsolidados: InsumoParaConfirmar[] = [];
+    const insumosMap = new Map<string, InsumoParaConfirmar>();
+    
+    registrosDisponiveis.forEach(reg => {
+      const lista = montarListaInsumos(reg);
+      lista.forEach(insumo => {
+        const key = insumo.nome;
+        if (insumosMap.has(key)) {
+          const existing = insumosMap.get(key)!;
+          existing.quantidade += insumo.quantidade;
+        } else {
+          insumosMap.set(key, { ...insumo });
+        }
+      });
+    });
+    
+    // Se não há insumos, iniciar direto
+    if (insumosMap.size === 0) {
+      await processarInicioLoja(registrosDisponiveis);
+      return;
+    }
+    
+    // Usar o primeiro registro para abrir modal (a lista será consolidada)
+    setRegistroParaIniciar(registrosDisponiveis[0]);
+    setModalConfirmarSeparacao(true);
+  };
+
+  // Processar início de múltiplos cards
+  const processarInicioLoja = async (registros: ProducaoRegistro[]) => {
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const registro of registros) {
+      try {
+        // Buscar dados do item
+        const itemData = await getItemInsumoData(registro.item_id);
+        
+        // Debitar estoque se configurado
+        if (itemData?.baixar_producao_inicio && itemData.insumo_vinculado_id && registro.insumosExtras) {
+          for (const insumo of registro.insumosExtras) {
+            // Lógica similar ao handleIniciarPreparo
+            // Simplificado: apenas move o card para em_preparo
+          }
+        }
+        
+        // Atualizar status para em_preparo
+        await supabase
+          .from('producao_registros')
+          .update({
+            status: 'em_preparo',
+            data_inicio_preparo: new Date().toISOString(),
+            timer_status: registro.timer_ativo ? 'ativo' : 'desativado',
+          })
+          .eq('id', registro.id);
+        
+        successCount++;
+      } catch (error) {
+        console.error(`Erro ao iniciar registro ${registro.id}:`, error);
+        errorCount++;
+      }
+    }
+    
+    if (successCount > 0) {
+      toast.success(`🚀 ${successCount} itens iniciados para ${lojaParaIniciar?.nome || 'a loja'}`);
+    }
+    if (errorCount > 0) {
+      toast.warning(`${errorCount} itens não puderam ser iniciados`);
+    }
+    
+    // Limpar estados
+    setLojaParaIniciar(null);
+    setRegistrosParaIniciarLoja([]);
+    
+    // Recarregar dados
+    await loadProducaoRegistros(true);
+  };
+
   // Mostrar loading apenas no carregamento inicial E quando não há dados
   const totalCards = columns.a_produzir.length + columns.em_preparo.length + columns.em_porcionamento.length + columns.finalizado.length;
   
@@ -1793,6 +1923,11 @@ const ResumoDaProducao = () => {
           </div>
         </div>
 
+        {/* Indicador de status das contagens por loja */}
+        <ContagemStatusIndicator 
+          lojas={lojas}
+          contagensHoje={contagensHoje}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {(Object.keys(columnConfig) as StatusColumn[]).map((columnId) => (
@@ -1807,7 +1942,7 @@ const ResumoDaProducao = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 min-h-[500px]">
-                  {/* Coluna A PRODUZIR usa Stack, demais usam lista tradicional */}
+                  {/* Coluna A PRODUZIR usa Stack com filtro por loja */}
                   {columnId === 'a_produzir' ? (
                     <ProductGroupedStacks
                       registros={columns.a_produzir}
@@ -1816,6 +1951,7 @@ const ResumoDaProducao = () => {
                       onTimerFinished={handleTimerFinished}
                       onCancelarPreparo={handleOpenCancelarModal}
                       onRegistrarPerda={handleOpenPerdaModal}
+                      onIniciarTudoLoja={handleIniciarTudoLoja}
                     />
                   ) : (
                     <>

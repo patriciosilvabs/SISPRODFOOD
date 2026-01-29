@@ -274,6 +274,16 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                 <h4 className="font-bold text-sm leading-tight tracking-tight">
                   {registro.item_nome}
                 </h4>
+                {/* Badge da LOJA - Destaque principal */}
+                {registro.detalhes_lojas && registro.detalhes_lojas.length === 1 && (
+                  <Badge 
+                    variant="outline" 
+                    className="text-[10px] font-semibold bg-primary/10 text-primary border-primary/30"
+                  >
+                    <Building2 className="h-2.5 w-2.5 mr-1" />
+                    {registro.detalhes_lojas[0].loja_nome}
+                  </Badge>
+                )}
                 {/* Badge de Data de Referência */}
                 {registro.data_referencia && (() => {
                   const dataRef = new Date(registro.data_referencia + 'T00:00:00');
