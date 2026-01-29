@@ -1,80 +1,87 @@
 
 
-# Plano: Corrigir Romaneios "Fantasmas" Sem Itens
+# Plano: Corrigir Erros de Constraint e Overflow na Finalização de Produção
 
-## Problema Identificado
+## Problemas Identificados
 
-Ao tentar receber porcionados, o usuário de loja vê romaneios vazios (sem itens para conferir). O botão "Confirmar Recebimento" não funciona porque não há itens salvos.
+### 1. Erro de Constraint `consumo_historico_tipo_insumo_check`
 
-**Causa Raiz:**
-- Existem **5 romaneios corrompidos** no banco de dados com status `enviado` mas **zero itens** associados
-- Esses romaneios foram criados por um fluxo automático antigo (`observacao: "Criado automaticamente ao finalizar produção"`) que foi removido ou falhou silenciosamente ao inserir itens
-- O frontend exibe esses romaneios normalmente, mas a lista de itens está vazia
+**Código problemático (linha 1363 de ResumoDaProducao.tsx):**
+```typescript
+tipo_insumo: 'embalagem',  // ❌ Valor não permitido
+```
 
-**Romaneios Afetados:**
-| ID | Loja | Data Criação |
-|----|------|-------------|
-| 5c83f5b6-... | UNIDADE ALEIXO | 23/01/2026 05:19 |
-| 225e8472-... | UNIDADE CACHOEIRINHA | 23/01/2026 05:19 |
-| e557999d-... | UNIDADE JAPIIM | 23/01/2026 05:19 |
-| 65d8c58a-... | UNIDADE ALEIXO | 23/01/2026 04:18 |
-| 9c1dfb74-... | UNIDADE JAPIIM | 23/01/2026 04:18 |
+**Constraint no banco:**
+```sql
+CHECK (tipo_insumo = ANY (ARRAY['principal', 'extra']))
+```
+
+O sistema tenta registrar consumo de embalagem com `tipo_insumo: 'embalagem'`, mas o constraint só aceita `'principal'` ou `'extra'`.
+
+### 2. Erro de Overflow Numérico (código 22003)
+
+**Campos afetados em `producao_registros`:**
+| Campo | Precisão | Limite Máximo |
+|-------|----------|---------------|
+| peso_final_kg | 10,3 | 9.999.999,999 |
+| sobra_kg | 10,3 | 9.999.999,999 |
+| peso_programado_kg | 10,3 | 9.999.999,999 |
+
+Se o usuário digitar valores absurdos (ex: 99999999) ou a conversão de `rawToKg` retornar valores muito grandes, o PostgreSQL rejeita o insert.
 
 ---
 
 ## Solução Proposta
 
-### 1. Limpeza de Dados Corrompidos (Migração SQL)
+### Parte 1: Corrigir Constraint do tipo_insumo
 
-Marcar os romaneios sem itens como `cancelado` para que não apareçam mais na aba "Receber":
-
+**Opção A - Adicionar 'embalagem' ao constraint:**
 ```sql
-UPDATE romaneios
-SET status = 'cancelado',
-    observacao = COALESCE(observacao, '') || ' [Cancelado automaticamente: romaneio sem itens]'
-WHERE status = 'enviado'
-AND id NOT IN (SELECT DISTINCT romaneio_id FROM romaneio_itens);
+ALTER TABLE consumo_historico DROP CONSTRAINT consumo_historico_tipo_insumo_check;
+ALTER TABLE consumo_historico ADD CONSTRAINT consumo_historico_tipo_insumo_check 
+CHECK (tipo_insumo = ANY (ARRAY['principal', 'extra', 'embalagem']));
 ```
 
-### 2. Proteção no Frontend (Opcional mas Recomendado)
+**Opção B - Usar 'extra' para embalagem (sem alterar banco):**
+```typescript
+tipo_insumo: 'extra',  // Embalagem é tratada como insumo extra
+```
 
-Adicionar filtro para ignorar romaneios sem itens na consulta:
+**Recomendação:** Opção A, pois embalagem tem significado próprio nos relatórios.
+
+### Parte 2: Prevenir Overflow Numérico
+
+Adicionar validação no frontend (FinalizarProducaoModal) ANTES de enviar ao banco:
 
 ```typescript
-// Em fetchRomaneiosEnviados - filtrar romaneios vazios
-const romaneiosFiltrados = romaneiosFormatados.filter(r => 
-  r.romaneio_itens && r.romaneio_itens.length > 0
-);
+// Validação geral de peso (máximo 10.000 kg = 10 toneladas)
+const MAX_PESO_KG = 9999.999; // Margem de segurança
+if (pesoFinalKg > MAX_PESO_KG) {
+  toast.error(`Peso final excede o máximo permitido (${MAX_PESO_KG} kg)`);
+  return;
+}
+if (sobraKg > MAX_PESO_KG) {
+  toast.error(`Sobra excede o máximo permitido (${MAX_PESO_KG} kg)`);
+  return;
+}
 ```
 
-Ou exibir mensagem clara quando romaneio não tem itens:
+---
 
-```typescript
-{romaneio.romaneio_itens.length === 0 && (
-  <div className="p-4 text-center text-muted-foreground bg-amber-50 rounded border border-amber-200">
-    <AlertCircle className="w-5 h-5 mx-auto mb-2 text-amber-500" />
-    <p className="font-medium">Romaneio sem itens</p>
-    <p className="text-sm">Este romaneio foi criado sem itens associados e não pode ser recebido.</p>
-  </div>
-)}
-```
+## Resumo das Mudanças
+
+| Arquivo/Área | Mudança |
+|--------------|---------|
+| **Migração SQL** | Adicionar 'embalagem' ao constraint `consumo_historico_tipo_insumo_check` |
+| **src/components/modals/FinalizarProducaoModal.tsx** | Adicionar validação de peso máximo (9999 kg) para evitar overflow |
 
 ---
 
 ## Resultado Esperado
 
-| Antes | Depois |
-|-------|--------|
-| Usuário vê cards de romaneio vazios | Romaneios corrompidos marcados como "cancelado" |
-| Botão "Confirmar Recebimento" não funciona | Apenas romaneios válidos (com itens) aparecem |
-| Confusão e erro de operação | Interface clara e funcional |
-
----
-
-## Detalhes Técnicos
-
-| Arquivo/Área | Mudança |
-|--------------|---------|
-| **Migração SQL** | Cancelar romaneios sem itens associados |
-| **src/pages/Romaneio.tsx** | Filtrar romaneios vazios ou exibir mensagem explicativa |
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| Registrar consumo de embalagem | Erro 400 + constraint violation | Sucesso - tipo_insumo='embalagem' aceito |
+| Digitar peso absurdo (ex: 99999999g) | Erro 400 + numeric overflow | Toast de erro amigável + bloqueio do submit |
+| Finalizar produção normal | Funcionando (quando sem embalagem) | Funcionando (sempre) |
 
