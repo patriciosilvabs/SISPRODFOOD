@@ -1,57 +1,35 @@
 
-# Plano: Resolver Conflito de Sobrecarga de Função RPC
+# Plano: Corrigir Erro de `usuario_id` NULL nos Registros de Produção
 
 ## Problema Identificado
 
-O erro `function criar_ou_atualizar_producao_registro(uuid, uuid, unknown, unknown) is not unique` ocorre porque existem **4 versões** da mesma função no banco de dados:
+O erro `null value in column "usuario_id" of relation "producao_registros" violates not-null constraint` ocorre porque:
 
-| Versão | Argumentos | Uso |
-|--------|------------|-----|
-| 1 | (nenhum) | Trigger de contagem |
-| 2 | 8 parâmetros | Não utilizada |
-| 3 | `(p_item_id, p_organization_id, p_usuario_id, p_usuario_nome)` | Frontend (ContagemPorcionados, SolicitarProducaoExtra) |
-| 4 | `(p_organization_id, p_item_id, p_data_producao, p_demanda_total)` | Não utilizada |
+1. As triggers `trigger_recalcular_producao_apos_estoque_ideal` e `trigger_recalcular_producao_apos_reserva_diaria` chamam a função RPC com `NULL::uuid` como `p_usuario_id`
+2. A função `criar_ou_atualizar_producao_registro` usa esse valor diretamente no INSERT sem nenhum tratamento de fallback
+3. A coluna `usuario_id` da tabela `producao_registros` tem constraint `NOT NULL`
 
-### Causa do Erro
-
-As triggers `trigger_recalcular_producao_apos_estoque_ideal` e `trigger_recalcular_producao_apos_reserva_diaria` chamam:
-
-```sql
-PERFORM criar_ou_atualizar_producao_registro(
-    NEW.item_porcionado_id,  -- UUID
-    NEW.organization_id,      -- UUID  
-    NULL,                     -- AMBÍGUO
-    'Sistema - Estoque...'    -- TEXT
-);
+```text
+┌─────────────────────┐     ┌──────────────────────────────────┐
+│  Trigger Estoque    │────▶│ criar_ou_atualizar_producao_...  │
+│  (NULL::uuid)       │     │ INSERT usuario_id = NULL ❌       │
+└─────────────────────┘     └──────────────────────────────────┘
 ```
-
-O PostgreSQL não consegue decidir entre a versão 3 e 4 porque `NULL` pode ser interpretado como `uuid` ou `date`.
 
 ---
 
 ## Solução Proposta
 
-### 1. Remover versões duplicadas não utilizadas
-
-Manter apenas:
-- **Versão trigger** (sem parâmetros)
-- **Versão 3** (item_id, org_id, usuario_id, usuario_nome) - usada pelo frontend
-
-Remover:
-- Versão 2 (8 parâmetros)
-- Versão 4 (org_id, item_id, data, demanda)
-
-### 2. Atualizar as triggers para usar cast explícito
-
-Modificar as funções de trigger para usar cast explícito ao chamar a RPC:
+Atualizar a função `criar_ou_atualizar_producao_registro` para usar um UUID de sistema como fallback quando `p_usuario_id` for NULL:
 
 ```sql
-PERFORM criar_ou_atualizar_producao_registro(
-    NEW.item_porcionado_id,
-    NEW.organization_id,
-    NULL::uuid,  -- Cast explícito
-    'Sistema - Estoque Ideal Atualizado'
-);
+-- No início da função, definir fallback
+v_usuario_id uuid := COALESCE(p_usuario_id, '00000000-0000-0000-0000-000000000000');
+v_usuario_nome_final text := COALESCE(p_usuario_nome, 'Sistema');
+
+-- No INSERT, usar as variáveis com fallback
+usuario_id = v_usuario_id,
+usuario_nome = v_usuario_nome_final
 ```
 
 ---
@@ -59,71 +37,38 @@ PERFORM criar_ou_atualizar_producao_registro(
 ## Migração SQL
 
 ```sql
--- 1. Remover versões duplicadas da função
-DROP FUNCTION IF EXISTS criar_ou_atualizar_producao_registro(
-    uuid, uuid, text, uuid, text, date, integer, integer
-);
-
-DROP FUNCTION IF EXISTS criar_ou_atualizar_producao_registro(
-    uuid, uuid, date, integer
-);
-
--- 2. Atualizar triggers para usar cast explícito
-CREATE OR REPLACE FUNCTION trigger_recalcular_producao_apos_estoque_ideal()
-RETURNS TRIGGER
+CREATE OR REPLACE FUNCTION public.criar_ou_atualizar_producao_registro(
+    p_item_id uuid,
+    p_organization_id uuid,
+    p_usuario_id uuid,
+    p_usuario_nome text
+)
+RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
+DECLARE
+    -- Fallback para usuário sistema quando NULL
+    v_usuario_id uuid := COALESCE(p_usuario_id, '00000000-0000-0000-0000-000000000000');
+    v_usuario_nome_final text := COALESCE(p_usuario_nome, 'Sistema');
+    -- ... demais variáveis ...
 BEGIN
-    UPDATE contagem_porcionados cp
-    SET ideal_amanha = (
-        SELECT CASE EXTRACT(DOW FROM CURRENT_DATE)
-            WHEN 0 THEN COALESCE(eis.domingo, 0)
-            WHEN 1 THEN COALESCE(eis.segunda, 0)
-            WHEN 2 THEN COALESCE(eis.terca, 0)
-            WHEN 3 THEN COALESCE(eis.quarta, 0)
-            WHEN 4 THEN COALESCE(eis.quinta, 0)
-            WHEN 5 THEN COALESCE(eis.sexta, 0)
-            WHEN 6 THEN COALESCE(eis.sabado, 0)
-        END
-        FROM estoques_ideais_semanais eis
-        WHERE eis.item_porcionado_id = cp.item_porcionado_id
-          AND eis.loja_id = cp.loja_id
-    )
-    WHERE cp.item_porcionado_id = NEW.item_porcionado_id
-      AND cp.loja_id = NEW.loja_id
-      AND cp.dia_operacional = CURRENT_DATE
-      AND cp.organization_id = NEW.organization_id;
-
-    -- Cast explícito para resolver ambiguidade
-    PERFORM criar_ou_atualizar_producao_registro(
-        NEW.item_porcionado_id,
-        NEW.organization_id,
-        NULL::uuid,
-        'Sistema - Estoque Ideal Atualizado'::text
+    -- ... lógica existente ...
+    
+    INSERT INTO producao_registros (
+        -- ...
+        usuario_id,
+        usuario_nome,
+        -- ...
+    ) VALUES (
+        -- ...
+        v_usuario_id,       -- Usar variável com fallback
+        v_usuario_nome_final, -- Usar variável com fallback
+        -- ...
     );
     
-    RETURN NEW;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION trigger_recalcular_producao_apos_reserva_diaria()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-BEGIN
-    -- Cast explícito para resolver ambiguidade
-    PERFORM criar_ou_atualizar_producao_registro(
-        NEW.item_porcionado_id,
-        NEW.organization_id,
-        NULL::uuid,
-        'Sistema - Reserva Diária Atualizada'::text
-    );
-    
-    RETURN NEW;
+    -- ... resto da lógica ...
 END;
 $$;
 ```
@@ -132,10 +77,15 @@ $$;
 
 ## Resultado Esperado
 
+| Cenário | Comportamento |
+|---------|---------------|
+| Chamada do Frontend (usuário logado) | `usuario_id` = ID do usuário real |
+| Chamada de Trigger (sistema) | `usuario_id` = `00000000-0000-0000-0000-000000000000` (Sistema) |
+
 Após a migração:
-1. Apenas 2 versões da função existirão (trigger e 4 parâmetros)
-2. As triggers funcionarão sem erro de ambiguidade
-3. Salvar estoques ideais semanais funcionará normalmente
+1. Salvar estoques ideais semanais funcionará sem erro
+2. Os registros criados por triggers terão `usuario_nome = 'Sistema'`
+3. Registros criados pelo frontend manterão o usuário real
 
 ---
 
@@ -143,4 +93,4 @@ Após a migração:
 
 | Arquivo | Mudança |
 |---------|---------|
-| Nova migração SQL | Remove funções duplicadas e atualiza triggers com cast explícito |
+| Nova migração SQL | Atualiza a função RPC para tratar `NULL` em `usuario_id` e `usuario_nome` usando COALESCE com valores padrão |
