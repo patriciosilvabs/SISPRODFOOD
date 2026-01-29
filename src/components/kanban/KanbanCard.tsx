@@ -22,7 +22,8 @@ import {
   LayoutList,
   Package2,
   Building2,
-  ClipboardList
+  ClipboardList,
+  PackageCheck
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -202,6 +203,16 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   }, [timerState.isFinished, columnId, registro.id, registro.timer_status, onTimerFinished]);
 
   const getButtonConfig = () => {
+    // Botão especial para estoque disponível
+    if (isEstoqueDisponivel) {
+      return { 
+        label: 'Confirmar Disponibilidade', 
+        icon: CheckCircle2, 
+        variant: 'default' as const,
+        className: 'bg-emerald-600 hover:bg-emerald-700 text-white'
+      };
+    }
+    
     switch (columnId) {
       case 'a_produzir':
         return { 
@@ -249,9 +260,12 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
 
+  // Verificar se é um card de estoque disponível (CPD cobre demanda)
+  const isEstoqueDisponivel = registro.status === 'estoque_disponivel';
+
   // Cores da borda lateral por status
   const borderColorByColumn = {
-    a_produzir: 'border-l-blue-500',
+    a_produzir: isEstoqueDisponivel ? 'border-l-emerald-500' : 'border-l-blue-500',
     em_preparo: 'border-l-amber-500',
     em_porcionamento: 'border-l-purple-500',
     finalizado: 'border-l-emerald-500'
@@ -262,14 +276,19 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
       transition-all duration-300 ease-out animate-fade-in 
       hover:shadow-lg hover:-translate-y-0.5
       border-l-4 ${borderColorByColumn[columnId]}
+      ${isEstoqueDisponivel ? 'bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800' : ''}
       ${columnId === 'em_preparo' && timerState.isFinished ? 'ring-2 ring-destructive ring-offset-2 animate-pulse' : ''} 
       ${estaBloqueado ? 'opacity-60' : ''}
     `}>
       <CardContent className="p-4">
         <div className="space-y-3">
           {/* Header */}
-          <div className="flex items-start gap-2 pb-2 border-b">
-            <Package className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+          <div className={`flex items-start gap-2 pb-2 border-b ${isEstoqueDisponivel ? 'border-emerald-200 dark:border-emerald-700' : ''}`}>
+            {isEstoqueDisponivel ? (
+              <PackageCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+            ) : (
+              <Package className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-sm leading-tight tracking-tight">
@@ -314,8 +333,17 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     PENDENTE
                   </Badge>
                 )}
+                {/* Badge ESTOQUE DISPONÍVEL - quando CPD cobre demanda */}
+                {isEstoqueDisponivel && (
+                  <Badge 
+                    variant="outline" 
+                    className="text-[10px] font-semibold bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+                  >
+                    ✅ ESTOQUE DISPONÍVEL
+                  </Badge>
+                )}
                 {/* Badge do Lote em VERMELHO - destaque */}
-                {registro.sequencia_traco !== undefined && registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
+                {!isEstoqueDisponivel && registro.sequencia_traco !== undefined && registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
                   <Badge 
                     variant="destructive" 
                     className="font-bold text-xs px-2 py-0.5 bg-red-600 hover:bg-red-600 text-white"
@@ -347,75 +375,129 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             {/* A PRODUZIR */}
             {columnId === 'a_produzir' && (
               <>
-                {/* Seção: Produção Industrial (LOTE_MASSEIRA) - Cada card = 1 lote individual */}
-                {registro.unidade_medida === 'lote_masseira' ? (
-                  <CollapsibleSection
-                    title="Este Lote Consome"
-                    icon={<Factory className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
-                    isOpen={producaoOpen}
-                    onToggle={() => setProducaoOpen(!producaoOpen)}
-                    variant="purple"
-                  >
-                    <div className="grid grid-cols-2 gap-3 mt-2">
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Farinha (este lote)</span>
-                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          {registro.farinha_consumida_kg?.toFixed(1) || '15'}
-                          <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
-                        </p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Massa Gerada</span>
-                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          {registro.massa_total_gerada_kg?.toFixed(1) || '25'}
-                          <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
-                        </p>
-                      </div>
-                      <div className="space-y-0.5 col-span-2">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unidades (este lote)</span>
-                        <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
-                          ~{registro.unidades_programadas || registro.unidades_estimadas_masseira}
-                          <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* Resumo total da produção (só exibe se há múltiplos lotes) */}
-                    {registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
-                      <div className="mt-3 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400">
-                        📊 Total: {registro.total_tracos_lote} lotes × {registro.farinha_consumida_kg || 15}kg = {' '}
-                        <span className="font-bold">
-                          {(registro.total_tracos_lote * (registro.farinha_consumida_kg || 15)).toFixed(0)}kg farinha
+                {/* Seção especial para ESTOQUE DISPONÍVEL (CPD cobre demanda) */}
+                {isEstoqueDisponivel ? (
+                  <div className="space-y-3">
+                    {/* Mensagem principal */}
+                    <div className="p-3 bg-emerald-100/70 dark:bg-emerald-900/50 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                        <span className="font-semibold text-emerald-700 dark:text-emerald-300 text-sm">
+                          Estoque CPD Suficiente
                         </span>
                       </div>
-                    )}
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        O estoque atual do CPD atende toda a demanda. Nenhuma produção necessária.
+                      </p>
+                    </div>
                     
-                    {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
-                      <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
-                        ⚖️ Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
-                        {registro.peso_alvo_bolinha_g && (
-                          <span className="text-muted-foreground">(Alvo: {registro.peso_alvo_bolinha_g}g)</span>
-                        )}
+                    {/* Demanda total */}
+                    {registro.demanda_lojas && (
+                      <div className="flex items-center justify-between p-2.5 bg-muted/50 rounded-lg">
+                        <span className="text-xs text-muted-foreground">📊 Demanda Total:</span>
+                        <Badge variant="secondary" className="font-semibold">
+                          {registro.demanda_lojas} un
+                        </Badge>
                       </div>
                     )}
-                  </CollapsibleSection>
-                ) : registro.unidades_programadas && (
-                  <div className="flex items-center gap-2 p-2.5 bg-muted/50 rounded-lg">
-                    <span className="text-xs text-muted-foreground">📦 Total:</span>
-                    <Badge variant="secondary" className="font-semibold">
-                      {(registro.unidade_medida === 'traco' || registro.unidade_medida === 'lote') && registro.equivalencia_traco ? (
-                        <>
-                          {Math.ceil(registro.unidades_programadas / registro.equivalencia_traco)} lotes ({Math.ceil(registro.unidades_programadas / registro.equivalencia_traco) * registro.equivalencia_traco} un)
-                        </>
-                      ) : (
-                        `${registro.unidades_programadas} un`
-                      )}
-                    </Badge>
+                    
+                    {/* Detalhes por loja */}
+                    {registro.detalhes_lojas && registro.detalhes_lojas.length > 0 && (
+                      <div className="space-y-1.5 p-2.5 bg-blue-50/50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+                          🏪 Destino por loja:
+                        </p>
+                        {registro.detalhes_lojas.map((detalhe, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center justify-between py-1.5 px-2 rounded-md bg-blue-100/50 dark:bg-blue-900/30"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                              <span className="text-xs font-medium truncate max-w-[120px]">{detalhe.loja_nome}</span>
+                            </div>
+                            <span className="text-xs font-bold text-blue-700 dark:text-blue-300 tabular-nums">
+                              {detalhe.quantidade}
+                              <span className="font-normal text-muted-foreground ml-1">un</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <>
+                    {/* Seção: Produção Industrial (LOTE_MASSEIRA) - Cada card = 1 lote individual */}
+                    {registro.unidade_medida === 'lote_masseira' ? (
+                      <CollapsibleSection
+                        title="Este Lote Consome"
+                        icon={<Factory className="h-4 w-4 text-purple-600 dark:text-purple-400" />}
+                        isOpen={producaoOpen}
+                        onToggle={() => setProducaoOpen(!producaoOpen)}
+                        variant="purple"
+                      >
+                        <div className="grid grid-cols-2 gap-3 mt-2">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Farinha (este lote)</span>
+                            <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                              {registro.farinha_consumida_kg?.toFixed(1) || '15'}
+                              <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                            </p>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Massa Gerada</span>
+                            <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                              {registro.massa_total_gerada_kg?.toFixed(1) || '25'}
+                              <span className="text-xs font-normal text-muted-foreground ml-1">kg</span>
+                            </p>
+                          </div>
+                          <div className="space-y-0.5 col-span-2">
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Unidades (este lote)</span>
+                            <p className="text-xl font-bold text-purple-700 dark:text-purple-300 tabular-nums">
+                              ~{registro.unidades_programadas || registro.unidades_estimadas_masseira}
+                              <span className="text-xs font-normal text-muted-foreground ml-1">un</span>
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Resumo total da produção (só exibe se há múltiplos lotes) */}
+                        {registro.total_tracos_lote && registro.total_tracos_lote > 1 && (
+                          <div className="mt-3 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400">
+                            📊 Total: {registro.total_tracos_lote} lotes × {registro.farinha_consumida_kg || 15}kg = {' '}
+                            <span className="font-bold">
+                              {(registro.total_tracos_lote * (registro.farinha_consumida_kg || 15)).toFixed(0)}kg farinha
+                            </span>
+                          </div>
+                        )}
+                        
+                        {registro.peso_minimo_bolinha_g && registro.peso_maximo_bolinha_g && (
+                          <div className="mt-2 pt-2 border-t border-purple-200 dark:border-purple-700 text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                            ⚖️ Faixa: {registro.peso_minimo_bolinha_g}g - {registro.peso_maximo_bolinha_g}g
+                            {registro.peso_alvo_bolinha_g && (
+                              <span className="text-muted-foreground">(Alvo: {registro.peso_alvo_bolinha_g}g)</span>
+                            )}
+                          </div>
+                        )}
+                      </CollapsibleSection>
+                    ) : registro.unidades_programadas && (
+                      <div className="flex items-center gap-2 p-2.5 bg-muted/50 rounded-lg">
+                        <span className="text-xs text-muted-foreground">📦 Total:</span>
+                        <Badge variant="secondary" className="font-semibold">
+                          {(registro.unidade_medida === 'traco' || registro.unidade_medida === 'lote') && registro.equivalencia_traco ? (
+                            <>
+                              {Math.ceil(registro.unidades_programadas / registro.equivalencia_traco)} lotes ({Math.ceil(registro.unidades_programadas / registro.equivalencia_traco) * registro.equivalencia_traco} un)
+                            </>
+                          ) : (
+                            `${registro.unidades_programadas} un`
+                          )}
+                        </Badge>
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {/* Seção: Composição da Demanda */}
-                {(registro.demanda_lojas || registro.detalhes_lojas?.length) && (
+                {/* Seção: Composição da Demanda - NÃO exibir para estoque disponível (já mostramos detalhes acima) */}
+                {!isEstoqueDisponivel && (registro.demanda_lojas || registro.detalhes_lojas?.length) && (
                   <CollapsibleSection
                     title="Composição"
                     icon={<LayoutList className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
@@ -933,7 +1015,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
               {buttonConfig && (
                 <Button 
                   onClick={onAction}
-                  className="w-full font-medium"
+                  className={`w-full font-medium ${(buttonConfig as any).className || ''}`}
                   variant={estaBloqueado ? 'secondary' : buttonConfig.variant}
                   size="default"
                   disabled={estaBloqueado}
