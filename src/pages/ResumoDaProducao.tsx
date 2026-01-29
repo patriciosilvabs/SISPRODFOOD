@@ -1546,23 +1546,9 @@ const ResumoDaProducao = () => {
         };
       });
 
-      // Resetar a_produzir das contagens relacionadas zerando-as via ideal_amanha = final_sobra
-      // (a_produzir é coluna gerada, não pode ser atualizada diretamente)
-      const { data: contagensAtuais, error: fetchError } = await supabase
-        .from('contagem_porcionados')
-        .select('id, final_sobra')
-        .eq('item_porcionado_id', selectedRegistro.item_id);
-
-      if (fetchError) {
-        console.error('Erro ao buscar contagens para reset:', fetchError);
-      } else if (contagensAtuais) {
-        for (const contagem of contagensAtuais) {
-          await supabase
-            .from('contagem_porcionados')
-            .update({ ideal_amanha: contagem.final_sobra })
-            .eq('id', contagem.id);
-        }
-      }
+      // NOTA: Não resetamos ideal_amanha das contagens das lojas aqui.
+      // A demanda das lojas permanece inalterada até o romaneio entregar os itens.
+      // Isso evita que lotes pendentes sejam deletados e mantém os indicadores corretos.
       
       setModalFinalizar(false);
       setSelectedRegistro(null);
