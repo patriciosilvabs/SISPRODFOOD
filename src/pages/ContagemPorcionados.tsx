@@ -874,8 +874,16 @@ const ContagemPorcionados = () => {
     return lojas.find((l) => l.tipo === 'cpd');
   }, [lojas]);
 
+  // Lojas normais (não CPD)
+  const lojasNormais = useMemo(() => {
+    return lojas.filter((l) => l.tipo !== 'cpd');
+  }, [lojas]);
+
   const isCPDUser = !!cpdLoja;
   const canAdjustStock = isAdminUser || isCPDUser;
+  
+  // Usuário exclusivamente CPD (sem lojas normais)
+  const isCPDOnly = isCPDUser && lojasNormais.length === 0 && !isAdminUser;
 
   if (loading) {
     return (
@@ -900,12 +908,19 @@ const ContagemPorcionados = () => {
           showDetails={showDetails}
           isAdmin={isAdminUser}
           loading={loading}
+          isCPDOnly={isCPDOnly}
           onToggleDetails={() => setShowDetails(!showDetails)}
           onRefresh={loadData}
         />
 
-        {/* Tabs para CPD - mostrar aba de ajuste apenas para CPD/Admin */}
-        {canAdjustStock && cpdLoja ? (
+        {/* Se usuário é exclusivamente CPD, mostrar direto o ajuste sem abas */}
+        {isCPDOnly && cpdLoja ? (
+          <AjusteEstoquePorcionadosCPD
+            cpdLojaId={cpdLoja.id}
+            cpdLojaNome={cpdLoja.nome}
+          />
+        ) : canAdjustStock && cpdLoja ? (
+          /* Admin ou usuário com acesso a lojas + CPD: mostrar abas */
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contagem' | 'ajuste')} className="w-full">
             <TabsList className="grid w-full grid-cols-2 max-w-md">
               <TabsTrigger value="contagem">Contagem</TabsTrigger>
@@ -1123,17 +1138,19 @@ const ContagemPorcionados = () => {
           </>
         )}
 
-        {/* Footer Fixo */}
-        <ContagemFixedFooter
-          isSessaoAtiva={false}
-          podeEncerrar={false}
-          savingAll={savingAll}
-          hasChanges={hasAnyChanges()}
-          itensPendentes={summaryStats.itensPendentes}
-          changesCount={getDirtyRows().length}
-          onEncerrar={() => {}}
-          onSaveAll={handleSaveAll}
-        />
+        {/* Footer Fixo - esconder para usuário exclusivamente CPD */}
+        {!isCPDOnly && (
+          <ContagemFixedFooter
+            isSessaoAtiva={false}
+            podeEncerrar={false}
+            savingAll={savingAll}
+            hasChanges={hasAnyChanges()}
+            itensPendentes={summaryStats.itensPendentes}
+            changesCount={getDirtyRows().length}
+            onEncerrar={() => {}}
+            onSaveAll={handleSaveAll}
+          />
+        )}
 
         {/* Dialog para Estoques Ideais */}
         <Dialog 
