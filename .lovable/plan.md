@@ -1,91 +1,186 @@
 
-# Plano: Corrigir Inconsistência de Fuso Horário no Dia Operacional
+# Plano: Controle de Fluxo de Produção por Loja
 
-## Problema Identificado
+## Requisitos do Usuário
 
-Existe uma **inconsistência de fuso horário** entre as duas páginas:
-
-| Página | Como calcula `dia_operacional` | Resultado às 23:59 SP |
-|--------|--------------------------------|----------------------|
-| **Contagem** | `new Date().toISOString().split('T')[0]` | 2026-01-**29** (UTC) |
-| **Resumo** | `supabase.rpc('get_current_date')` | 2026-01-**28** (SP) |
-
-**Consequência:** A loja salva contagem para o dia 29 (UTC), mas o Resumo busca contagens do dia 28 (São Paulo), resultando em dados não encontrados.
+1. **Remover botão "Ver Todos"** - Ao clicar no nome da loja, mostrar apenas os itens dessa loja
+2. **"Ir para Preparo" bloqueado até clicar "Iniciar"** - O botão nos cards só fica ativo após o usuário clicar "Iniciar" na loja
+3. **Lojas inativas até porcionamento** - Após "Iniciar" uma loja, as demais ficam bloqueadas até que TODOS os itens dessa loja estejam em "porcionamento"
 
 ---
 
-## Solução
+## Arquitetura da Solução
 
-Padronizar ambas as páginas para usar a **mesma fonte de data** - a função do servidor `get_current_date()`.
+```text
+FLUXO PROPOSTO:
+┌─────────────────────────────────────────────────────────────┐
+│ Status das Contagens de Hoje                                │
+├─────────────────────────────────────────────────────────────┤
+│ ┌────────────────────────────────────────────────────────┐ │
+│ │ ★ UNIDADE ALEIXO  📦 8 itens • 1016 un                 │ │
+│ │   Atualizado: 23:04                                    │ │
+│ │   [🚀 Iniciar]  ← Usuário clica para ativar produção   │ │
+│ └────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ ┌────────────────────────────────────────────────────────┐ │
+│ │ ⏳ UNIDADE JAPIIM               📦 2 itens • 50 un     │ │
+│ │   [BLOQUEADA]  ← Inativa até ALEIXO concluir           │ │
+│ └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ A PRODUZIR (Filtrando: UNIDADE ALEIXO)                ✕    │
+├─────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ PEPPERONI - PORCIONADO                                  │ │
+│ │ [▶ Ir para Preparo] ← HABILITADO (loja foi iniciada)    │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Isso garante que:
-1. O dia operacional seja calculado de forma consistente em todo o sistema
-2. A lógica respeite o fuso horário da organização (São Paulo)
-3. A transição de dia aconteça no horário correto (meia-noite em SP, não em UTC)
+---
+
+## Estado Global Necessário
+
+Novo estado em `ResumoDaProducao.tsx`:
+
+```typescript
+// Loja que teve "Iniciar" clicado (controla habilitação dos cards)
+const [lojaIniciada, setLojaIniciada] = useState<{ id: string; nome: string } | null>(null);
+```
 
 ---
 
 ## Mudanças Técnicas
 
-### Arquivo: `src/pages/ContagemPorcionados.tsx`
+### 1. `ResumoDaProducao.tsx`
 
-**Modificar a função `handleSave`** para buscar a data do servidor antes de salvar:
-
-**Antes (errado):**
+**Adicionar estado `lojaIniciada`:**
 ```typescript
-const today = new Date();
-const diaOperacional = today.toISOString().split('T')[0]; // UTC!
+// Estado para controlar qual loja teve produção iniciada
+const [lojaIniciada, setLojaIniciada] = useState<{ id: string; nome: string } | null>(null);
 ```
 
-**Depois (correto):**
+**Modificar lógica do botão "Iniciar":**
+- Ao clicar em "Iniciar", definir `lojaIniciada`
+- Também definir `lojaFiltrada` para mostrar apenas itens dessa loja
+- Verificar se todos os itens da loja atual estão em "em_porcionamento" para desbloquear outras lojas
+
+**Passar `lojaIniciada` para componentes filhos:**
 ```typescript
-// Buscar data do servidor (respeita fuso horário da organização)
-const { data: dataServidor } = await supabase.rpc('get_current_date');
-const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+<ProductGroupedStacks
+  lojaFiltradaId={lojaFiltrada?.id}
+  lojaIniciadaId={lojaIniciada?.id}  // NOVO
+/>
 ```
 
-### Arquivo: `src/pages/ContagemPorcionados.tsx` - loadData
-
-Também atualizar a função `loadData` que busca contagens existentes para usar a mesma data do servidor:
-
+**Lógica para verificar se loja completou:**
 ```typescript
-// No início da função loadData:
-const { data: dataServidor } = await supabase.rpc('get_current_date');
-const today = dataServidor || new Date().toISOString().split('T')[0];
+// Verificar se todos os itens da lojaIniciada já passaram para porcionamento
+useEffect(() => {
+  if (lojaIniciada) {
+    const itensNaAProduzir = columns.a_produzir.filter(
+      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
+    );
+    const itensEmPreparo = columns.em_preparo.filter(
+      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
+    );
+    
+    // Se não há mais itens em a_produzir nem em_preparo, desbloquear outras lojas
+    if (itensNaAProduzir.length === 0 && itensEmPreparo.length === 0) {
+      setLojaIniciada(null);
+      setLojaFiltrada(null);
+      toast.success(`✅ Produção de ${lojaIniciada.nome} concluída!`);
+    }
+  }
+}, [columns, lojaIniciada]);
 ```
 
 ---
 
-## Fluxo Corrigido
+### 2. `ContagemStatusIndicator.tsx`
 
+**Remover botão "Ver Todos":**
+- Clicar no card da loja = filtrar pelos itens dessa loja (mantém)
+- Remover botão separado "Ver" / "Ver Todos"
+
+**Adicionar props para controle:**
+```typescript
+interface ContagemStatusIndicatorProps {
+  lojas: Loja[];
+  contagensHoje: ContagemData[];
+  onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
+  onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void;
+  lojaFiltradaId?: string | null;
+  lojaIniciadaId?: string | null;  // NOVO: qual loja foi iniciada
+}
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ HORÁRIO: 23:59 em São Paulo (02:59 UTC)                    │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│ LOJA SALVA CONTAGEM                                        │
-│ • supabase.rpc('get_current_date') → 2026-01-28            │
-│ • dia_operacional = 2026-01-28                             │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│ RESUMO DA PRODUÇÃO                                         │
-│ • supabase.rpc('get_current_date') → 2026-01-28            │
-│ • Busca contagens WHERE dia_operacional = 2026-01-28       │
-│ • ENCONTRA os dados corretamente!                          │
-└─────────────────────────────────────────────────────────────┘
+
+**Lógica de bloqueio visual:**
+- Se `lojaIniciadaId` está definido e é diferente da loja atual, mostrar como "bloqueada"
+- Desabilitar botão "Iniciar" de outras lojas enquanto uma está em produção
+
+```typescript
+const isLojaAtual = lojaIniciadaId === loja.id;
+const estaBloqueada = lojaIniciadaId !== null && !isLojaAtual;
+
+{estaBloqueada ? (
+  <Badge variant="outline" className="text-xs text-muted-foreground">
+    🔒 Aguardando
+  </Badge>
+) : (
+  <Button onClick={() => onIniciarProducaoLoja(loja.id, loja.nome)}>
+    {isLojaAtual ? '✓ Em Produção' : 'Iniciar'}
+  </Button>
+)}
 ```
 
 ---
 
-## Benefícios
+### 3. `ProductGroupedStacks.tsx`
 
-| Antes | Depois |
-|-------|--------|
-| Contagem usa UTC | Contagem usa fuso SP (igual Resumo) |
-| Dados não batem entre páginas | Dados consistentes |
-| Bug às 21h-00h (horário crítico) | Funciona 24h |
+**Receber nova prop `lojaIniciadaId`:**
+```typescript
+interface ProductGroupedStacksProps {
+  // ... props existentes
+  lojaIniciadaId?: string | null;  // NOVO
+}
+```
+
+**Passar para KanbanCard:**
+```typescript
+<KanbanCard
+  registro={registro}
+  producaoHabilitada={lojaIniciadaId === registro.detalhes_lojas?.[0]?.loja_id}
+/>
+```
+
+---
+
+### 4. `KanbanCard.tsx`
+
+**Nova prop para controlar botão:**
+```typescript
+interface KanbanCardProps {
+  // ... props existentes
+  producaoHabilitada?: boolean;  // NOVO: se false, botão "Ir para Preparo" fica desabilitado
+}
+```
+
+**Desabilitar botão quando não habilitado:**
+```typescript
+const botaoDesabilitado = columnId === 'a_produzir' && 
+  (estaBloqueado || !producaoHabilitada);
+
+<Button
+  disabled={botaoDesabilitado}
+  className={botaoDesabilitado ? 'opacity-50 cursor-not-allowed' : ''}
+>
+  {!producaoHabilitada && columnId === 'a_produzir' 
+    ? 'Aguardando Iniciar' 
+    : buttonConfig.label}
+</Button>
+```
 
 ---
 
@@ -93,12 +188,65 @@ const today = dataServidor || new Date().toISOString().split('T')[0];
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ContagemPorcionados.tsx` | Alterar `loadData` e `handleSave` para usar `supabase.rpc('get_current_date')` |
+| `src/pages/ResumoDaProducao.tsx` | Adicionar estado `lojaIniciada`, lógica de desbloqueio automático, passar props |
+| `src/components/kanban/ContagemStatusIndicator.tsx` | Remover "Ver Todos", adicionar lógica de bloqueio entre lojas |
+| `src/components/kanban/ProductGroupedStacks.tsx` | Receber e propagar `lojaIniciadaId` |
+| `src/components/kanban/KanbanCard.tsx` | Nova prop `producaoHabilitada` para bloquear "Ir para Preparo" |
 
 ---
 
-## Nota sobre dados existentes
+## Fluxo Completo
 
-As contagens já salvas com `dia_operacional = 2026-01-29` permanecerão no banco. Quando o horário em SP virar meia-noite (01:00 UTC), o `get_current_date()` retornará 2026-01-29 e os dados aparecerão normalmente.
+```text
+1. Usuário vê lojas disponíveis
+   └── ALEIXO ★ [Iniciar]
+   └── JAPIIM [Iniciar]
 
-**Alternativa imediata** (se precisar ver os dados agora): Podemos também ajustar a consulta no Resumo para usar `CURRENT_DATE` (UTC) em vez de `get_current_date()` (SP), mas isso causaria outros problemas de consistência. A solução correta é padronizar na Contagem.
+2. Clica "Iniciar" em ALEIXO
+   └── lojaIniciada = ALEIXO
+   └── lojaFiltrada = ALEIXO
+   └── JAPIIM mostra [🔒 Aguardando]
+   └── Cards de ALEIXO mostram [▶ Ir para Preparo]
+
+3. Operador processa cada card
+   └── Clica "Ir para Preparo" → card vai para EM PREPARO
+   └── Conclui preparo → card vai para EM PORCIONAMENTO
+
+4. Quando TODOS os cards de ALEIXO estão em PORCIONAMENTO
+   └── lojaIniciada = null
+   └── lojaFiltrada = null
+   └── JAPIIM volta a mostrar [Iniciar]
+   └── Operador pode iniciar JAPIIM
+```
+
+---
+
+## Resultado Visual Final
+
+**Status das Contagens (loja bloqueada):**
+```
+┌────────────────────────────────────────────────────────┐
+│ ★ UNIDADE ALEIXO   📦 8 itens • 1016 un                │
+│   [✓ EM PRODUÇÃO]  ← Verde, indicando ativa           │
+└────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ ⏳ UNIDADE JAPIIM   📦 2 itens • 50 un                 │
+│   [🔒 Aguardando]  ← Cinza/desabilitado               │
+└────────────────────────────────────────────────────────┘
+```
+
+**Card antes de Iniciar loja:**
+```
+┌────────────────────────────────────┐
+│ PEPPERONI - PORCIONADO            │
+│ [Aguardando Iniciar] ← Desabilitado│
+└────────────────────────────────────┘
+```
+
+**Card depois de Iniciar loja:**
+```
+┌────────────────────────────────────┐
+│ PEPPERONI - PORCIONADO            │
+│ [▶ Ir para Preparo] ← Habilitado  │
+└────────────────────────────────────┘
+```
