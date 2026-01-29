@@ -661,7 +661,7 @@ const ResumoDaProducao = () => {
         const status = registro.status || 'a_produzir';
         
         // Mapear status para as colunas do Kanban
-        if (status === 'aguardando_pesagem' || status === 'a_produzir') {
+        if (status === 'aguardando_pesagem' || status === 'a_produzir' || status === 'estoque_disponivel') {
           targetColumn = 'a_produzir';
         } else if (status === 'em_preparo') {
           targetColumn = 'em_preparo';
@@ -1110,6 +1110,35 @@ const ResumoDaProducao = () => {
     setSelectedRegistro(registro);
 
     if (columnId === 'a_produzir') {
+      // NOVO: Verificar se é um card de "Estoque Disponível" (CPD cobre demanda)
+      if (registro.status === 'estoque_disponivel') {
+        // Confirmar disponibilidade - deletar o card (já verificado pelo operador)
+        try {
+          const { error } = await supabase
+            .from('producao_registros')
+            .delete()
+            .eq('id', registro.id);
+
+          if (error) throw error;
+
+          toast.success(`✅ Disponibilidade confirmada! ${registro.item_nome} verificado no estoque CPD.`);
+          
+          // Registrar no audit log
+          await log('producao.confirmar_estoque', 'producao_registros', registro.id, {
+            item_id: registro.item_id,
+            item_nome: registro.item_nome,
+            demanda_lojas: String(registro.demanda_lojas || 0),
+            detalhes_lojas: JSON.stringify(registro.detalhes_lojas || []),
+          });
+          
+          await loadProducaoRegistros();
+        } catch (error) {
+          console.error('Erro ao confirmar disponibilidade:', error);
+          toast.error('Erro ao confirmar disponibilidade do estoque');
+        }
+        return;
+      }
+      
       // Verificar se está bloqueado por fila de traços
       if (registro.bloqueado_por_traco_anterior) {
         toast.error('⏳ Aguarde o traço anterior finalizar o timer');
@@ -2107,7 +2136,6 @@ const ResumoDaProducao = () => {
                         onCancelarPreparo={handleOpenCancelarModal}
                         onRegistrarPerda={handleOpenPerdaModal}
                         lojaFiltradaId={lojaFiltrada?.id}
-                        estoquesCPD={estoqueCPD}
                       />
                     ) : (
                       <>

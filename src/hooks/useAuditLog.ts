@@ -15,7 +15,8 @@ type AuditAction =
   | 'invite.cancel'
   | 'superadmin.promote'
   | 'superadmin.demote'
-  | 'producao.limpar';
+  | 'producao.limpar'
+  | 'producao.confirmar_estoque';
 
 type EntityType = 'user' | 'role' | 'permission' | 'invite' | 'producao_registros';
 
