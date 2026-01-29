@@ -305,7 +305,7 @@ const ResumoDaProducao = () => {
       // Isso limpa o painel de status das contagens
       const { error: errorContagem } = await supabase
         .from('contagem_porcionados')
-        .update({ a_produzir: 0 })
+        .update({ ideal_amanha: 0 })
         .eq('organization_id', organizationId)
         .eq('dia_operacional', hoje);
       
