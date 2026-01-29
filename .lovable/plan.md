@@ -1,162 +1,147 @@
 
 
-# Plano: Exibir Itens com Estoque CPD Suficiente na Coluna "A Produzir"
+# Plano: Limitar Quantidade de Envio ao Estoque Disponível
+
+## Contexto
+
+O romaneio já é manual (usuário informa quantidades e loja), mas o sistema não impede visualmente que o usuário digite uma quantidade maior do que o estoque disponível no CPD. A validação só ocorre no momento do envio, o que causa frustração.
 
 ## Objetivo
 
-Quando o estoque do CPD é suficiente para cobrir a demanda das lojas (gatilho atingido), o item deve aparecer na coluna "A PRODUZIR" com um visual diferenciado, permitindo que o usuário **confirme** que essa quantidade já está disponível no CPD - sem precisar produzir.
+Limitar em tempo real a quantidade máxima que pode ser enviada, baseado no estoque físico do CPD (contagem_porcionados.final_sobra).
 
-## Comportamento Atual
+## Alterações
 
-```text
-Demanda Lojas = 50 un
-Estoque CPD = 60 un
-Saldo Líquido = 50 - 60 = -10 (suficiente)
+### Arquivo: `src/pages/Romaneio.tsx`
 
-Resultado: Nenhum card criado, apenas CPDStockIndicator aparece
-```
+| Componente | Alteração |
+|------------|-----------|
+| `SecaoLojaRomaneio` | Receber estoque CPD para limitar quantidade |
+| Input de quantidade | Adicionar atributo `max` e validação |
+| `handleUpdateQuantidadeLoja` | Limitar valor ao máximo disponível |
+| Interface visual | Mostrar "Máx: X un" próximo ao input |
 
-## Comportamento Proposto
+### 1. Atualizar Interface `ItemSelecionadoLoja`
 
-```text
-Demanda Lojas = 50 un  
-Estoque CPD = 60 un
-Saldo Líquido = -10 (suficiente)
-
-Resultado: Card especial aparece em "A PRODUZIR" com:
-- Status visual diferenciado (verde/emerald)
-- Texto: "Estoque CPD Disponível"
-- Botão: "Confirmar Disponibilidade" 
-- Ação: Remove o card da lista (confirma que foi verificado)
-```
-
-## Alterações Necessárias
-
-### 1. Migração SQL - Criar Cards "estoque_disponivel"
-
-Atualizar a função `criar_ou_atualizar_producao_registro` para, quando o saldo for <= 0, criar um card com status especial `estoque_disponivel` em vez de não criar nada.
-
-**Arquivo:** Nova migração SQL
-
-```sql
--- Quando saldo líquido <= 0, criar card com status especial
-IF v_saldo_liquido <= 0 THEN
-    -- Criar card informativo para confirmação de estoque
-    INSERT INTO producao_registros (
-        item_id, 
-        item_nome, 
-        status,  -- Novo status: 'estoque_disponivel'
-        unidades_programadas, 
-        demanda_lojas,
-        organization_id,
-        ...
-    ) VALUES (
-        p_item_id,
-        v_item.nome,
-        'estoque_disponivel',  -- Status especial
-        0,  -- Nenhuma produção necessária
-        v_demanda_total,
-        ...
-    );
-    RETURN v_registro_id;
-END IF;
-```
-
-### 2. Atualizar Tipagem e Colunas
-
-Adicionar novo status `estoque_disponivel` à configuração das colunas.
-
-**Arquivo:** `src/pages/ResumoDaProducao.tsx`
+Adicionar campo para rastrear o máximo disponível:
 
 ```typescript
-const columnConfig: Record<StatusColumn, { ... }> = {
-  a_produzir: { ... },
-  // Novo status mapeado para a mesma coluna
-};
-
-// No mapeamento de status:
-if (status === 'estoque_disponivel') {
-  targetColumn = 'a_produzir';  // Aparece na mesma coluna
+interface ItemSelecionadoLoja {
+  item_id: string;
+  item_nome: string;
+  quantidade: number;
+  quantidade_maxima: number;  // NOVO: limite máximo do estoque
+  peso_g: string;
+  volumes: string;
+  // ... demais campos
 }
 ```
 
-### 3. Componente KanbanCard - Visual Diferenciado
+### 2. Atualizar Props do `SecaoLojaRomaneio`
 
-Adicionar renderização especial para cards com status `estoque_disponivel`.
+Não é necessário alterar props - os dados já vêm em `demanda.itens` com `quantidade_disponivel`.
 
-**Arquivo:** `src/components/kanban/KanbanCard.tsx`
+### 3. Modificar Input de Quantidade
 
-| Elemento | Card Normal | Card Estoque Disponível |
-|----------|-------------|------------------------|
-| Borda | Padrão | Verde (emerald) |
-| Ícone | Produção | CheckCircle |
-| Título | "Item a produzir" | "Estoque CPD Disponível" |
-| Quantidade | "X unidades a produzir" | "Demanda: X un • Estoque: Y un" |
-| Botão | "Iniciar Preparo" | "Confirmar Disponibilidade" |
-| Ação | Inicia produção | Remove card (confirmação) |
+```tsx
+// ANTES: Sem limite máximo
+<Input
+  type="number"
+  value={item.quantidade || ''}
+  onChange={(e) => onUpdateQuantidade(demanda.loja_id, item.item_id, parseInt(e.target.value) || 0)}
+  min={1}
+/>
 
-### 4. Remover CPDStockIndicator (Redundante)
+// DEPOIS: Com limite e indicador visual
+const itemOriginal = demanda.itens.find(i => i.item_id === item.item_id);
+const maxDisponivel = itemOriginal?.quantidade_disponivel || item.quantidade;
 
-Como agora os itens aparecem como cards, o indicador separado torna-se redundante.
+<div className="flex flex-col items-center gap-0.5">
+  <Input
+    type="number"
+    value={item.quantidade || ''}
+    onChange={(e) => {
+      const valor = parseInt(e.target.value) || 0;
+      // Limitar automaticamente ao máximo disponível
+      onUpdateQuantidade(demanda.loja_id, item.item_id, Math.min(valor, maxDisponivel));
+    }}
+    min={1}
+    max={maxDisponivel}
+  />
+  <span className="text-xs text-muted-foreground">
+    Máx: {maxDisponivel}
+  </span>
+</div>
+```
 
-**Arquivo:** `src/components/kanban/ProductGroupedStacks.tsx`
+### 4. Atualizar `handleUpdateQuantidadeLoja`
 
-Remover a lógica que mostra `CPDStockIndicator` quando não há cards.
+```typescript
+const handleUpdateQuantidadeLoja = (lojaId: string, itemId: string, quantidade: number) => {
+  setDemandasPorLoja(prev => prev.map(d => {
+    if (d.loja_id !== lojaId) return d;
+    
+    // Buscar limite máximo do item original
+    const itemOriginal = d.itens.find(i => i.item_id === itemId);
+    const maxDisponivel = itemOriginal?.quantidade_disponivel || 999999;
+    
+    return {
+      ...d,
+      itensSelecionados: d.itensSelecionados.map(item =>
+        item.item_id === itemId 
+          ? { ...item, quantidade: Math.max(1, Math.min(quantidade, maxDisponivel)), salvo: false } 
+          : item
+      )
+    };
+  }));
+};
+```
 
-## Fluxo Visual Final
+### 5. Visual de Alerta quando Próximo do Limite
+
+Adicionar indicador visual quando quantidade = máximo:
+
+```tsx
+const estaNolimite = item.quantidade >= maxDisponivel;
+
+<Input
+  className={cn(
+    layoutExpandido ? "w-24 h-12 text-center text-lg font-medium" : "w-20 h-10 text-center text-base font-medium",
+    estaNolimite && "border-amber-500 bg-amber-50"
+  )}
+/>
+{estaNolimite && (
+  <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">
+    Limite
+  </Badge>
+)}
+```
+
+## Fluxo Visual
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ A PRODUZIR                                              [3] │
+│ ESFIHA DE FRANGO                                            │
+│ 📦 10/01 LOTE-20260110-003                                  │
 ├─────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ ✅ ESFIHA DE FRANGO              [Estoque Disponível]  │ │
-│ │ Demanda: 45 un • CPD: 60 un (+15 excedente)            │ │
-│ │ Lojas: ALEIXO (25), JAPIIM (20)                        │ │
-│ │                                                        │ │
-│ │                  [Confirmar Disponibilidade]           │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ 🍕 PIZZA CALABRESA                    [Loja: ALEIXO]   │ │
-│ │ 30 unidades a produzir                                 │ │
-│ │                                                        │ │
-│ │                    [Iniciar Preparo]                   │ │
-│ └─────────────────────────────────────────────────────────┘ │
+│ [  45  ] un  │  [   ] kg  │  [  ] vol  │  ✓  │  🗑️         │
+│  Máx: 45     │            │            │     │             │
+│  ⚠️ Limite    │            │            │     │             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
-|---------|-----------|
-| Nova migração SQL | Criar cards `estoque_disponivel` quando CPD cobre demanda |
-| `src/pages/ResumoDaProducao.tsx` | Mapear novo status, função de confirmação |
-| `src/components/kanban/KanbanCard.tsx` | Renderização especial verde para `estoque_disponivel` |
-| `src/components/kanban/ProductGroupedStacks.tsx` | Remover CPDStockIndicator redundante |
+| Arquivo | Linhas | Alteração |
+|---------|--------|-----------|
+| `src/pages/Romaneio.tsx` | ~416-423 | Input com max e indicador visual |
+| `src/pages/Romaneio.tsx` | ~1448-1458 | Handler com validação de limite |
+| `src/pages/Romaneio.tsx` | ~254 | Props para estoque máximo |
 
-## Detalhes Técnicos
+## Benefícios
 
-### Função de Confirmação
-
-Quando o usuário clica em "Confirmar Disponibilidade":
-
-```typescript
-const handleConfirmarEstoqueDisponivel = async (registroId: string) => {
-  // Atualiza status para 'confirmado_estoque' ou deleta o card
-  await supabase
-    .from('producao_registros')
-    .delete()
-    .eq('id', registroId);
-  
-  toast.success('Disponibilidade confirmada! Item removido da lista.');
-  await loadProducaoRegistros();
-};
-```
-
-### Dados do Card Especial
-
-O card `estoque_disponivel` conterá:
-- `demanda_lojas`: Total de unidades demandadas
-- `detalhes_lojas`: Breakdown por loja  
-- Campo adicional: `estoque_cpd_disponivel` para exibir quantidade no CPD
+1. **Feedback imediato**: Usuário vê o limite enquanto digita
+2. **Impossível ultrapassar**: Input já limita o valor máximo
+3. **Indicador visual**: Cor âmbar quando no limite
+4. **Mantém validação no envio**: Backup de segurança
 
