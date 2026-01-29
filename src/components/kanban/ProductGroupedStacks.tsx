@@ -84,6 +84,7 @@ interface ProductGroupedStacksProps {
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
   lojaFiltradaId?: string | null;
+  lojaIniciadaId?: string | null;
 }
 
 export function ProductGroupedStacks({
@@ -94,6 +95,7 @@ export function ProductGroupedStacks({
   onCancelarPreparo,
   onRegistrarPerda,
   lojaFiltradaId,
+  lojaIniciadaId,
 }: ProductGroupedStacksProps) {
   // Filtrar registros pela loja selecionada (controle externo via prop)
   const filteredRegistros = useMemo(() => {
@@ -139,29 +141,37 @@ export function ProductGroupedStacks({
 
   return (
     <div className="space-y-3">
-      {groupedByItem.map((group) => (
-        <div key={`${group.itemId}-${lojaFiltradaId || 'all'}`} className="animate-fade-in">
-          {group.isStack ? (
-            <CardStack
-              registros={group.registros}
-              columnId={columnId}
-              onAction={onAction}
-              onTimerFinished={onTimerFinished}
-              onCancelarPreparo={onCancelarPreparo}
-              onRegistrarPerda={onRegistrarPerda}
-            />
-          ) : (
-            <KanbanCard
-              registro={group.registros[0]}
-              columnId={columnId}
-              onAction={() => onAction(group.registros[0])}
-              onTimerFinished={onTimerFinished}
-              onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
-              onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
-            />
-          )}
-        </div>
-      ))}
+      {groupedByItem.map((group) => {
+        // Verificar se a produção está habilitada para este registro
+        const registroLojaId = group.registros[0].detalhes_lojas?.[0]?.loja_id;
+        const producaoHabilitada = lojaIniciadaId === registroLojaId;
+        
+        return (
+          <div key={`${group.itemId}-${lojaFiltradaId || 'all'}`} className="animate-fade-in">
+            {group.isStack ? (
+              <CardStack
+                registros={group.registros}
+                columnId={columnId}
+                onAction={onAction}
+                onTimerFinished={onTimerFinished}
+                onCancelarPreparo={onCancelarPreparo}
+                onRegistrarPerda={onRegistrarPerda}
+                producaoHabilitada={producaoHabilitada}
+              />
+            ) : (
+              <KanbanCard
+                registro={group.registros[0]}
+                columnId={columnId}
+                onAction={() => onAction(group.registros[0])}
+                onTimerFinished={onTimerFinished}
+                onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
+                onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
+                producaoHabilitada={producaoHabilitada}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
