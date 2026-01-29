@@ -1,81 +1,110 @@
 
-# Plano: Corrigir Cálculo de Estoque CPD na Função de Trigger
+
+# Plano: Corrigir Loop Infinito de Atualizações Realtime
 
 ## Problema Identificado
 
-As demandas da loja **UNIDADE ALEIXO** não estão gerando cards de produção no Resumo da Produção.
+A página **Resumo da Produção** está em um loop infinito de atualizações. Os logs mostram dezenas de mensagens alternando rapidamente:
 
-### Análise de Dados
-
-| Item | Demanda Aleixo | Estoque CPD Real | Estoque CPD Usado | Saldo Líquido | Resultado |
-|------|----------------|------------------|-------------------|---------------|-----------|
-| MUSSARELA | 99 | 2 | **2838** (erro!) | -2739 | ❌ Não cria card |
-| MASSA | 99 | 100 | **3341** (erro!) | -3242 | ❌ Não cria card |
-
-### Causa Raiz
-
-Existem **3 versões** da função `criar_ou_atualizar_producao_registro`:
-1. **Versão trigger** (sem parâmetros) - não usada
-2. **Versão TABLE** - já corrigida para usar `contagem_porcionados.final_sobra`
-3. **Versão UUID** - **ainda usa tabela `estoque_cpd` desatualizada**
-
-O trigger `trg_criar_producao_apos_contagem` chama a **versão UUID**, que busca estoque na tabela errada:
-
-```sql
--- CÓDIGO ATUAL (ERRADO):
-SELECT COALESCE(quantidade, 0)::integer
-INTO v_estoque_cpd
-FROM estoque_cpd  -- ← Tabela desatualizada com valores 1000x maiores!
-WHERE item_porcionado_id = p_item_id;
 ```
+[ResumoDaProducao] Estoque ideal alterado - aguardando recálculo
+[ResumoDaProducao] Contagem atualizada - recarregando produção
+```
+
+Este loop eventualmente causa **perda de conexão com o servidor**.
 
 ---
 
-## Solução
+## Causa Raiz: Ciclo de Feedback entre Triggers e Realtime
 
-Atualizar a função `criar_ou_atualizar_producao_registro` (versão UUID) para buscar o estoque CPD da fonte correta: `contagem_porcionados.final_sobra` do dia atual.
+### Cadeia de Eventos:
 
-### Alteração Necessária
-
-**De:**
-```sql
--- Buscar estoque CPD atual
-SELECT COALESCE(quantidade, 0)::integer
-INTO v_estoque_cpd
-FROM estoque_cpd
-WHERE item_porcionado_id = p_item_id
-  AND organization_id = p_organization_id;
+```text
+1. Alteração em estoques_ideais_semanais
+   ↓
+2. Trigger trg_recalcular_apos_estoque_ideal dispara
+   ↓
+3. Trigger ATUALIZA contagem_porcionados.ideal_amanha (UPDATE)
+   ↓
+4. Trigger trg_criar_producao_apos_contagem dispara (AFTER UPDATE)
+   ↓
+5. Altera producao_registros
+   ↓
+6. Frontend recebe 3 eventos realtime simultaneos:
+   - estoques_ideais_semanais (mudança original)
+   - contagem_porcionados (update do ideal_amanha)
+   - producao_registros (novo/atualizado card)
+   ↓
+7. Cada evento dispara loadProducaoRegistros() com debounce
+   ↓
+8. Múltiplas chamadas se sobrepõem e podem re-disparar triggers
 ```
 
-**Para:**
-```sql
--- CORREÇÃO: Buscar estoque CPD da contagem_porcionados (fonte real)
-SELECT COALESCE(cp.final_sobra, 0)::integer
-INTO v_estoque_cpd
-FROM contagem_porcionados cp
-JOIN lojas l ON l.id = cp.loja_id
-WHERE cp.item_porcionado_id = p_item_id
-  AND cp.organization_id = p_organization_id
-  AND cp.dia_operacional = v_data_hoje
-  AND l.tipo = 'cpd';
+### Por que o loop se sustenta:
 
-v_estoque_cpd := COALESCE(v_estoque_cpd, 0);
-```
+1. O trigger `trigger_recalcular_producao_apos_estoque_ideal` faz **UPDATE em contagem_porcionados**
+2. Isso dispara o trigger `trg_criar_producao_apos_contagem`
+3. O frontend escuta **ambas as tabelas** via realtime
+4. Com múltiplos eventos chegando em rápida sucessão, o debounce não é suficiente
 
 ---
 
-## Implementação
+## Solução Proposta
 
-Uma migração SQL será criada para atualizar a função RPC, corrigindo a fonte de estoque CPD de `estoque_cpd` para `contagem_porcionados.final_sobra`.
+### Estratégia 1: Consolidar Listeners Realtime (Frontend)
 
-### Resultado Esperado
+Reduzir os listeners de 4 tabelas para apenas 1 (`producao_registros`), já que os triggers no banco já garantem que as mudanças nas outras tabelas resultem em atualizações nos cards de produção.
 
-Após a correção:
+**Benefícios:**
+- Elimina eventos duplicados
+- Simplifica lógica de debounce
+- Mantém reatividade (triggers ainda funcionam)
 
-| Item | Demanda | Estoque Real | Saldo Líquido | Gatilho | Resultado |
-|------|---------|--------------|---------------|---------|-----------|
-| MUSSARELA | 99 | 2 | **97** | 25 | ✅ Cria 97 cards |
-| MASSA | 99 | 100 | **-1** | 25 | ✅ Não precisa (correto) |
+### Estratégia 2: Evitar UPDATE Redundante (Backend)
+
+Modificar `trigger_recalcular_producao_apos_estoque_ideal` para **não atualizar** `contagem_porcionados` se o valor já está correto, evitando disparar o trigger de contagem desnecessariamente.
+
+**Benefícios:**
+- Reduz operações no banco
+- Quebra o ciclo de feedback na fonte
+
+---
+
+## Implementação Recomendada: Estratégia 1 + 2 (Combinada)
+
+### Parte 1: Atualizar Frontend (ResumoDaProducao.tsx)
+
+Remover os listeners de:
+- `contagem_porcionados`
+- `estoques_ideais_semanais`
+- `itens_reserva_diaria`
+
+Manter apenas o listener de `producao_registros`, que é a tabela final que o Kanban exibe.
+
+**Mudança no código:**
+
+| Ação | Detalhe |
+|------|---------|
+| Remover | `contagemChannel` (contagem_porcionados) |
+| Remover | `estoqueIdealChannel` (estoques_ideais_semanais) |
+| Remover | `reservaDiariaChannel` (itens_reserva_diaria) |
+| Manter | `producaoChannel` (producao_registros) - único listener |
+| Remover | Console logs de debug que geram ruído |
+
+### Parte 2: Migração SQL (Otimização de Trigger)
+
+Atualizar `trigger_recalcular_producao_apos_estoque_ideal` para verificar se o valor mudou antes de fazer UPDATE:
+
+```sql
+-- Só atualizar se o valor for diferente
+UPDATE contagem_porcionados cp
+SET ideal_amanha = v_novo_ideal
+WHERE cp.item_porcionado_id = NEW.item_porcionado_id
+  AND cp.loja_id = NEW.loja_id
+  AND cp.dia_operacional = CURRENT_DATE
+  AND cp.organization_id = NEW.organization_id
+  AND COALESCE(cp.ideal_amanha, 0) != v_novo_ideal; -- Só se mudou
+```
 
 ---
 
@@ -83,10 +112,15 @@ Após a correção:
 
 | Arquivo | Ação |
 |---------|------|
-| Nova migração SQL | Atualizar função `criar_ou_atualizar_producao_registro` |
+| `src/pages/ResumoDaProducao.tsx` | Remover listeners redundantes |
+| Nova migração SQL | Otimizar trigger para evitar UPDATEs desnecessários |
 
 ---
 
-## Resumo
+## Resultado Esperado
 
-A correção alinha a versão UUID da função (usada pelo trigger) com a versão TABLE (já corrigida), garantindo que ambas usem a fonte de estoque real do CPD. Isso fará com que as demandas do Aleixo e outras lojas gerem cards de produção corretamente quando o estoque do CPD for insuficiente.
+- Eliminar loop infinito de atualizações
+- Reduzir carga no servidor e no cliente
+- Manter reatividade: mudanças nas contagens ainda criam/atualizam cards via triggers
+- Interface responde apenas quando há mudanças reais nos cards de produção
+
