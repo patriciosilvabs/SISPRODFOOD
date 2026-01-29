@@ -4,7 +4,18 @@
 
 ## 📋 Resumo Executivo
 
-Implementar um sistema de **gatilho mínimo** que impede a abertura automática de lotes de produção quando a demanda acumulada não atinge um volume mínimo operacional. Isso evita desperdício de "setups" (custo de iniciar uma fornada, abrir insumos) para quantidades pequenas.
+1. ✅ **Coluna `quantidade_minima_producao`** adicionada à tabela `itens_porcionados`
+2. ✅ **Tabela `backlog_producao`** criada para armazenar demandas abaixo do gatilho
+3. ✅ **Campo de configuração** no formulário de Itens Porcionados
+4. ✅ **BacklogIndicator** componente visual para mostrar itens aguardando
+5. ✅ **Integração** no Resumo da Produção
+
+### Próximos Passos (Fase 2 - Lógica no Backend):
+- Modificar função RPC `criar_ou_atualizar_producao_registro` para implementar a verificação do gatilho
+
+---
+
+## 📋 Resumo Executivo
 
 ---
 
