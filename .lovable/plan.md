@@ -1,160 +1,110 @@
 
-# Plano: Ajuste de Estoque de Porcionados no CPD
 
-## Contexto
+# Plano: Ajustar Interface de Porcionados para CPD
 
-O sistema atual permite entrada automática de porcionados via produção e saída automática via romaneio. Porém, falta uma funcionalidade crítica para operações do dia-a-dia: **ajuste manual do estoque de porcionados no CPD** para auditorias, perdas, e correções de inventário.
+## Objetivo
 
----
+Modificar a página de Contagem de Porcionados para que, quando o usuário estiver no CPD:
 
-## Solução Proposta
-
-Criar uma aba ou seção dedicada na página de **Contagem de Porcionados** (quando o usuário está no CPD) ou uma nova funcionalidade específica para o CPD realizar ajustes de estoque com:
-
-1. **Lista de itens porcionados com estoque atual**
-2. **Botões de ajuste (+ / -)** para cada item
-3. **Campo de observação obrigatória** (motivo do ajuste)
-4. **Tipos de ajuste**: Ajuste Positivo, Ajuste Negativo, Perda
-5. **Registro em log imutável** para auditoria
+1. **Remover a aba "Contagem"** - CPD não é loja, não precisa fazer contagem
+2. **Renomear título da página** - De "Contagem de Porcionados" para "Estoque de Porcionados"
+3. **Ir direto para a funcionalidade de ajuste** - Sem abas, apenas a interface de ajuste de estoque
 
 ---
 
-## Arquitetura
+## Análise Atual
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                CONTAGEM PORCIONADOS (CPD)                   │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────────────┐ │
-│  │   Produção Atual    │    │   Ajustar Estoque (NOVO)    │ │
-│  │   (final_sobra)     │    │   - Ajuste +/-              │ │
-│  │                     │    │   - Registrar Perda         │ │
-│  │   [ver estoque]     │    │   - Observação obrigatória  │ │
-│  └─────────────────────┘    └─────────────────────────────┘ │
-│                                                             │
-│                           │                                 │
-│                           ▼                                 │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │           movimentacoes_estoque_log                   │   │
-│  │   (registro imutável de todas as movimentações)       │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+Atualmente em `ContagemPorcionados.tsx` (linhas 908-913):
+
+```tsx
+{canAdjustStock && cpdLoja ? (
+  <Tabs value={activeTab} onValueChange={...}>
+    <TabsList>
+      <TabsTrigger value="contagem">Contagem</TabsTrigger>
+      <TabsTrigger value="ajuste">Ajustar Estoque</TabsTrigger>
+    </TabsList>
+    ...
+  </Tabs>
+) : ( ... )}
+```
+
+E no header (`ContagemPageHeader.tsx`):
+
+```tsx
+<h1>Contagem de Porcionados</h1>
+<p>Registre a sobra do dia e acompanhe a demanda de produção</p>
 ```
 
 ---
 
-## Implementação
+## Solução
 
-### Fase 1: Componente de Ajuste de Estoque CPD
+### Lógica de Exibição
 
-**Arquivo**: `src/components/cpd/AjusteEstoquePorcionadosCPD.tsx`
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    USUÁRIO É EXCLUSIVAMENTE CPD?                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   SIM (apenas CPD, sem lojas):                                  │
+│   ├── Título: "Estoque de Porcionados"                          │
+│   ├── Subtítulo: "Visualize e ajuste o estoque de porcionados"  │
+│   ├── SEM abas (mostrar direto o ajuste de estoque)             │
+│   └── Renderizar apenas: <AjusteEstoquePorcionadosCPD />        │
+│                                                                 │
+│   NÃO (tem lojas OU é admin com acesso a tudo):                 │
+│   ├── Título: "Contagem de Porcionados"                         │
+│   ├── Subtítulo: "Registre a sobra do dia..."                   │
+│   ├── Mostrar abas se tiver acesso CPD                          │
+│   └── Contagem normal + opção de ajuste                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Criar componente com:
-- Listagem de todos os itens porcionados ativos
-- Exibição do estoque atual (`final_sobra` da `contagem_porcionados` do CPD)
-- Botão de ação para abrir modal de ajuste
-- Tipo de ajuste: `ajuste_positivo`, `ajuste_negativo`, `perda`
-- Quantidade do ajuste
-- Observação/Motivo (obrigatória)
-- Botão confirmar
+---
 
-### Fase 2: Integração com Hook de Movimentação
+## Arquivos a Modificar
 
-Utilizar o hook `useMovimentacaoEstoque` existente que já suporta:
-- `entidadeTipo: 'porcionado'`
-- `tipoMovimentacao: 'ajuste_positivo' | 'ajuste_negativo' | 'perda'`
-- Validação de observação obrigatória
-- Registro automático em `movimentacoes_estoque_log`
-
-### Fase 3: Atualização do Estoque Físico
-
-Após registrar a movimentação, atualizar a tabela `contagem_porcionados`:
-- `final_sobra` += quantidade (para ajuste positivo)
-- `final_sobra` -= quantidade (para ajuste negativo/perda)
-- Validar que não fique negativo
-
-### Fase 4: Integração na Página
-
-**Opção A**: Adicionar aba "Ajustar Estoque" na página `ContagemPorcionados.tsx` quando o usuário está logado no CPD
-
-**Opção B**: Criar nova página dedicada `AjusteEstoqueCPD.tsx` acessível apenas para perfil CPD/Admin
+| Arquivo | Modificação |
+|---------|-------------|
+| `src/pages/ContagemPorcionados.tsx` | Lógica condicional para detectar usuário exclusivo CPD e renderizar interface apropriada |
+| `src/components/contagem/ContagemPageHeader.tsx` | Adicionar prop para alternar título/subtítulo baseado no contexto CPD |
 
 ---
 
 ## Detalhes Técnicos
 
-### Frontend
+### 1. ContagemPageHeader.tsx
 
-**Modal de Ajuste**:
-```
-┌───────────────────────────────────────────────┐
-│         Ajustar Estoque: [Nome Item]          │
-├───────────────────────────────────────────────┤
-│                                               │
-│  Estoque Atual: 150 unidades                  │
-│                                               │
-│  Tipo de Ajuste:                              │
-│  ○ Ajuste Positivo (+)                        │
-│  ● Ajuste Negativo (-)                        │
-│  ○ Registrar Perda                            │
-│                                               │
-│  Quantidade: [_____30_____]                   │
-│                                               │
-│  Motivo (obrigatório):                        │
-│  ┌─────────────────────────────────────────┐  │
-│  │ Contagem de auditoria - encontrado 30   │  │
-│  │ unidades a menos que o sistema          │  │
-│  └─────────────────────────────────────────┘  │
-│                                               │
-│  Estoque Resultante: 120 unidades             │
-│                                               │
-│        [Cancelar]    [Confirmar Ajuste]       │
-└───────────────────────────────────────────────┘
+Adicionar novas props:
+- `isCPDOnly: boolean` - indica se é exclusivamente CPD
+- Título condicional: "Estoque de Porcionados" vs "Contagem de Porcionados"
+- Subtítulo condicional
+
+### 2. ContagemPorcionados.tsx
+
+Detectar se usuário é exclusivamente CPD:
+
+```tsx
+// Usuário só tem CPD (sem lojas normais)
+const lojasNormais = lojas.filter(l => l.tipo !== 'cpd');
+const isCPDOnly = isCPDUser && lojasNormais.length === 0;
 ```
 
-### Validações
-- Quantidade > 0
-- Observação não vazia (mínimo 10 caracteres)
-- Estoque resultante não pode ser negativo
-- Prevenção de duplo clique
-
-### Logs de Auditoria
-Registro automático em `movimentacoes_estoque_log` com:
-- `entidade_tipo: 'porcionado'`
-- `entidade_id: item_porcionado_id`
-- `tipo_movimentacao: 'ajuste_positivo' | 'ajuste_negativo' | 'perda'`
-- `quantidade: valor do ajuste`
-- `estoque_anterior: valor antes`
-- `estoque_resultante: valor depois`
-- `observacao: motivo informado`
-- `usuario_id/nome: quem fez`
-- `unidade_origem: 'cpd'`
+Renderização condicional:
+- Se `isCPDOnly`: renderizar apenas `<AjusteEstoquePorcionadosCPD />` sem abas
+- Caso contrário: manter comportamento atual com abas (para admins que têm acesso a tudo)
 
 ---
 
-## Arquivos a Criar/Modificar
+## Resultado Esperado
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/components/cpd/AjusteEstoquePorcionadosCPD.tsx` | Criar | Componente principal de listagem e ajuste |
-| `src/components/modals/AjustarEstoquePorcionadoModal.tsx` | Criar | Modal para realizar o ajuste |
-| `src/pages/ContagemPorcionados.tsx` | Modificar | Adicionar aba/seção de ajuste quando no CPD |
+### Para usuário exclusivo CPD:
+- Título: **"Estoque de Porcionados"**
+- Subtítulo: **"Visualize e ajuste o estoque de porcionados do CPD"**
+- Interface: Direto para o componente de ajuste, sem abas
 
----
+### Para Admin/usuários com acesso a lojas:
+- Comportamento atual mantido
+- Abas "Contagem" e "Ajustar Estoque" quando aplicável
 
-## Benefícios
-
-1. **Auditoria Completa**: Todo ajuste fica registrado com motivo, usuário e data
-2. **Rastreabilidade**: Relatório de movimentações mostra histórico completo
-3. **Prevenção de Fraudes**: Observação obrigatória para justificar ajustes
-4. **Alinhamento com Estoque Físico**: Permite corrigir divergências
-5. **Consistência do Sistema**: Evita acúmulo de erros no estoque
-
----
-
-## Permissões
-
-- **Perfil CPD**: Pode realizar ajustes nos porcionados do seu CPD
-- **Perfil Admin**: Pode realizar ajustes em qualquer unidade
-- **Perfil Loja**: Não pode ajustar estoque de porcionados (apenas visualizar)
