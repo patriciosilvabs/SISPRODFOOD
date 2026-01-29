@@ -288,6 +288,11 @@ const ResumoDaProducao = () => {
     
     setIsLimpando(true);
     try {
+      // 1. Buscar data atual do servidor
+      const { data: dataServidor } = await supabase.rpc('get_current_date');
+      const hoje = dataServidor || new Date().toISOString().split('T')[0];
+      
+      // 2. Deletar todos os registros de produção
       const { error, count } = await supabase
         .from('producao_registros')
         .delete()
@@ -296,10 +301,23 @@ const ResumoDaProducao = () => {
       
       if (error) throw error;
       
-      // Registrar no audit log
+      // 3. Zerar a_produzir nas contagens do dia atual
+      // Isso limpa o painel de status das contagens
+      const { error: errorContagem } = await supabase
+        .from('contagem_porcionados')
+        .update({ a_produzir: 0 })
+        .eq('organization_id', organizationId)
+        .eq('dia_operacional', hoje);
+      
+      if (errorContagem) {
+        console.error('Erro ao limpar contagens:', errorContagem);
+      }
+      
+      // 4. Registrar no audit log
       await log('producao.limpar', 'producao_registros', null, { 
         acao: 'limpar_tudo',
         registros_removidos: String(count || 0),
+        contagens_zeradas: hoje,
       });
       
       toast.success(`Produção limpa! ${count || 0} registros removidos.`);
