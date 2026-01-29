@@ -1,80 +1,114 @@
 
-
-# Plano: Corrigir Fonte de Estoque CPD na Função de Produção
+# Plano: Corrigir Exclusão de Itens Porcionados
 
 ## Problema Identificado
 
-A função `criar_ou_atualizar_producao_registro` usa a tabela **`estoque_cpd`** para verificar o estoque disponível do CPD, mas essa tabela está desatualizada:
+Ao tentar excluir o item `f4002717-6808-4da8-8401-25041fd49279`, o sistema retorna:
 
-| Item | Estoque em `estoque_cpd` | Estoque Real (contagem CPD) | Diferença |
-|------|--------------------------|----------------------------|-----------|
-| MASSA - PORCIONADO | 3.341 | 100 | +3.241 |
-| MUSSARELA | 2.838 | 2-314 | +2.500+ |
-| CALABRESA | 1.933 | 1-208 | +1.700+ |
+```
+Foreign key constraint violation:
+Key is still referenced from table "contagem_porcionados_audit"
+```
 
-**Resultado**: O sistema pensa que há milhares de unidades em estoque e não cria cards de produção, quando na realidade o estoque é muito menor.
+### Causa Raiz
 
-## Causa Raiz
+1. **Tabelas faltando na cascata**: A função `handleDelete` atual só deleta de **6 tabelas**, mas existem **16 tabelas** que referenciam `itens_porcionados`
 
-Existem **duas tabelas** para estoque do CPD que não estão sincronizadas:
-- `estoque_cpd` (usada pela função de produção) - valores antigos
-- `contagem_porcionados.final_sobra` onde loja é CPD (usada pela tela de ajuste) - valores reais
+2. **Bloqueio de RLS**: A tabela `contagem_porcionados_audit` não permite DELETE por políticas RLS - apenas INSERT e SELECT
+
+### Tabelas que referenciam `itens_porcionados`:
+
+| Tabela | Status Atual | Coluna |
+|--------|--------------|--------|
+| insumos_extras | ✅ Tratada | item_porcionado_id |
+| estoque_cpd | ✅ Tratada | item_porcionado_id |
+| itens_reserva_diaria | ✅ Tratada | item_porcionado_id |
+| estoques_ideais_semanais | ✅ Tratada | item_porcionado_id |
+| estoque_loja_itens | ✅ Tratada | item_porcionado_id |
+| contagem_porcionados | ✅ Tratada | item_porcionado_id |
+| **contagem_porcionados_audit** | ❌ **Faltando** | item_porcionado_id |
+| producao_lotes | ❌ Faltando | item_id |
+| producao_registros | ❌ Faltando | item_id |
+| romaneio_itens | ❌ Faltando | item_porcionado_id |
+| romaneios_avulsos_itens | ❌ Faltando | item_porcionado_id |
+| consumo_historico | ❌ Faltando | item_id |
+| perdas_producao | ❌ Faltando | item_id |
+| producao_massa_historico | ❌ Faltando | item_id |
+| incrementos_producao | ❌ Faltando | item_porcionado_id |
+| backlog_producao | ❌ Faltando | item_id |
+
+---
 
 ## Solução
 
-Atualizar a função RPC para buscar o estoque do CPD da mesma fonte que a tela de ajuste usa: `contagem_porcionados.final_sobra` onde a loja é do tipo CPD e o `dia_operacional` é a data atual.
+Criar uma **Edge Function** `excluir-item-porcionado` usando `service_role` para bypass de RLS, seguindo o padrão já estabelecido para `excluir-usuario`.
+
+### Vantagens desta abordagem:
+- Contorna restrições de RLS
+- Centraliza lógica de cascata
+- Consistente com política de hard-delete existente
+- Transação atômica (tudo ou nada)
 
 ---
 
-## Modificação na Função SQL
+## Implementação
 
-**Trecho atual** (busca de `estoque_cpd`):
-```sql
-SELECT COALESCE(quantidade, 0)::integer
-INTO v_estoque_cpd
-FROM estoque_cpd
-WHERE item_porcionado_id = p_item_id
-  AND organization_id = p_organization_id;
+### 1. Criar Edge Function `excluir-item-porcionado`
+
+A função irá:
+1. Validar autenticação e permissão Admin
+2. Deletar em ordem reversa de dependências (tabelas filhas primeiro)
+3. Finalmente deletar o item principal
+
+**Ordem de exclusão:**
+```text
+1. contagem_porcionados_audit
+2. perdas_producao
+3. consumo_historico
+4. producao_massa_historico
+5. romaneio_itens
+6. romaneios_avulsos_itens
+7. producao_registros
+8. producao_lotes
+9. incrementos_producao
+10. backlog_producao
+11. contagem_porcionados
+12. estoque_loja_itens
+13. estoques_ideais_semanais
+14. itens_reserva_diaria
+15. estoque_cpd
+16. insumos_extras
+17. itens_porcionados (item principal)
 ```
 
-**Trecho corrigido** (busca de `contagem_porcionados` do CPD):
-```sql
-SELECT COALESCE(cp.final_sobra, 0)::integer
-INTO v_estoque_cpd
-FROM contagem_porcionados cp
-JOIN lojas l ON l.id = cp.loja_id
-WHERE cp.item_porcionado_id = p_item_id
-  AND cp.organization_id = p_organization_id
-  AND l.tipo = 'cpd'
-  AND cp.dia_operacional = v_data_hoje;
+### 2. Atualizar `ItensPorcionados.tsx`
+
+Substituir chamadas diretas ao Supabase por chamada à Edge Function:
+
+```typescript
+const handleDelete = async (id: string) => {
+  // ... validações existentes ...
+  
+  const { error } = await supabase.functions.invoke('excluir-item-porcionado', {
+    body: { item_id: id }
+  });
+  
+  if (error) throw error;
+  toast.success('Item excluído permanentemente!');
+};
 ```
 
 ---
 
-## Impacto
+## Arquivos a Criar/Modificar
 
-Após a correção:
-
-| Item | Demanda Lojas | Estoque CPD Real | Saldo Líquido | Resultado |
-|------|---------------|------------------|---------------|-----------|
-| MASSA - PORCIONADO | 660 | 100 | **+560** | Cria card de produção |
-| CARNE | 27+ | 40-98 | Depende | Pode criar card |
-| FRANGO | 45+ | 54-115 | Depende | Pode criar card |
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/excluir-item-porcionado/index.ts` | Criar |
+| `src/pages/ItensPorcionados.tsx` | Modificar handleDelete |
 
 ---
 
-## Arquivos Afetados
+## Resumo
 
-1. **Migration SQL**: Atualizar função `criar_ou_atualizar_producao_registro` (versão de 4 parâmetros)
-
----
-
-## Detalhes Técnicos
-
-A correção envolve:
-
-1. Identificar a loja CPD da organização
-2. Buscar o `final_sobra` mais recente do dia operacional atual para cada item
-3. Usar esse valor como `v_estoque_cpd` no cálculo do saldo líquido
-4. Se não houver contagem do CPD para o dia, assumir estoque 0 (ou fallback para `estoque_cpd`)
-
+Esta correção garante exclusão completa e permanente de itens porcionados, deletando todos os dados relacionados em 16 tabelas, respeitando a política de hard-delete estabelecida para o sistema.
