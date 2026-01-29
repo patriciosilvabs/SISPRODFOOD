@@ -198,8 +198,14 @@ const ResumoDaProducao = () => {
     data_referencia: string;
   }>>([]);
   
-  // Estado para estoque do CPD (para indicador visual quando coluna A PRODUZIR está vazia)
-  const [estoqueCPD, setEstoqueCPD] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
+  // Estado para saldo líquido do CPD (demanda vs estoque - para indicador visual)
+  const [estoqueCPD, setEstoqueCPD] = useState<Array<{
+    item_id: string;
+    item_nome: string;
+    estoque_cpd: number;
+    demanda_lojas: number;
+    saldo_liquido: number; // demanda - estoque (negativo = suficiente)
+  }>>([]);
   
   // Ref para rastrear IDs de cards já conhecidos (para notificação de novos cards)
   const knownCardIdsRef = useRef<Set<string>>(new Set());
@@ -831,9 +837,10 @@ const ResumoDaProducao = () => {
       
       setBacklogItems(backlogData || []);
       
-      // Buscar estoque atual do CPD (final_sobra > 0 do dia atual)
-      // Isso será usado para mostrar indicador quando coluna A PRODUZIR está vazia
-      if (cpdLoja?.id) {
+      // Calcular saldo líquido (demanda das lojas vs estoque CPD)
+      // Indicador "Estoque Suficiente" só aparece quando saldo_liquido <= 0
+      if (cpdLoja?.id && lojasData) {
+        // 1. Buscar estoque do CPD
         const { data: estoqueCPDData } = await supabase
           .from('contagem_porcionados')
           .select(`
@@ -842,15 +849,74 @@ const ResumoDaProducao = () => {
             itens_porcionados!inner(nome)
           `)
           .eq('loja_id', cpdLoja.id)
+          .eq('dia_operacional', hoje);
+        
+        // 2. Buscar demandas das lojas (tipo != 'cpd')
+        const lojasNaoCPD = lojasData.filter(l => l.tipo !== 'cpd').map(l => l.id);
+        const { data: demandasData } = await supabase
+          .from('contagem_porcionados')
+          .select(`
+            item_porcionado_id,
+            a_produzir,
+            itens_porcionados!inner(nome)
+          `)
+          .in('loja_id', lojasNaoCPD)
           .eq('dia_operacional', hoje)
-          .gt('final_sobra', 0);
+          .gt('a_produzir', 0);
         
-        const estoquesCPDFormatado = estoqueCPDData?.map(e => ({
-          item_nome: (e.itens_porcionados as unknown as { nome: string }).nome,
-          quantidade: e.final_sobra,
-        })) || [];
+        // 3. Agregar demandas por item
+        const demandasPorItem = new Map<string, { nome: string; demanda: number }>();
+        demandasData?.forEach(d => {
+          const itemId = d.item_porcionado_id;
+          const nome = (d.itens_porcionados as unknown as { nome: string }).nome;
+          if (!demandasPorItem.has(itemId)) {
+            demandasPorItem.set(itemId, { nome, demanda: 0 });
+          }
+          demandasPorItem.get(itemId)!.demanda += d.a_produzir || 0;
+        });
         
-        setEstoqueCPD(estoquesCPDFormatado);
+        // 4. Mapear estoque CPD por item
+        const estoqueCPDMap = new Map<string, number>();
+        estoqueCPDData?.forEach(e => {
+          estoqueCPDMap.set(e.item_porcionado_id, e.final_sobra || 0);
+        });
+        
+        // 5. Calcular saldo líquido por item
+        const estoqueComSaldo: Array<{
+          item_id: string;
+          item_nome: string;
+          estoque_cpd: number;
+          demanda_lojas: number;
+          saldo_liquido: number;
+        }> = [];
+        
+        // Itens COM demanda das lojas
+        demandasPorItem.forEach((dados, itemId) => {
+          const estoque = estoqueCPDMap.get(itemId) || 0;
+          estoqueComSaldo.push({
+            item_id: itemId,
+            item_nome: dados.nome,
+            estoque_cpd: estoque,
+            demanda_lojas: dados.demanda,
+            saldo_liquido: dados.demanda - estoque, // negativo = suficiente
+          });
+        });
+        
+        // Itens SEM demanda mas com estoque CPD (100% disponível)
+        estoqueCPDData?.forEach(e => {
+          const itemId = e.item_porcionado_id;
+          if (!demandasPorItem.has(itemId) && (e.final_sobra || 0) > 0) {
+            estoqueComSaldo.push({
+              item_id: itemId,
+              item_nome: (e.itens_porcionados as unknown as { nome: string }).nome,
+              estoque_cpd: e.final_sobra || 0,
+              demanda_lojas: 0,
+              saldo_liquido: -(e.final_sobra || 0), // negativo = sobra de estoque
+            });
+          }
+        });
+        
+        setEstoqueCPD(estoqueComSaldo);
       }
     } catch (error) {
       console.error('Erro ao carregar registros:', error);
