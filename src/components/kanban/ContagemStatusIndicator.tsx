@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Clock, Store, Package, Rocket, Star, Lock, Play } from "lucide-react";
+import { CheckCircle2, Clock, Store, Package, Rocket, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, isToday, parseISO } from "date-fns";
 
@@ -26,7 +26,6 @@ interface ContagemStatusIndicatorProps {
   onIniciarProducaoLoja?: (lojaId: string, lojaNome: string) => void;
   onSelecionarLoja?: (lojaId: string | null, lojaNome: string) => void;
   lojaFiltradaId?: string | null;
-  lojaIniciadaId?: string | null;
 }
 
 export function ContagemStatusIndicator({
@@ -35,7 +34,6 @@ export function ContagemStatusIndicator({
   onIniciarProducaoLoja,
   onSelecionarLoja,
   lojaFiltradaId,
-  lojaIniciadaId,
 }: ContagemStatusIndicatorProps) {
   const { enviaram, aguardando, lojaMaiorDemanda } = useMemo(() => {
     const lojasNaoCPD = lojas.filter(l => l.tipo !== 'cpd');
@@ -103,68 +101,50 @@ export function ContagemStatusIndicator({
             }
             
             const isMaiorDemanda = lojaMaiorDemanda?.id === loja.id && enviaram.length > 1;
-            const isLojaIniciada = lojaIniciadaId === loja.id;
-            const estaBloqueada = lojaIniciadaId !== null && !isLojaIniciada;
             const isSelected = lojaFiltradaId === loja.id;
             
             return (
               <div
                 key={loja.id}
                 className={cn(
-                  "flex flex-col p-2 rounded-md border transition-all",
-                  estaBloqueada 
-                    ? "bg-muted/30 border-muted cursor-not-allowed opacity-60"
-                    : isLojaIniciada
-                      ? "bg-primary/10 border-primary ring-2 ring-primary/30 cursor-pointer"
-                      : isSelected
-                        ? "bg-primary/10 border-primary ring-2 ring-primary/30 cursor-pointer"
-                        : isMaiorDemanda 
-                          ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 hover:border-amber-400 cursor-pointer" 
-                          : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400 cursor-pointer"
+                  "flex flex-col p-2 rounded-md border transition-all cursor-pointer",
+                  isSelected
+                    ? "bg-primary/10 border-primary ring-2 ring-primary/30"
+                    : isMaiorDemanda 
+                      ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 hover:border-amber-400" 
+                      : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400"
                 )}
                 onClick={() => {
-                  if (!estaBloqueada && onSelecionarLoja) {
+                  if (onSelecionarLoja) {
                     onSelecionarLoja(isSelected ? null : loja.id, loja.nome);
                   }
                 }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    {estaBloqueada ? (
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                    ) : isLojaIniciada ? (
-                      <Play className="h-4 w-4 text-primary fill-primary" />
-                    ) : isMaiorDemanda ? (
+                    {isMaiorDemanda ? (
                       <Star className="h-4 w-4 text-amber-600 dark:text-amber-400 fill-amber-600 dark:fill-amber-400" />
                     ) : (
                       <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                     )}
                     <span className={cn(
                       "text-sm font-medium truncate max-w-[120px]",
-                      estaBloqueada
-                        ? "text-muted-foreground"
-                        : isLojaIniciada
-                          ? "text-primary"
-                          : isMaiorDemanda 
-                            ? "text-amber-700 dark:text-amber-300" 
-                            : "text-emerald-700 dark:text-emerald-300"
+                      isMaiorDemanda 
+                        ? "text-amber-700 dark:text-amber-300" 
+                        : "text-emerald-700 dark:text-emerald-300"
                     )}>
                       {loja.nome}
                     </span>
                   </div>
                   <div className={cn(
                     "flex items-center gap-1.5 text-xs",
-                    estaBloqueada
-                      ? "text-muted-foreground"
-                      : isLojaIniciada
-                        ? "text-primary"
-                        : isMaiorDemanda 
-                          ? "text-amber-600 dark:text-amber-400" 
-                          : "text-emerald-600 dark:text-emerald-400"
+                    isMaiorDemanda 
+                      ? "text-amber-600 dark:text-amber-400" 
+                      : "text-emerald-600 dark:text-emerald-400"
                   )}>
                     <Package className="h-3 w-3" />
                     <span>{loja.totalItens} itens</span>
-                    <span className={estaBloqueada ? "text-muted-foreground" : isMaiorDemanda ? "text-amber-400" : "text-emerald-400"}>•</span>
+                    <span className={isMaiorDemanda ? "text-amber-400" : "text-emerald-400"}>•</span>
                     <span>{loja.totalUnidades} un</span>
                   </div>
                 </div>
@@ -173,28 +153,16 @@ export function ContagemStatusIndicator({
                   {horarioFormatado && (
                     <span className={cn(
                       "text-[10px] ml-6",
-                      estaBloqueada
-                        ? "text-muted-foreground/70"
-                        : isMaiorDemanda 
-                          ? "text-amber-500 dark:text-amber-400/70" 
-                          : "text-emerald-500 dark:text-emerald-400/70"
+                      isMaiorDemanda 
+                        ? "text-amber-500 dark:text-amber-400/70" 
+                        : "text-emerald-500 dark:text-emerald-400/70"
                     )}>
                       Atualizado: {horarioFormatado}
                     </span>
                   )}
                   
                   <div className="flex items-center gap-1.5 ml-auto">
-                    {estaBloqueada ? (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground h-7">
-                        <Lock className="h-3 w-3 mr-1" />
-                        Aguardando
-                      </Badge>
-                    ) : isLojaIniciada ? (
-                      <Badge className="text-[10px] bg-primary text-primary-foreground h-7">
-                        <Play className="h-3 w-3 mr-1" />
-                        Em Produção
-                      </Badge>
-                    ) : onIniciarProducaoLoja && loja.totalItens > 0 && (
+                    {onIniciarProducaoLoja && loja.totalItens > 0 && (
                       <Button
                         size="sm"
                         variant={isMaiorDemanda ? "default" : "outline"}
@@ -214,7 +182,7 @@ export function ContagemStatusIndicator({
                   </div>
                 </div>
                 
-                {isMaiorDemanda && !lojaIniciadaId && (
+                {isMaiorDemanda && (
                   <span className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 ml-6">
                     ★ Maior demanda - recomendamos iniciar por aqui
                   </span>
@@ -241,15 +209,9 @@ export function ContagemStatusIndicator({
           ))}
         </div>
         
-        {aguardando.length > 0 && enviaram.length > 0 && !lojaIniciadaId && (
+        {aguardando.length > 0 && enviaram.length > 0 && (
           <p className="text-xs text-muted-foreground mt-2 italic">
             💡 Clique em "Iniciar" para começar a produção de uma loja.
-          </p>
-        )}
-        
-        {lojaIniciadaId && (
-          <p className="text-xs text-primary mt-2 font-medium">
-            🔒 Outras lojas serão liberadas quando todos os itens estiverem em porcionamento.
           </p>
         )}
       </CardContent>

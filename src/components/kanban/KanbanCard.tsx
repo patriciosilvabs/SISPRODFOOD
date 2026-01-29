@@ -244,10 +244,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
     timerState.isActive && 
     !timerState.isFinished;
 
-  // Na coluna A_PRODUZIR, bloquear se não tiver iniciado a produção da loja
-  const aguardandoIniciar = columnId === 'a_produzir' && !producaoHabilitada;
-
-  const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando || aguardandoIniciar;
+  const estaBloqueado = estaBloqueadoPorTraco || timerAindaRodando;
   
   const temSequenciaTraco = registro.sequencia_traco !== undefined && registro.sequencia_traco !== null;
   const temLote = registro.lote_producao_id !== undefined && registro.lote_producao_id !== null;
@@ -340,9 +337,7 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
             <div className="flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
               <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <span className="text-xs text-amber-700 dark:text-amber-300">
-                {aguardandoIniciar 
-                  ? 'Clique em "Iniciar" na loja para liberar'
-                  : `Aguardando lote ${(registro.sequencia_traco || 1) - 1} finalizar`}
+                Aguardando lote {(registro.sequencia_traco || 1) - 1} finalizar
               </span>
             </div>
           )}
@@ -947,11 +942,6 @@ export function KanbanCard({ registro, columnId, onAction, onTimerFinished, onCa
                     <>
                       <Clock className="h-4 w-4 mr-2 animate-pulse" />
                       Aguardando timer
-                    </>
-                  ) : aguardandoIniciar ? (
-                    <>
-                      <Lock className="h-4 w-4 mr-2" />
-                      Aguardando Iniciar
                     </>
                   ) : estaBloqueadoPorTraco ? (
                     <>

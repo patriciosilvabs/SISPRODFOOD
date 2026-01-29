@@ -84,7 +84,6 @@ interface ProductGroupedStacksProps {
   onCancelarPreparo?: (registro: ProducaoRegistro) => void;
   onRegistrarPerda?: (registro: ProducaoRegistro) => void;
   lojaFiltradaId?: string | null;
-  lojaIniciadaId?: string | null;
 }
 
 export function ProductGroupedStacks({
@@ -95,7 +94,6 @@ export function ProductGroupedStacks({
   onCancelarPreparo,
   onRegistrarPerda,
   lojaFiltradaId,
-  lojaIniciadaId,
 }: ProductGroupedStacksProps) {
   // Filtrar registros pela loja selecionada (controle externo via prop)
   const filteredRegistros = useMemo(() => {
@@ -142,12 +140,6 @@ export function ProductGroupedStacks({
   return (
     <div className="space-y-3">
       {groupedByItem.map((group) => {
-        // Verificar se a produção está habilitada para este registro
-        // Se nenhuma loja foi iniciada (null), todos estão habilitados
-        // Se uma loja foi iniciada, apenas ela fica habilitada
-        const registroLojaId = group.registros[0].detalhes_lojas?.[0]?.loja_id;
-        const producaoHabilitada = lojaIniciadaId === null || lojaIniciadaId === registroLojaId;
-        
         return (
           <div key={`${group.itemId}-${lojaFiltradaId || 'all'}`} className="animate-fade-in">
             {group.isStack ? (
@@ -158,7 +150,6 @@ export function ProductGroupedStacks({
                 onTimerFinished={onTimerFinished}
                 onCancelarPreparo={onCancelarPreparo}
                 onRegistrarPerda={onRegistrarPerda}
-                producaoHabilitada={producaoHabilitada}
               />
             ) : (
               <KanbanCard
@@ -168,7 +159,6 @@ export function ProductGroupedStacks({
                 onTimerFinished={onTimerFinished}
                 onCancelarPreparo={() => onCancelarPreparo?.(group.registros[0])}
                 onRegistrarPerda={() => onRegistrarPerda?.(group.registros[0])}
-                producaoHabilitada={producaoHabilitada}
               />
             )}
           </div>

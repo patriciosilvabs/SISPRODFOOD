@@ -156,10 +156,6 @@ const ResumoDaProducao = () => {
   // Estado para filtro de loja (controlado pelo ContagemStatusIndicator)
   const [lojaFiltrada, setLojaFiltrada] = useState<{ id: string; nome: string } | null>(null);
   
-  // Estado para controlar qual loja teve produção iniciada
-  // Quando uma loja é iniciada, as demais ficam bloqueadas até todos os itens estarem em porcionamento
-  const [lojaIniciada, setLojaIniciada] = useState<{ id: string; nome: string } | null>(null);
-  
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -545,27 +541,6 @@ const ResumoDaProducao = () => {
       reservaDiariaChannel.unsubscribe().then(() => supabase.removeChannel(reservaDiariaChannel));
     };
   }, [organizationId, playNewCardNotification]);
-
-  // Effect para verificar se todos os itens da loja iniciada já estão em porcionamento/finalizado
-  useEffect(() => {
-    if (!lojaIniciada) return;
-    
-    // Filtrar itens da loja iniciada que ainda estão em a_produzir ou em_preparo
-    const itensNaAProduzir = columns.a_produzir.filter(
-      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
-    );
-    const itensEmPreparo = columns.em_preparo.filter(
-      r => r.detalhes_lojas?.[0]?.loja_id === lojaIniciada.id
-    );
-    
-    // Se não há mais itens em a_produzir nem em_preparo, desbloquear outras lojas
-    if (itensNaAProduzir.length === 0 && itensEmPreparo.length === 0) {
-      const nomeLoja = lojaIniciada.nome;
-      setLojaIniciada(null);
-      setLojaFiltrada(null);
-      toast.success(`✅ Produção de ${nomeLoja} concluída! Outras lojas liberadas.`);
-    }
-  }, [columns, lojaIniciada]);
 
   const loadProducaoRegistros = async (silent = false) => {
     try {
@@ -1798,12 +1773,6 @@ const ResumoDaProducao = () => {
 
   // Handler para iniciar produção de todos os cards de uma loja
   const handleIniciarTudoLoja = async (lojaId: string, lojaNome: string, registros: ProducaoRegistro[]) => {
-    // Se já há uma loja iniciada diferente, bloquear
-    if (lojaIniciada && lojaIniciada.id !== lojaId) {
-      toast.warning(`Finalize os itens de ${lojaIniciada.nome} antes de iniciar outra loja`);
-      return;
-    }
-    
     // Filtrar apenas cards que não estão bloqueados
     const registrosDisponiveis = registros.filter(r => !r.bloqueado_por_traco_anterior);
     
@@ -1812,8 +1781,7 @@ const ResumoDaProducao = () => {
       return;
     }
     
-    // Definir loja como iniciada e filtrar pelos itens dela
-    setLojaIniciada({ id: lojaId, nome: lojaNome });
+    // Filtrar pelos itens da loja
     setLojaFiltrada({ id: lojaId, nome: lojaNome });
     
     // Salvar para usar no modal de confirmação
@@ -1990,12 +1958,8 @@ const ResumoDaProducao = () => {
           lojas={lojas}
           contagensHoje={contagensHoje}
           lojaFiltradaId={lojaFiltrada?.id}
-          lojaIniciadaId={lojaIniciada?.id}
           onSelecionarLoja={(lojaId, lojaNome) => {
-            // Só permitir selecionar se não há loja iniciada ou se for a loja iniciada
-            if (!lojaIniciada || lojaIniciada.id === lojaId) {
-              setLojaFiltrada(lojaId ? { id: lojaId, nome: lojaNome } : null);
-            }
+            setLojaFiltrada(lojaId ? { id: lojaId, nome: lojaNome } : null);
           }}
           onIniciarProducaoLoja={async (lojaId, lojaNome) => {
             // Buscar registros da loja na coluna a_produzir
@@ -2066,15 +2030,12 @@ const ResumoDaProducao = () => {
                       {columnId === 'a_produzir' && lojaFiltrada && (
                         <Badge 
                           variant="outline" 
-                          className={`bg-primary/10 text-primary border-primary/30 ${!lojaIniciada ? 'cursor-pointer hover:bg-primary/20' : ''}`}
+                          className="bg-primary/10 text-primary border-primary/30 cursor-pointer hover:bg-primary/20"
                           onClick={() => {
-                            // Só permitir limpar filtro se não há loja iniciada
-                            if (!lojaIniciada) {
-                              setLojaFiltrada(null);
-                            }
+                            setLojaFiltrada(null);
                           }}
                         >
-                          {lojaFiltrada.nome} {!lojaIniciada && '✕'}
+                          {lojaFiltrada.nome} ✕
                         </Badge>
                       )}
                     </div>
@@ -2097,7 +2058,6 @@ const ResumoDaProducao = () => {
                       onCancelarPreparo={handleOpenCancelarModal}
                       onRegistrarPerda={handleOpenPerdaModal}
                       lojaFiltradaId={lojaFiltrada?.id}
-                      lojaIniciadaId={lojaIniciada?.id}
                     />
                   ) : (
                     <>
