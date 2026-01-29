@@ -1,87 +1,152 @@
 
+# Plano: Separar Produção por Loja no Resumo da Produção
 
-# Plano: Corrigir Erros de Constraint e Overflow na Finalização de Produção
+## Entendimento do Problema
 
-## Problemas Identificados
+Atualmente, o sistema **agrega as demandas de TODAS as lojas** em um único card de produção para cada item. Isso significa:
+- Se Loja A precisa de 30 unidades de Frango e Loja B precisa de 50, o sistema cria 1 card com 80 unidades
+- O CPD inicia a produção de TUDO de uma vez
+- Não há como visualizar/controlar qual loja já enviou contagem
+- Não há como priorizar a produção de uma loja específica
 
-### 1. Erro de Constraint `consumo_historico_tipo_insumo_check`
+## Nova Arquitetura Proposta
 
-**Código problemático (linha 1363 de ResumoDaProducao.tsx):**
-```typescript
-tipo_insumo: 'embalagem',  // ❌ Valor não permitido
-```
+O sistema passará a **criar cards individuais por loja**, permitindo:
+1. Visualizar quais lojas já enviaram suas contagens
+2. Iniciar produção priorizando a loja com maior demanda
+3. Garantir que cada loja seja atendida independentemente
+4. Manter rastreabilidade por loja (romaneio, conferência)
 
-**Constraint no banco:**
+---
+
+## Mudanças Necessárias
+
+### 1. Função RPC: `criar_ou_atualizar_producao_registro`
+
+**Mudança principal:** Criar UM registro de produção POR LOJA (não mais agregado)
+
+| Antes | Depois |
+|-------|--------|
+| 1 card com 80 unidades (Loja A + B) | 2 cards: 30 un (Loja A) + 50 un (Loja B) |
+| `detalhes_lojas` contém array com todas as lojas | `detalhes_lojas` contém apenas 1 loja |
+| Loop cria traços por capacidade masseira | Loop cria por LOJA primeiro, depois traços |
+
+**Nova lógica SQL:**
 ```sql
-CHECK (tipo_insumo = ANY (ARRAY['principal', 'extra']))
+-- Para cada loja com contagem > 0
+FOR v_contagem IN 
+    SELECT cp.loja_id, l.nome as loja_nome, GREATEST(cp.a_produzir, 0) as demanda
+    FROM contagem_porcionados cp
+    JOIN lojas l ON l.id = cp.loja_id
+    WHERE cp.item_porcionado_id = p_item_id
+      AND cp.a_produzir > 0
+      AND cp.dia_operacional = v_data_hoje
+LOOP
+    -- Criar card(s) para ESTA loja
+    -- Desmembrar em traços se necessário (masseira)
+    ...
+END LOOP;
 ```
 
-O sistema tenta registrar consumo de embalagem com `tipo_insumo: 'embalagem'`, mas o constraint só aceita `'principal'` ou `'extra'`.
+### 2. Frontend: Agrupamento por Loja no Kanban
 
-### 2. Erro de Overflow Numérico (código 22003)
+**Arquivo:** `src/pages/ResumoDaProducao.tsx`
 
-**Campos afetados em `producao_registros`:**
-| Campo | Precisão | Limite Máximo |
-|-------|----------|---------------|
-| peso_final_kg | 10,3 | 9.999.999,999 |
-| sobra_kg | 10,3 | 9.999.999,999 |
-| peso_programado_kg | 10,3 | 9.999.999,999 |
+Adicionar sistema de abas/filtro por loja na coluna "A PRODUZIR":
 
-Se o usuário digitar valores absurdos (ex: 99999999) ou a conversão de `rawToKg` retornar valores muito grandes, o PostgreSQL rejeita o insert.
+```
+┌─────────────────────────────────────────────────┐
+│  A PRODUZIR                              [12]   │
+├─────────────────────────────────────────────────┤
+│  [TODAS] [JAPIIM ★] [CACHOEIRINHA] [ALEIXO]     │ ← Abas por loja
+│                                                 │
+│  ★ = Maior demanda (recomendado iniciar por)   │
+├─────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────┐      │
+│  │ FRANGO - PORCIONADO                   │      │
+│  │ Loja: UNIDADE JAPIIM                  │      │
+│  │ Demanda: 64 unidades                  │      │
+│  │ [▶ INICIAR PREPARO]                   │      │
+│  └───────────────────────────────────────┘      │
+│                                                 │
+│  ┌───────────────────────────────────────┐      │
+│  │ BACON - PORCIONADO                    │      │
+│  │ Loja: UNIDADE JAPIIM                  │      │
+│  │ Demanda: 70 unidades                  │      │
+│  │ [▶ INICIAR PREPARO]                   │      │
+│  └───────────────────────────────────────┘      │
+└─────────────────────────────────────────────────┘
+```
+
+### 3. Botão "Iniciar Produção da Loja"
+
+Novo botão que permite iniciar TODOS os cards de uma loja de uma vez:
+
+```
+[🚀 Iniciar Tudo - JAPIIM (5 itens)]
+```
+
+Ao clicar:
+- Confirma separação de insumos consolidada
+- Move todos os cards da loja para "EM PREPARO"
+- Debita estoque proporcional
+
+### 4. Indicador de Status por Loja
+
+Exibir visualmente quais lojas já enviaram contagem:
+
+```
+┌────────────────────────────────────────┐
+│ STATUS DAS CONTAGENS DE HOJE           │
+├────────────────────────────────────────┤
+│ ✅ JAPIIM        - 9 itens, 231 un     │
+│ ⏳ CACHOEIRINHA  - Aguardando          │
+│ ⏳ ALEIXO        - Aguardando          │
+└────────────────────────────────────────┘
+```
 
 ---
 
-## Solução Proposta
+## Arquivos a Modificar
 
-### Parte 1: Corrigir Constraint do tipo_insumo
+| Arquivo | Mudança |
+|---------|---------|
+| **Nova migração SQL** | Reescrever `criar_ou_atualizar_producao_registro` para criar por loja |
+| **src/pages/ResumoDaProducao.tsx** | Adicionar filtro por loja, indicador de status, botão batch |
+| **src/components/kanban/ProductGroupedStacks.tsx** | Agrupar por loja ao invés de item |
+| **src/components/kanban/KanbanCard.tsx** | Exibir badge com nome da loja de forma proeminente |
 
-**Opção A - Adicionar 'embalagem' ao constraint:**
-```sql
-ALTER TABLE consumo_historico DROP CONSTRAINT consumo_historico_tipo_insumo_check;
-ALTER TABLE consumo_historico ADD CONSTRAINT consumo_historico_tipo_insumo_check 
-CHECK (tipo_insumo = ANY (ARRAY['principal', 'extra', 'embalagem']));
+---
+
+## Fluxo Operacional Resultante
+
 ```
+1. Lojas enviam contagens individualmente
+   ├── JAPIIM envia às 15:00 → Cards JAPIIM aparecem no Kanban
+   ├── CACHOEIRINHA envia às 16:00 → Cards CACHOEIRINHA aparecem
+   └── ALEIXO envia às 17:00 → Cards ALEIXO aparecem
 
-**Opção B - Usar 'extra' para embalagem (sem alterar banco):**
-```typescript
-tipo_insumo: 'extra',  // Embalagem é tratada como insumo extra
-```
+2. CPD visualiza cards separados por loja
+   ├── Aba "JAPIIM" mostra: Frango (64), Bacon (70), Pepperoni (75)...
+   └── Aba "CACHOEIRINHA" mostra: Carne (27), Mussarela (19)...
 
-**Recomendação:** Opção A, pois embalagem tem significado próprio nos relatórios.
+3. Operador clica "Iniciar Produção - JAPIIM"
+   ├── Confirma insumos consolidados
+   ├── Todos os cards JAPIIM movem para EM PREPARO
+   └── Após finalizar, romaneio fica vinculado à JAPIIM
 
-### Parte 2: Prevenir Overflow Numérico
-
-Adicionar validação no frontend (FinalizarProducaoModal) ANTES de enviar ao banco:
-
-```typescript
-// Validação geral de peso (máximo 10.000 kg = 10 toneladas)
-const MAX_PESO_KG = 9999.999; // Margem de segurança
-if (pesoFinalKg > MAX_PESO_KG) {
-  toast.error(`Peso final excede o máximo permitido (${MAX_PESO_KG} kg)`);
-  return;
-}
-if (sobraKg > MAX_PESO_KG) {
-  toast.error(`Sobra excede o máximo permitido (${MAX_PESO_KG} kg)`);
-  return;
-}
+4. Operador clica "Iniciar Produção - CACHOEIRINHA"
+   └── Mesma lógica, separado
 ```
 
 ---
 
-## Resumo das Mudanças
+## Benefícios
 
-| Arquivo/Área | Mudança |
-|--------------|---------|
-| **Migração SQL** | Adicionar 'embalagem' ao constraint `consumo_historico_tipo_insumo_check` |
-| **src/components/modals/FinalizarProducaoModal.tsx** | Adicionar validação de peso máximo (9999 kg) para evitar overflow |
-
----
-
-## Resultado Esperado
-
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Registrar consumo de embalagem | Erro 400 + constraint violation | Sucesso - tipo_insumo='embalagem' aceito |
-| Digitar peso absurdo (ex: 99999999g) | Erro 400 + numeric overflow | Toast de erro amigável + bloqueio do submit |
-| Finalizar produção normal | Funcionando (quando sem embalagem) | Funcionando (sempre) |
-
+| Problema Atual | Solução |
+|----------------|---------|
+| Não sabe se loja enviou contagem | Indicador visual claro |
+| Produz tudo misturado | Produção focada por loja |
+| Romaneio complexo | Cada produção já está vinculada à loja de destino |
+| Priorização manual | Sistema sugere loja com maior demanda |
+| Erros de distribuição | Rastreabilidade ponta-a-ponta |
