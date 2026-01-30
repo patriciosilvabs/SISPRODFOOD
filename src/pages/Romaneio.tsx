@@ -24,6 +24,7 @@ import { parsePesoProgressivo, formatPesoParaInput, rawToKg } from '@/lib/weight
 import { pesoProgressivoToWords } from '@/lib/numberToWords';
 // Romaneio automático removido - fluxo é 100% manual
 import { LojaSelectionGrid } from '@/components/romaneio/LojaSelectionGrid';
+import { CriarRomaneioDrawer } from '@/components/romaneio/CriarRomaneioDrawer';
 
 // Formatar código do lote adicionando data legível
 // Entrada: "LOTE-20260110-003"
@@ -575,8 +576,14 @@ const Romaneio = () => {
   // Estoque CPD para exibição de resumo
   const [estoqueCPDResumo, setEstoqueCPDResumo] = useState<Array<{ item_nome: string; quantidade: number }>>([]);
   
+  // Estoque CPD completo com IDs para o drawer de criar romaneio
+  const [estoqueCPDCompleto, setEstoqueCPDCompleto] = useState<Array<{ item_porcionado_id: string; item_nome: string; quantidade_disponivel: number }>>([]);
+  
   // Estado para loja selecionada (novo fluxo de seleção por botões)
   const [lojaSelecionada, setLojaSelecionada] = useState<string | null>(null);
+  
+  // Estado para drawer de criar romaneio manualmente
+  const [criarRomaneioOpen, setCriarRomaneioOpen] = useState(false);
 
   // ==================== EFFECTS ====================
 
@@ -813,6 +820,7 @@ const Romaneio = () => {
       // 4. Construir mapa de estoque CPD e atualizar resumo
       const estoqueMap: Record<string, { quantidade: number; nome: string }> = {};
       const resumoEstoque: Array<{ item_nome: string; quantidade: number }> = [];
+      const estoqueCompleto: Array<{ item_porcionado_id: string; item_nome: string; quantidade_disponivel: number }> = [];
       estoqueCpd?.forEach(est => {
         estoqueMap[est.item_porcionado_id] = {
           quantidade: est.quantidade || 0,
@@ -822,10 +830,18 @@ const Romaneio = () => {
           item_nome: (est.itens_porcionados as any).nome,
           quantidade: est.quantidade || 0
         });
+        // Adicionar ao estoque completo para o drawer
+        estoqueCompleto.push({
+          item_porcionado_id: est.item_porcionado_id,
+          item_nome: (est.itens_porcionados as any).nome,
+          quantidade_disponivel: est.quantidade || 0
+        });
       });
-      // Ordenar por nome e atualizar estado
+      // Ordenar por nome e atualizar estados
       resumoEstoque.sort((a, b) => a.item_nome.localeCompare(b.item_nome));
+      estoqueCompleto.sort((a, b) => a.item_nome.localeCompare(b.item_nome));
       setEstoqueCPDResumo(resumoEstoque);
+      setEstoqueCPDCompleto(estoqueCompleto);
       console.log('[Romaneio] Mapa de estoque CPD:', estoqueMap);
 
       // 5. Construir mapa de demanda por loja/item a partir das contagens
@@ -1991,6 +2007,91 @@ const Romaneio = () => {
     }
   };
 
+  // Handler para criar romaneio manualmente via drawer
+  const handleCriarRomaneioManual = async (lojaId: string, lojaNome: string, itens: Array<{ item_id: string; item_nome: string; quantidade: number }>) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Usuário não autenticado');
+        return;
+      }
+
+      const { data: userProfile } = await supabase.from('profiles').select('nome').eq('id', user.id).single();
+
+      // Buscar data do servidor
+      const { data: serverDateResult } = await supabase.rpc('get_current_date');
+      const serverDate = serverDateResult || new Date().toISOString().split('T')[0];
+
+      // Buscar loja CPD
+      const { data: lojaCPD } = await supabase
+        .from('lojas')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('tipo', 'cpd')
+        .maybeSingle();
+
+      if (!lojaCPD) {
+        toast.error('Loja CPD não encontrada');
+        return;
+      }
+
+      // Validar estoque CPD para cada item
+      for (const item of itens) {
+        const { data: contagemValidar } = await supabase
+          .from('contagem_porcionados')
+          .select('final_sobra')
+          .eq('loja_id', lojaCPD.id)
+          .eq('item_porcionado_id', item.item_id)
+          .eq('dia_operacional', serverDate)
+          .maybeSingle();
+        
+        const estoqueAtual = contagemValidar?.final_sobra || 0;
+        if (estoqueAtual < item.quantidade) {
+          toast.error(`Estoque insuficiente: ${item.item_nome}. Disponível: ${estoqueAtual}, Solicitado: ${item.quantidade}`);
+          return;
+        }
+      }
+
+      const agora = new Date().toISOString();
+
+      // Criar romaneio com status 'aguardando_conferencia' para que o usuário informe peso e volumes
+      const { data: romaneio, error: romaneioError } = await supabase.from('romaneios').insert({
+        loja_id: lojaId,
+        loja_nome: lojaNome,
+        status: 'aguardando_conferencia',
+        data_criacao: agora,
+        usuario_id: user.id,
+        usuario_nome: userProfile?.nome || 'Usuário',
+        organization_id: organizationId,
+      }).select().single();
+
+      if (romaneioError) throw romaneioError;
+
+      // Inserir itens do romaneio
+      const itensRomaneio = itens.map(item => ({
+        romaneio_id: romaneio.id,
+        item_porcionado_id: item.item_id,
+        item_nome: item.item_nome,
+        quantidade: item.quantidade,
+        peso_total_kg: null, // Será preenchido na conferência
+        quantidade_volumes: 0, // Será preenchido na conferência
+        organization_id: organizationId,
+      }));
+
+      await supabase.from('romaneio_itens').insert(itensRomaneio);
+
+      toast.success(`Romaneio criado para ${lojaNome}! Informe peso e volumes para enviar.`);
+      
+      // Atualizar dados
+      fetchDemandasTodasLojas();
+      fetchRomaneiosAguardando();
+    } catch (error) {
+      console.error('Erro ao criar romaneio manual:', error);
+      toast.error('Erro ao criar romaneio');
+      throw error;
+    }
+  };
+
   // Contagem de lojas com itens
   const lojasComItens = useMemo(() => 
     demandasPorLoja.filter(d => d.itens.length > 0 || d.itensSelecionados.length > 0),
@@ -2043,7 +2144,15 @@ const Romaneio = () => {
               {canManageProduction && (
                 <TabsContent value="enviar" className="space-y-4">
                   {/* Botões de ação */}
-                  <div className="flex justify-end items-center">
+                  <div className="flex justify-end items-center gap-2">
+                    <Button 
+                      size="sm" 
+                      onClick={() => setCriarRomaneioOpen(true)}
+                      className="gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Criar Romaneio
+                    </Button>
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -2788,6 +2897,15 @@ const Romaneio = () => {
             </Tabs>
           </CardContent>
         </Card>
+
+        {/* Drawer para criar romaneio manualmente */}
+        <CriarRomaneioDrawer
+          open={criarRomaneioOpen}
+          onOpenChange={setCriarRomaneioOpen}
+          lojas={lojas}
+          estoqueCPD={estoqueCPDCompleto}
+          onCriarRomaneio={handleCriarRomaneioManual}
+        />
       </div>
     </Layout>
   );
