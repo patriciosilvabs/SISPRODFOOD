@@ -46,6 +46,8 @@ import RelatorioMovimentacoes from "./pages/relatorios/RelatorioMovimentacoes";
 import NotFound from "./pages/NotFound";
 import AceitarConvite from "./pages/AceitarConvite";
 import ConfigurarLembretesAudio from "./pages/ConfigurarLembretesAudio";
+import ConfigurarIntegracaoPDV from "./pages/ConfigurarIntegracaoPDV";
+import DemandaPDV from "./pages/DemandaPDV";
 import {
   SuperAdminDashboard,
   SuperAdminOrganizacoes,
@@ -256,6 +258,22 @@ const App = () => (
                   }
                 />
                 {/* Rota /configurar-interface removida - sistema simplificado */}
+                <Route
+                  path="/configurar-integracao-pdv"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <ConfigurarIntegracaoPDV />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/demanda-pdv"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin', 'Produção']}>
+                      <DemandaPDV />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/relatorios/monitoramento-consumo"
                   element={

@@ -1284,6 +1284,109 @@ export type Database = {
           },
         ]
       }
+      integracoes_pdv: {
+        Row: {
+          api_key: string
+          api_url: string
+          ativo: boolean | null
+          created_at: string | null
+          id: string
+          nome: string
+          notificar_romaneio: boolean | null
+          organization_id: string
+          sincronizar_demanda: boolean | null
+          ultima_sincronizacao: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          api_key: string
+          api_url: string
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome?: string
+          notificar_romaneio?: boolean | null
+          organization_id: string
+          sincronizar_demanda?: boolean | null
+          ultima_sincronizacao?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          api_key?: string
+          api_url?: string
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome?: string
+          notificar_romaneio?: boolean | null
+          organization_id?: string
+          sincronizar_demanda?: boolean | null
+          ultima_sincronizacao?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integracoes_pdv_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integracoes_pdv_log: {
+        Row: {
+          created_at: string | null
+          direcao: string
+          duracao_ms: number | null
+          endpoint: string
+          erro: string | null
+          id: string
+          metodo: string
+          organization_id: string | null
+          payload: Json | null
+          resposta: Json | null
+          status_code: number | null
+          sucesso: boolean
+        }
+        Insert: {
+          created_at?: string | null
+          direcao: string
+          duracao_ms?: number | null
+          endpoint: string
+          erro?: string | null
+          id?: string
+          metodo: string
+          organization_id?: string | null
+          payload?: Json | null
+          resposta?: Json | null
+          status_code?: number | null
+          sucesso: boolean
+        }
+        Update: {
+          created_at?: string | null
+          direcao?: string
+          duracao_ms?: number | null
+          endpoint?: string
+          erro?: string | null
+          id?: string
+          metodo?: string
+          organization_id?: string | null
+          payload?: Json | null
+          resposta?: Json | null
+          status_code?: number | null
+          sucesso?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integracoes_pdv_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       itens_porcionados: {
         Row: {
           ativo: boolean
