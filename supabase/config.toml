@@ -76,3 +76,9 @@ verify_jwt = false
 
 [functions.excluir-item-porcionado]
 verify_jwt = true
+
+[functions.pdv-sync]
+verify_jwt = false
+
+[functions.pdv-notify-shipment]
+verify_jwt = false
