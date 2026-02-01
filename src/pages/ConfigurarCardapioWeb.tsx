@@ -41,6 +41,7 @@ export default function ConfigurarCardapioWeb() {
     importarMapeamentos,
     vincularItemPorcionado,
     adicionarVinculo,
+    testarConexao,
   } = useCardapioWebIntegracao();
 
   const [novoMapeamentoOpen, setNovoMapeamentoOpen] = useState(false);
@@ -141,6 +142,10 @@ export default function ConfigurarCardapioWeb() {
     });
   };
 
+  const handleTestConnection = async (token: string) => {
+    return await testarConexao.mutateAsync(token);
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -214,6 +219,7 @@ export default function ConfigurarCardapioWeb() {
                       onCreateIntegracao={handleCreateIntegracao}
                       onUpdateStatus={(id, ativo) => updateIntegracaoStatus.mutate({ id, ativo })}
                       onRegenerateToken={(id) => regenerateToken.mutate(id)}
+                      onTestConnection={handleTestConnection}
                       isCreating={createIntegracao.isPending}
                       isUpdating={updateIntegracaoStatus.isPending}
                     />

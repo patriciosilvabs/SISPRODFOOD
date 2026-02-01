@@ -299,6 +299,29 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Test connection
+  const testarConexao = useMutation({
+    mutationFn: async (token: string) => {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cardapio-web-test`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'X-API-KEY': token,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Falha na conexão');
+      }
+      
+      return data as { success: boolean; message: string; ambiente: string; loja: string | null };
+    },
+  });
+
   // Mutation: Add mapping
   const addMapeamento = useMutation({
     mutationFn: async ({
@@ -537,6 +560,7 @@ export function useCardapioWebIntegracao() {
     createIntegracao,
     updateIntegracaoStatus,
     regenerateToken,
+    testarConexao,
     addMapeamento,
     updateMapeamento,
     deleteMapeamento,

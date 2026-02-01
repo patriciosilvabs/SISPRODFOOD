@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Copy, RefreshCw, Eye, EyeOff, Store, Plus, Loader2 } from 'lucide-react';
+import { Copy, RefreshCw, Eye, EyeOff, Store, Plus, Loader2, Plug, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { IntegracaoCardapioWebComLoja } from '@/hooks/useCardapioWebIntegracao';
 
@@ -18,12 +18,18 @@ interface LojaInfo {
   tipo: string | null;
 }
 
+interface TestResult {
+  success: boolean;
+  message: string;
+}
+
 interface LojaIntegracaoCardProps {
   loja: LojaInfo;
   integracao: IntegracaoCardapioWebComLoja | null;
   onCreateIntegracao: (lojaId: string, ambiente: 'sandbox' | 'producao') => Promise<void>;
   onUpdateStatus: (id: string, ativo: boolean) => void;
   onRegenerateToken: (id: string) => void;
+  onTestConnection?: (token: string) => Promise<{ success: boolean; message: string; ambiente: string }>;
   isCreating: boolean;
   isUpdating: boolean;
 }
@@ -34,11 +40,14 @@ export function LojaIntegracaoCard({
   onCreateIntegracao,
   onUpdateStatus,
   onRegenerateToken,
+  onTestConnection,
   isCreating,
   isUpdating,
 }: LojaIntegracaoCardProps) {
   const [showToken, setShowToken] = useState(false);
   const [selectedAmbiente, setSelectedAmbiente] = useState<'sandbox' | 'producao'>('sandbox');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const handleCopyToken = () => {
     if (integracao?.token) {
@@ -56,6 +65,25 @@ export function LojaIntegracaoCard({
 
   const handleCreate = async () => {
     await onCreateIntegracao(loja.id, selectedAmbiente);
+  };
+
+  const handleTestConnection = async () => {
+    if (!integracao?.token || !onTestConnection) return;
+    
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+      const result = await onTestConnection(integracao.token);
+      setTestResult({ success: true, message: result.message });
+    } catch (error) {
+      setTestResult({ 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Erro desconhecido' 
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   // Sem integração configurada
@@ -208,6 +236,41 @@ export function LojaIntegracaoCard({
             </AlertDialog>
           </div>
         </div>
+
+        {/* Test Connection Button */}
+        {onTestConnection && (
+          <div className="pt-2 space-y-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleTestConnection}
+              disabled={isTesting}
+              className="w-full"
+            >
+              {isTesting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plug className="h-4 w-4 mr-2" />
+              )}
+              Testar Conexão
+            </Button>
+            
+            {testResult && (
+              <div className={`flex items-center gap-2 text-sm p-2 rounded-md ${
+                testResult.success 
+                  ? 'bg-green-500/10 text-green-600 dark:text-green-400' 
+                  : 'bg-destructive/10 text-destructive'
+              }`}>
+                {testResult.success ? (
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 shrink-0" />
+                )}
+                <span>{testResult.message}</span>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
