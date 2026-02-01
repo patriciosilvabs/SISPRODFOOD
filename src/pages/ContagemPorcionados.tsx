@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +39,7 @@ import {
 import { ContagemSummaryCards } from '@/components/contagem/ContagemSummaryCards';
 import { ContagemItemCard } from '@/components/contagem/ContagemItemCard';
 import { ContagemPageHeader } from '@/components/contagem/ContagemPageHeader';
-import { ContagemFixedFooter } from '@/components/contagem/ContagemFixedFooter';
+import { AutoSaveIndicator, SyncStatus } from '@/components/contagem/AutoSaveIndicator';
 import { SolicitarProducaoExtraModal } from '@/components/modals/SolicitarProducaoExtraModal';
 
 interface Loja {
@@ -127,8 +127,12 @@ const ContagemPorcionados = () => {
   } | null>(null);
   const [savingDialog, setSavingDialog] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [savingAll, setSavingAll] = useState(false);
   const [lojaAtualId, setLojaAtualId] = useState<string | null>(null);
+  
+  // Estado para auto-save com debounce
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [failedSaves, setFailedSaves] = useState<{ lojaId: string; itemId: string }[]>([]);
+  const debouncedSaveRef = useRef<NodeJS.Timeout | null>(null);
   
   // Estado para modal de produção extra
   const [producaoExtraModal, setProducaoExtraModal] = useState<{
@@ -386,35 +390,89 @@ const ContagemPorcionados = () => {
     return dirtyRows;
   };
 
-  // Função para salvar todas as alterações
-  const handleSaveAll = async () => {
+  // Auto-save com debounce - executado automaticamente quando há alterações
+  const executeAutoSave = useCallback(async () => {
     const dirtyRows = getDirtyRows();
     
     if (dirtyRows.length === 0) {
-      toast.info('Não há alterações para salvar');
+      setSyncStatus('idle');
       return;
     }
     
-    setSavingAll(true);
-    let successCount = 0;
-    let errorCount = 0;
+    setSyncStatus('saving');
+    const failed: { lojaId: string; itemId: string }[] = [];
     
     for (const row of dirtyRows) {
       try {
-        await executeSave(row.lojaId, row.itemId);
-        successCount++;
+        await executeSaveQuiet(row.lojaId, row.itemId);
       } catch (error) {
-        errorCount++;
-        console.error('Erro ao salvar:', error);
+        failed.push(row);
+        console.error('Erro no auto-save:', error);
       }
     }
     
-    setSavingAll(false);
-    
-    if (errorCount === 0) {
-      toast.success(`${successCount} item(ns) salvos com sucesso!`);
+    if (failed.length > 0) {
+      setFailedSaves(failed);
+      setSyncStatus('error');
     } else {
-      toast.warning(`${successCount} salvos, ${errorCount} com erro`);
+      setFailedSaves([]);
+      setSyncStatus('saved');
+      // Auto-hide "saved" indicator after 2s
+      setTimeout(() => {
+        setSyncStatus(prev => prev === 'saved' ? 'idle' : prev);
+      }, 2000);
+    }
+  }, [lojas, itens, editingValues, originalValues, user, organizationId, estoquesIdeaisMap, contagens]);
+
+  // Hook de debounce para auto-save
+  useEffect(() => {
+    const dirtyRows = getDirtyRows();
+    
+    if (dirtyRows.length === 0) {
+      return;
+    }
+    
+    // Limpar timeout anterior
+    if (debouncedSaveRef.current) {
+      clearTimeout(debouncedSaveRef.current);
+    }
+    
+    // Agendar salvamento após 800ms de inatividade
+    debouncedSaveRef.current = setTimeout(() => {
+      executeAutoSave();
+    }, 800);
+    
+    return () => {
+      if (debouncedSaveRef.current) {
+        clearTimeout(debouncedSaveRef.current);
+      }
+    };
+  }, [editingValues]);
+
+  // Retry manual para falhas
+  const handleRetryFailedSaves = async () => {
+    if (failedSaves.length === 0) return;
+    
+    setSyncStatus('saving');
+    const stillFailed: { lojaId: string; itemId: string }[] = [];
+    
+    for (const row of failedSaves) {
+      try {
+        await executeSaveQuiet(row.lojaId, row.itemId);
+      } catch (error) {
+        stillFailed.push(row);
+      }
+    }
+    
+    if (stillFailed.length > 0) {
+      setFailedSaves(stillFailed);
+      setSyncStatus('error');
+    } else {
+      setFailedSaves([]);
+      setSyncStatus('saved');
+      setTimeout(() => {
+        setSyncStatus(prev => prev === 'saved' ? 'idle' : prev);
+      }, 2000);
     }
   };
 
@@ -654,6 +712,105 @@ const ContagemPorcionados = () => {
         return newSet;
       });
     }
+  };
+
+  // Versão silenciosa do save para auto-save (sem toasts pesados)
+  const executeSaveQuiet = async (lojaId: string, itemId: string): Promise<void> => {
+    const key = `${lojaId}-${itemId}`;
+    const values = editingValues[key];
+    
+    if (!user || !organizationId) {
+      throw new Error('Sessão ou organização inválida');
+    }
+
+    const finalSobra = parseInt(values?.final_sobra);
+    if (isNaN(finalSobra) || finalSobra < 0) {
+      throw new Error('Valor de sobra inválido');
+    }
+
+    let idealAmanha = 0;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('nome')
+      .eq('id', user.id)
+      .single();
+
+    const estoqueKey = `${lojaId}-${itemId}`;
+    const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
+    if (estoqueSemanal) {
+      const currentDay = getCurrentDayKey();
+      idealAmanha = estoqueSemanal[currentDay] || 0;
+    }
+
+    const { data: dataServidor } = await supabase.rpc('get_current_date');
+    const diaOperacional = dataServidor || new Date().toISOString().split('T')[0];
+
+    const dataToSave = {
+      loja_id: lojaId,
+      item_porcionado_id: itemId,
+      final_sobra: finalSobra,
+      peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
+      ideal_amanha: idealAmanha,
+      usuario_id: user.id,
+      usuario_nome: profile?.nome || user.email || 'Usuário',
+      organization_id: organizationId,
+      dia_operacional: diaOperacional,
+    };
+
+    const { error } = await supabase
+      .from('contagem_porcionados')
+      .upsert(dataToSave, { onConflict: 'loja_id,item_porcionado_id,dia_operacional' });
+
+    if (error) throw error;
+
+    // Disparar recálculo da produção em tempo real (não bloqueia)
+    // Disparar recálculo da produção em tempo real (não bloqueia)
+    void supabase.rpc('criar_ou_atualizar_producao_registro', {
+      p_item_id: itemId,
+      p_organization_id: organizationId,
+      p_usuario_id: user.id,
+      p_usuario_nome: dataToSave.usuario_nome,
+    });
+
+    const newTimestamp = new Date().toISOString();
+    const newPesoTotal = values?.peso_total_g ? parseFloat(values.peso_total_g) : null;
+
+    setOriginalValues(prev => ({
+      ...prev,
+      [key]: { final_sobra: finalSobra, peso_total_g: newPesoTotal }
+    }));
+
+    setContagens(prev => {
+      const updated = { ...prev };
+      const lojaContagens = [...(updated[lojaId] || [])];
+      const existingIndex = lojaContagens.findIndex(c => c.item_porcionado_id === itemId);
+      const itemInfo = itens.find(i => i.id === itemId);
+      
+      const updatedContagem = {
+        loja_id: lojaId,
+        item_porcionado_id: itemId,
+        final_sobra: finalSobra,
+        peso_total_g: newPesoTotal,
+        updated_at: newTimestamp,
+        item_nome: itemInfo?.nome || 'Item desconhecido',
+      };
+      
+      if (existingIndex >= 0) {
+        lojaContagens[existingIndex] = { ...lojaContagens[existingIndex], ...updatedContagem };
+      } else {
+        lojaContagens.push(updatedContagem as any);
+      }
+      
+      updated[lojaId] = lojaContagens;
+      return updated;
+    });
+    
+    setEditingValues(prev => {
+      const newValues = { ...prev };
+      delete newValues[key];
+      return newValues;
+    });
   };
 
   const getCurrentDayKey = (baseDate?: string): keyof EstoqueIdeal => {
@@ -1008,16 +1165,11 @@ const ContagemPorcionados = () => {
           })}
         </div>
 
-        {/* Footer Fixo */}
-        <ContagemFixedFooter
-          isSessaoAtiva={false}
-          podeEncerrar={false}
-          savingAll={savingAll}
-          hasChanges={hasAnyChanges()}
-          itensPendentes={summaryStats.itensPendentes}
-          changesCount={getDirtyRows().length}
-          onEncerrar={() => {}}
-          onSaveAll={handleSaveAll}
+        {/* Indicador de Auto-Save */}
+        <AutoSaveIndicator 
+          status={syncStatus}
+          pendingCount={getDirtyRows().length}
+          onRetry={handleRetryFailedSaves}
         />
 
         {/* Dialog para Estoques Ideais */}
