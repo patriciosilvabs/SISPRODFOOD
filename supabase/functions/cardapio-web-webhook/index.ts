@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key, x-webhook-token',
 }
 
 interface OrderItem {
@@ -19,21 +19,29 @@ interface OrderItem {
   }[];
 }
 
-interface OrderPayload {
-  event: string;
-  order: {
-    id: number;
-    type: string;
-    status: string;
-    sub_total: number;
-    total: number;
-    items: OrderItem[];
-    customer?: {
-      name: string;
-      phone?: string;
-    };
-    created_at: string;
+interface OrderData {
+  id: number;
+  type?: string;
+  status?: string;
+  sub_total?: number;
+  total?: number;
+  items: OrderItem[];
+  customer?: {
+    name: string;
+    phone?: string;
   };
+  created_at?: string;
+}
+
+interface WebhookPayload {
+  event?: string;
+  event_type?: string;
+  event_id?: string;
+  order_id?: number;
+  order_status?: string;
+  merchant_id?: number;
+  created_at?: string;
+  order?: OrderData;
 }
 
 interface IntegracaoCardapioWeb {
@@ -43,6 +51,7 @@ interface IntegracaoCardapioWeb {
   token: string;
   ambiente: string;
   ativo: boolean;
+  cardapio_api_key: string | null;
 }
 
 interface MapeamentoItem {
@@ -50,6 +59,39 @@ interface MapeamentoItem {
   cardapio_item_nome: string;
   item_porcionado_id: string;
   quantidade_consumida: number;
+}
+
+// Status que devemos processar
+const RELEVANT_STATUSES = ["confirmed", "preparing", "ready", "dispatched"];
+
+// Função para buscar detalhes do pedido via API do CardápioWeb
+async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string): Promise<OrderData> {
+  const baseUrl = ambiente === 'sandbox' 
+    ? 'https://integracao.sandbox.cardapioweb.com'
+    : 'https://integracao.cardapioweb.com';
+  
+  const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
+  console.log(`Buscando detalhes do pedido ${orderId} em: ${url}`);
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 
+      'X-API-KEY': apiKey,
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Erro ao buscar pedido: ${response.status} - ${errorText}`);
+    throw new Error(`Falha ao buscar pedido ${orderId}: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
+  
+  // A API pode retornar { order: {...} } ou diretamente {...}
+  return data.order || data;
 }
 
 Deno.serve(async (req) => {
@@ -77,7 +119,7 @@ Deno.serve(async (req) => {
   
   const headersObj: Record<string, string> = {}
   req.headers.forEach((value, key) => {
-    headersObj[key] = key.toLowerCase().includes('key') || key.toLowerCase().includes('auth') 
+    headersObj[key] = key.toLowerCase().includes('key') || key.toLowerCase().includes('auth') || key.toLowerCase().includes('token')
       ? value.substring(0, 10) + '...' 
       : value
   })
@@ -150,7 +192,7 @@ Deno.serve(async (req) => {
     console.log('✅ API Key encontrada:', apiKey.substring(0, 10) + '...')
     
     // Parse the body we already read
-    let payload: OrderPayload
+    let payload: WebhookPayload
     try {
       payload = JSON.parse(rawBody)
     } catch {
@@ -177,38 +219,154 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { organization_id, loja_id } = integracao as IntegracaoCardapioWeb
+    const { organization_id, loja_id, ambiente, cardapio_api_key } = integracao as IntegracaoCardapioWeb
     console.log(`Webhook recebido para organização ${organization_id}, loja ${loja_id}`)
 
     console.log('Payload recebido:', JSON.stringify(payload, null, 2))
 
-    // 4. Handle different events
-    const evento = payload.event || 'order.created'
+    // 3. Determinar o tipo de evento
+    const evento = payload.event_type || payload.event || 'order.created'
+    const orderStatus = payload.order_status || payload.order?.status || ''
+    const orderId = payload.order_id || payload.order?.id || 0
     
-    if (evento !== 'order.created' && evento !== 'order.confirmed') {
-      // Log but don't process other events
+    console.log(`Evento: ${evento}, Status: ${orderStatus}, Order ID: ${orderId}`)
+
+    // 4. Verificar se devemos processar este evento
+    // ORDER_STATUS_UPDATED com status canceled - apenas logar
+    if (evento === 'ORDER_STATUS_UPDATED' && orderStatus === 'canceled') {
       await supabase.from('cardapio_web_pedidos_log').insert({
         organization_id,
         loja_id,
-        order_id: payload.order?.id || 0,
+        order_id: orderId,
         evento,
         payload,
         sucesso: true,
         itens_processados: null,
-        erro: 'Evento ignorado - apenas order.created e order.confirmed são processados'
+        erro: 'Pedido cancelado - não processa estoque'
       })
       
+      console.log(`Pedido ${orderId} cancelado - registrado mas não processado`)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Event ${evento} received but not processed`,
-          order_id: payload.order?.id 
+          message: 'Pedido cancelado registrado',
+          order_id: orderId 
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // 5. Get mappings for this organization
+    // Se não é um status relevante e não é ORDER_CREATED, ignorar
+    if (evento !== 'ORDER_CREATED' && evento !== 'order.created' && 
+        !RELEVANT_STATUSES.includes(orderStatus)) {
+      await supabase.from('cardapio_web_pedidos_log').insert({
+        organization_id,
+        loja_id,
+        order_id: orderId,
+        evento,
+        payload,
+        sucesso: true,
+        itens_processados: null,
+        erro: `Status ${orderStatus} ignorado - apenas ${RELEVANT_STATUSES.join(', ')} são processados`
+      })
+      
+      console.log(`Evento ${evento} com status ${orderStatus} ignorado`)
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `Event ${evento} with status ${orderStatus} received but not processed`,
+          order_id: orderId 
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // 5. Obter dados completos do pedido
+    let orderData: OrderData | null = null
+    
+    // Se o payload já contém os items completos, usar diretamente
+    if (payload.order?.items && payload.order.items.length > 0) {
+      console.log('✅ Payload contém items completos, usando diretamente')
+      orderData = payload.order
+    } 
+    // Caso contrário, precisamos buscar via API
+    else if (orderId) {
+      console.log('⚠️ Payload não contém items, buscando via API...')
+      
+      if (!cardapio_api_key) {
+        const errorMsg = 'API Key do CardápioWeb não configurada. Configure a API Key na tela de integração.'
+        console.error(errorMsg)
+        
+        await supabase.from('cardapio_web_pedidos_log').insert({
+          organization_id,
+          loja_id,
+          order_id: orderId,
+          evento,
+          payload,
+          sucesso: false,
+          itens_processados: null,
+          erro: errorMsg
+        })
+        
+        return new Response(
+          JSON.stringify({ 
+            error: 'API Key do CardápioWeb não configurada',
+            hint: 'Configure a API Key na tela de integração do Cardápio Web'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      try {
+        orderData = await fetchOrderDetails(orderId, cardapio_api_key, ambiente)
+        console.log(`✅ Detalhes do pedido ${orderId} obtidos via API`)
+      } catch (fetchError) {
+        const errorMsg = fetchError instanceof Error ? fetchError.message : 'Erro ao buscar pedido'
+        console.error('Erro ao buscar detalhes do pedido:', errorMsg)
+        
+        await supabase.from('cardapio_web_pedidos_log').insert({
+          organization_id,
+          loja_id,
+          order_id: orderId,
+          evento,
+          payload,
+          sucesso: false,
+          itens_processados: null,
+          erro: errorMsg
+        })
+        
+        return new Response(
+          JSON.stringify({ error: errorMsg }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
+    // Se não conseguiu obter os dados do pedido
+    if (!orderData || !orderData.items || orderData.items.length === 0) {
+      const errorMsg = 'Não foi possível obter os itens do pedido'
+      console.error(errorMsg)
+      
+      await supabase.from('cardapio_web_pedidos_log').insert({
+        organization_id,
+        loja_id,
+        order_id: orderId,
+        evento,
+        payload,
+        sucesso: false,
+        itens_processados: null,
+        erro: errorMsg
+      })
+      
+      return new Response(
+        JSON.stringify({ error: errorMsg }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log(`Processando ${orderData.items.length} itens do pedido ${orderId}`)
+
+    // 6. Get mappings for this organization
     const { data: mapeamentos, error: mapError } = await supabase
       .from('mapeamento_cardapio_itens')
       .select('*')
@@ -229,12 +387,12 @@ Deno.serve(async (req) => {
       mapeamentoMap.get(m.cardapio_item_id)!.push(m)
     }
 
-    // 6. Get today's date in São Paulo timezone
+    // 7. Get today's date in São Paulo timezone
     const today = new Date()
     const spDate = new Date(today.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
     const diaOperacional = spDate.toISOString().split('T')[0]
 
-    // 7. Process each item in the order
+    // 8. Process each item in the order
     const itensProcessados: {
       cardapio_item_id: number;
       cardapio_item_nome: string;
@@ -247,7 +405,7 @@ Deno.serve(async (req) => {
 
     const erros: string[] = []
 
-    for (const item of payload.order.items) {
+    for (const item of orderData.items) {
       const mappings = mapeamentoMap.get(item.item_id)
       
       if (!mappings || mappings.length === 0) {
@@ -258,6 +416,12 @@ Deno.serve(async (req) => {
       const itensBaixados: { item_porcionado_id: string; quantidade_baixada: number }[] = []
 
       for (const mapping of mappings) {
+        // Pular mapeamentos sem item_porcionado_id (ainda não vinculados)
+        if (!mapping.item_porcionado_id) {
+          console.log(`Mapeamento para item ${item.item_id} não tem item_porcionado_id configurado`)
+          continue
+        }
+        
         const quantidadeTotal = item.quantity * mapping.quantidade_consumida
 
         // Update contagem_porcionados - decrement final_sobra
@@ -303,7 +467,7 @@ Deno.serve(async (req) => {
         } else {
           // Update existing contagem
           const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
-          const novoTotalBaixas = ((contagem as any).cardapio_web_baixa_total || 0) + quantidadeTotal
+          const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
@@ -339,12 +503,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 8. Log the webhook
+    // 9. Log the webhook
     const sucesso = erros.length === 0
     await supabase.from('cardapio_web_pedidos_log').insert({
       organization_id,
       loja_id,
-      order_id: payload.order.id,
+      order_id: orderId,
       evento,
       payload,
       itens_processados: itensProcessados,
@@ -352,12 +516,12 @@ Deno.serve(async (req) => {
       erro: erros.length > 0 ? erros.join('; ') : null
     })
 
-    console.log(`Pedido ${payload.order.id} processado: ${itensProcessados.length} itens baixados`)
+    console.log(`Pedido ${orderId} processado: ${itensProcessados.length} itens baixados`)
 
     return new Response(
       JSON.stringify({
         success: sucesso,
-        order_id: payload.order.id,
+        order_id: orderId,
         processed_items: itensProcessados.length,
         items: itensProcessados,
         errors: erros.length > 0 ? erros : undefined

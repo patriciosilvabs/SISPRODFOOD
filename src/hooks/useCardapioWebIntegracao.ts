@@ -12,6 +12,7 @@ interface IntegracaoCardapioWeb {
   ambiente: 'sandbox' | 'producao';
   ativo: boolean;
   url_webhook: string | null;
+  cardapio_api_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -299,6 +300,28 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Update CardápioWeb API Key
+  const updateCardapioApiKey = useMutation({
+    mutationFn: async ({ id, cardapio_api_key }: { id: string; cardapio_api_key: string }) => {
+      const { error } = await supabase
+        .from('integracoes_cardapio_web')
+        .update({ 
+          cardapio_api_key, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar API Key:', error);
+      throw error;
+    }
+  });
+
   // Mutation: Test connection
   const testarConexao = useMutation({
     mutationFn: async (token: string) => {
@@ -560,6 +583,7 @@ export function useCardapioWebIntegracao() {
     createIntegracao,
     updateIntegracaoStatus,
     regenerateToken,
+    updateCardapioApiKey,
     testarConexao,
     addMapeamento,
     updateMapeamento,
