@@ -1,54 +1,60 @@
 
+# Plano: Vincular Item "Grande - 1 Sabor" que está chegando no webhook
 
-# Plano: Verificar e Corrigir Interface de Mapeamento
+## Diagnóstico Confirmado
 
-## Status Atual
+A API está funcionando! O problema é que o item chegando nos pedidos é diferente do que foi mapeado:
 
-| Componente | Status |
-|------------|--------|
-| Webhook | ✅ Funcionando |
-| API CardápioWeb | ✅ Funcionando (Produção + X-API-KEY) |
-| Fallback de ambiente | ✅ Implementado |
-| Coluna na contagem | ✅ Código existe |
-| **Mapeamentos** | ❌ **305 itens sem vínculo** |
+| O que está mapeado | O que chega no webhook |
+|-------------------|----------------------|
+| CALABRESA (G) - código `1036576` | Grande - 1 Sabor - código `2791009` |
 
-## O Problema Real
+O CardápioWeb envia o **produto pai** (pizza genérica), não o sabor específico. Você precisa vincular o item "Grande - 1 Sabor".
 
-Os logs mostram claramente:
+## Solução Imediata (Manual)
+
+1. Na tela de **Mapeamento do Cardápio Web**, procure pelo item **"Grande - 1 Sabor"** (código `2791009`)
+2. Vincule esse item aos itens porcionados MASSA e MUSSARELA
+3. Faça uma nova venda de teste
+
+## Solução Técnica (Opcional - Processar Complementos)
+
+Se quiser que o sistema processe também os **sabores/complementos** que vêm junto no pedido, posso modificar a edge function para:
+
+1. Além do item principal, processar também os `complements` que vêm na API
+2. Os complementos trazem o código do sabor específico (CALABRESA, etc)
+
+### Modificação na Edge Function
+
+No arquivo `supabase/functions/cardapio-web-webhook/index.ts`:
+
+```typescript
+for (const item of orderData.items) {
+  // Processar item principal
+  processarItem(item.item_id, item.name, item.quantity);
+  
+  // Processar COMPLEMENTOS (sabores, opcionais, etc)
+  if (item.complements && item.complements.length > 0) {
+    for (const complement of item.complements) {
+      // Verificar se temos complement.id ou outro identificador
+      if (complement.id) {
+        processarItem(complement.id, complement.name, item.quantity);
+      }
+    }
+  }
+}
 ```
-"Mapeamento para item 2791009 não tem item_porcionado_id configurado"
-```
 
-Dos 305+ itens importados do CardápioWeb, **apenas 1** tem vínculo configurado:
-- "CALABRESA (G)" → vinculado ao item `5071a067-...`
+Isso permitiria processar tanto o produto principal quanto os sabores específicos.
 
-Todos os outros itens como "Calabresa (Grande)", "Combo: Calabresa + Refri", etc. estão com `item_porcionado_id = null`.
+## Resumo
 
-## Solução
+### Opção 1 - Rápida (Recomendada)
+- Vincule o item "Grande - 1 Sabor" aos porcionados (MASSA + MUSSARELA)
+- Funciona imediatamente
 
-### Passo 1: Você precisa configurar os vínculos
+### Opção 2 - Completa
+- Implementar processamento de complementos
+- Permite baixar estoque baseado no sabor específico (ex: Calabresa baixa pepperoni)
 
-1. Acesse a aba **Mapeamento** na tela de integração do Cardápio Web
-2. Para cada produto que deseja rastrear estoque:
-   - Clique no item do cardápio
-   - Selecione o **item porcionado do sistema** correspondente
-   - Defina a **quantidade consumida** (ex: 1 pizza = 1 bolinha)
-3. Salve o vínculo
-
-### Passo 2: Verificar Interface de Mapeamento (técnico)
-
-Vou verificar se a interface de mapeamento permite fazer esse vínculo de forma adequada. Se não permitir ou tiver problemas, farei os ajustes necessários.
-
-## Arquivos a Verificar
-
-1. `src/pages/ConfigurarCardapioWeb.tsx` - Página principal de configuração
-2. Componentes de mapeamento relacionados
-3. Modal de vínculo de itens
-
-## Resultado Esperado
-
-Após configurar os vínculos:
-1. Uma venda no CardápioWeb vai baixar automaticamente o estoque
-2. A coluna "Cardápio Web" vai aparecer mostrando: `-1 às 14:30` e `Total: -5 un hoje`
-3. O `final_sobra` será decrementado automaticamente
-
+Qual opção você prefere?
