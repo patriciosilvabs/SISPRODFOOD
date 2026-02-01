@@ -521,14 +521,14 @@ Deno.serve(async (req) => {
         const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
-          // Create new contagem if doesn't exist
-          // MODELO 3 CAMADAS: final_sobra = 0 (funcionário não contou ainda)
-          // Vendas são rastreadas separadamente em cardapio_web_baixa_total
-          const sobraFisica = 0 // Funcionário ainda não informou sobra
+          // MODELO SIMPLIFICADO: final_sobra INICIA com idealDoDia
+          // Cada venda DECREMENTA final_sobra diretamente
+          // a_produzir = MAX(0, ideal - final_sobra) - calculado automaticamente pelo banco
+          const estoqueInicial = idealDoDia // Começa cheio com o ideal do dia
+          const novoFinalSobra = Math.max(0, estoqueInicial - quantidadeTotal)
           const novoTotalBaixas = quantidadeTotal
-          const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
           
-          console.log(`📦 Criando contagem (3 camadas): sobra_fisica=${sobraFisica}, vendas_web=${novoTotalBaixas}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+          console.log(`📦 Criando contagem (modelo simplificado): estoque_inicial=${estoqueInicial}, venda=${quantidadeTotal}, final_sobra=${novoFinalSobra}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -537,12 +537,12 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               organization_id,
               dia_operacional: diaOperacional,
-              final_sobra: sobraFisica, // NÃO altera - é campo do funcionário
+              final_sobra: novoFinalSobra, // DECREMENTA do ideal!
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               usuario_id: '00000000-0000-0000-0000-000000000000',
               usuario_nome: 'Cardápio Web',
-              // Campos de rastreamento Cardápio Web
+              // Campos de rastreamento Cardápio Web (auditoria)
               cardapio_web_baixa_total: novoTotalBaixas,
               cardapio_web_ultima_baixa_at: agora,
               cardapio_web_ultima_baixa_qtd: quantidadeTotal,
@@ -556,26 +556,24 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem (3 camadas) para ${itemName}: sobra=${sobraFisica}, vendas=${novoTotalBaixas}, a_produzir=${novoAProduzir}`)
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal ${idealDoDia} - venda ${quantidadeTotal})`)
           }
         } else {
-          // Update existing contagem
-          // MODELO 3 CAMADAS: NÃO alterar final_sobra - é campo do funcionário
-          const sobraFisica = contagem.final_sobra || 0
+          // MODELO SIMPLIFICADO: DECREMENTA final_sobra diretamente
+          const estoqueAtual = contagem.final_sobra ?? 0
+          const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
-          // Nova fórmula: a_produzir = (ideal - sobra_fisica) + vendas_web
-          const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
           
-          console.log(`📦 Atualizando contagem (3 camadas): sobra_fisica=${sobraFisica}, vendas_web=${novoTotalBaixas}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+          console.log(`📦 Atualizando contagem (modelo simplificado): estoque_atual=${estoqueAtual}, venda=${quantidadeTotal}, novo_final_sobra=${novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
-              // final_sobra: NÃO ALTERAR - é campo do funcionário
+              final_sobra: novoFinalSobra, // DECREMENTA DIRETO!
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               updated_at: agora,
-              // Campos de rastreamento Cardápio Web
+              // Campos de rastreamento Cardápio Web (auditoria)
               cardapio_web_baixa_total: novoTotalBaixas,
               cardapio_web_ultima_baixa_at: agora,
               cardapio_web_ultima_baixa_qtd: quantidadeTotal,
@@ -590,7 +588,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem (3 camadas) para ${itemName}: sobra=${sobraFisica}, vendas=${novoTotalBaixas}, a_produzir=${novoAProduzir}`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (${estoqueAtual} - ${quantidadeTotal})`)
           }
         }
       }
