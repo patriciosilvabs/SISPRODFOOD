@@ -511,8 +511,8 @@ const ContagemPorcionados = () => {
     }
 
     const finalSobra = parseInt(values?.final_sobra);
-    if (isNaN(finalSobra) || finalSobra < 0) {
-      toast.error('Valor de Sobra inválido. Insira um número válido (≥ 0).', { id: toastId });
+    if (isNaN(finalSobra)) {
+      toast.error('Valor de Sobra inválido. Insira um número válido.', { id: toastId });
       setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
@@ -979,7 +979,7 @@ const ContagemPorcionados = () => {
                           showAdminCols={showAdminCols}
                           lastUpdate={contagem?.updated_at}
                           onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
-                          onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                          onDecrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
                           onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
                           onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                           currentDayLabel={diasSemanaLabels[currentDay]}

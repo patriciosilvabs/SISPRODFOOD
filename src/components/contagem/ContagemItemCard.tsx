@@ -144,17 +144,20 @@ export const ContagemItemCard = ({
           </Button>
           <input
             type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
+            inputMode="text"
             value={finalSobra}
             onChange={(e) => {
-              const val = e.target.value.replace(/\D/g, '');
-              onSobraChange(val === '' ? 0 : parseInt(val, 10));
+              // Permitir apenas números e sinal negativo no início
+              const val = e.target.value.replace(/[^-\d]/g, '');
+              const sanitized = val.replace(/(?!^)-/g, '');
+              onSobraChange(sanitized === '' || sanitized === '-' ? 0 : parseInt(sanitized, 10));
             }}
-            className={`h-12 w-16 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
-              isItemNaoPreenchido 
-                ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
-                : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
+            className={`h-12 w-20 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
+              finalSobra < 0
+                ? 'bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 border-red-400'
+                : isItemNaoPreenchido 
+                  ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
+                  : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
             }`}
           />
           <Button 
