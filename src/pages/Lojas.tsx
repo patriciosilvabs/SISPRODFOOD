@@ -41,6 +41,7 @@ interface Loja {
   fuso_horario: string;
   horario_limpeza_finalizado: string | null;
   tipo: string | null;
+  codigo_cardapio_web: string | null;
 }
 
 // Lista de fusos horários brasileiros
@@ -67,6 +68,7 @@ const Lojas = () => {
     responsavel: '',
     fuso_horario: 'America/Sao_Paulo',
     horario_limpeza_finalizado: '08:30',
+    codigo_cardapio_web: '',
   });
 
   useEffect(() => {
@@ -198,6 +200,7 @@ const Lojas = () => {
       responsavel: loja.responsavel,
       fuso_horario: loja.fuso_horario || 'America/Sao_Paulo',
       horario_limpeza_finalizado: loja.horario_limpeza_finalizado?.slice(0, 5) || '08:30',
+      codigo_cardapio_web: loja.codigo_cardapio_web || '',
     });
     setDialogOpen(true);
   };
@@ -209,6 +212,7 @@ const Lojas = () => {
       responsavel: '',
       fuso_horario: 'America/Sao_Paulo',
       horario_limpeza_finalizado: '08:30',
+      codigo_cardapio_web: '',
     });
   };
 
@@ -308,11 +312,28 @@ const Lojas = () => {
                     </Select>
                   </div>
 
+                  {/* Código Cardápio Web - Para todas as lojas exceto CPD */}
+                  {editingLoja?.tipo !== 'cpd' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="codigo_cardapio_web">Código Cardápio Web</Label>
+                      <Input
+                        id="codigo_cardapio_web"
+                        placeholder="Ex: 8268"
+                        value={formData.codigo_cardapio_web}
+                        onChange={(e) =>
+                          setFormData({ ...formData, codigo_cardapio_web: e.target.value })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Código da loja no sistema Cardápio Web (fornecido pelo painel do Cardápio Web)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Horário de Limpeza do Kanban - Apenas para CPD */}
                   {editingLoja?.tipo === 'cpd' && (
-                    <div className="space-y-3 p-3 bg-orange-500/10 rounded-lg border border-orange-500/30">
-                      <Label className="flex items-center gap-1 font-semibold text-orange-700 dark:text-orange-400">
+                    <div className="space-y-3 p-3 bg-muted rounded-lg border">
+                      <Label className="flex items-center gap-1 font-semibold">
                         🧹 Limpeza do Kanban (CPD)
                       </Label>
                       <p className="text-xs text-muted-foreground">

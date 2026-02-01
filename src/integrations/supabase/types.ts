@@ -1728,6 +1728,7 @@ export type Database = {
       }
       lojas: {
         Row: {
+          codigo_cardapio_web: string | null
           created_at: string | null
           fuso_horario: string
           horario_limpeza_finalizado: string | null
@@ -1738,6 +1739,7 @@ export type Database = {
           tipo: string | null
         }
         Insert: {
+          codigo_cardapio_web?: string | null
           created_at?: string | null
           fuso_horario?: string
           horario_limpeza_finalizado?: string | null
@@ -1748,6 +1750,7 @@ export type Database = {
           tipo?: string | null
         }
         Update: {
+          codigo_cardapio_web?: string | null
           created_at?: string | null
           fuso_horario?: string
           horario_limpeza_finalizado?: string | null
