@@ -396,6 +396,9 @@ export type Database = {
       contagem_porcionados: {
         Row: {
           a_produzir: number | null
+          cardapio_web_baixa_total: number | null
+          cardapio_web_ultima_baixa_at: string | null
+          cardapio_web_ultima_baixa_qtd: number | null
           created_at: string
           dia_operacional: string
           final_sobra: number
@@ -412,6 +415,9 @@ export type Database = {
         }
         Insert: {
           a_produzir?: number | null
+          cardapio_web_baixa_total?: number | null
+          cardapio_web_ultima_baixa_at?: string | null
+          cardapio_web_ultima_baixa_qtd?: number | null
           created_at?: string
           dia_operacional?: string
           final_sobra?: number
@@ -428,6 +434,9 @@ export type Database = {
         }
         Update: {
           a_produzir?: number | null
+          cardapio_web_baixa_total?: number | null
+          cardapio_web_ultima_baixa_at?: string | null
+          cardapio_web_ultima_baixa_qtd?: number | null
           created_at?: string
           dia_operacional?: string
           final_sobra?: number
