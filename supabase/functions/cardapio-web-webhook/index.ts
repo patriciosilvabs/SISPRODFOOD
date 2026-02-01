@@ -76,7 +76,7 @@ async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: stri
   const response = await fetch(url, {
     method: 'GET',
     headers: { 
-      'X-API-KEY': apiKey,
+      'Authorization': apiKey,
       'Content-Type': 'application/json'
     }
   });
