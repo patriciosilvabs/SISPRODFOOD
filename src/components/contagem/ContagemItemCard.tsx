@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
-  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers, Smartphone 
+  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers, Smartphone, Package 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -39,6 +39,8 @@ interface ContagemItemCardProps {
   cardapioWebBaixaTotal?: number;
   cardapioWebUltimaBaixaAt?: string;
   cardapioWebUltimaBaixaQtd?: number;
+  // Saldo Atual (Estoque Ideal - Vendas)
+  saldoAtual?: number;
 }
 
 export const ContagemItemCard = ({
@@ -67,6 +69,7 @@ export const ContagemItemCard = ({
   cardapioWebBaixaTotal,
   cardapioWebUltimaBaixaAt,
   cardapioWebUltimaBaixaQtd,
+  saldoAtual,
 }: ContagemItemCardProps) => {
   // Hooks para segurar e acelerar os botões
   const decrementHandlers = useLongPress({
@@ -217,6 +220,23 @@ export const ContagemItemCard = ({
             <span className="text-[10px] text-violet-500 dark:text-violet-400">
               Total: -{cardapioWebBaixaTotal} un hoje
             </span>
+          </div>
+        )}
+
+        {/* Saldo Atual - Estoque Virtual (Ideal - Vendas) */}
+        {saldoAtual !== undefined && idealFromConfig > 0 && (
+          <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[80px] border-2 ${
+            saldoAtual === 0 
+              ? 'bg-red-100 dark:bg-red-900/50 border-red-300 dark:border-red-700 text-red-600 dark:text-red-400' 
+              : saldoAtual < idealFromConfig * 0.3
+                ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400'
+                : 'bg-emerald-50 dark:bg-emerald-950 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400'
+          }`}>
+            <span className="text-[10px] uppercase tracking-wide opacity-80 flex items-center gap-1">
+              <Package className="h-3 w-3" />
+              Saldo
+            </span>
+            <span className="text-base font-bold">{saldoAtual}</span>
           </div>
         )}
 
