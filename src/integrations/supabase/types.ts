@@ -1351,6 +1351,7 @@ export type Database = {
         Row: {
           ambiente: string
           ativo: boolean
+          cardapio_api_key: string | null
           created_at: string
           id: string
           loja_id: string
@@ -1362,6 +1363,7 @@ export type Database = {
         Insert: {
           ambiente?: string
           ativo?: boolean
+          cardapio_api_key?: string | null
           created_at?: string
           id?: string
           loja_id: string
@@ -1373,6 +1375,7 @@ export type Database = {
         Update: {
           ambiente?: string
           ativo?: boolean
+          cardapio_api_key?: string | null
           created_at?: string
           id?: string
           loja_id?: string

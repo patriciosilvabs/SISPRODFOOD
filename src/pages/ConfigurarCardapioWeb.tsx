@@ -36,6 +36,7 @@ export default function ConfigurarCardapioWeb() {
     createIntegracao,
     updateIntegracaoStatus,
     regenerateToken,
+    updateCardapioApiKey,
     addMapeamento,
     deleteMapeamento,
     importarMapeamentos,
@@ -219,6 +220,9 @@ export default function ConfigurarCardapioWeb() {
                       onCreateIntegracao={handleCreateIntegracao}
                       onUpdateStatus={(id, ativo) => updateIntegracaoStatus.mutate({ id, ativo })}
                       onRegenerateToken={(id) => regenerateToken.mutate(id)}
+                      onUpdateApiKey={async (id, apiKey) => {
+                        await updateCardapioApiKey.mutateAsync({ id, cardapio_api_key: apiKey });
+                      }}
                       onTestConnection={handleTestConnection}
                       isCreating={createIntegracao.isPending}
                       isUpdating={updateIntegracaoStatus.isPending}

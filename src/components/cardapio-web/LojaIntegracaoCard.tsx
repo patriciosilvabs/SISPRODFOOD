@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Copy, RefreshCw, Eye, EyeOff, Store, Plus, Loader2, Plug, CheckCircle, XCircle } from 'lucide-react';
+import { Copy, RefreshCw, Eye, EyeOff, Store, Plus, Loader2, Plug, CheckCircle, XCircle, Save, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import type { IntegracaoCardapioWebComLoja } from '@/hooks/useCardapioWebIntegracao';
 
@@ -29,6 +29,7 @@ interface LojaIntegracaoCardProps {
   onCreateIntegracao: (lojaId: string, ambiente: 'sandbox' | 'producao') => Promise<void>;
   onUpdateStatus: (id: string, ativo: boolean) => void;
   onRegenerateToken: (id: string) => void;
+  onUpdateApiKey?: (id: string, apiKey: string) => Promise<void>;
   onTestConnection?: (token: string) => Promise<{ success: boolean; message: string; ambiente: string }>;
   isCreating: boolean;
   isUpdating: boolean;
@@ -40,14 +41,25 @@ export function LojaIntegracaoCard({
   onCreateIntegracao,
   onUpdateStatus,
   onRegenerateToken,
+  onUpdateApiKey,
   onTestConnection,
   isCreating,
   isUpdating,
 }: LojaIntegracaoCardProps) {
   const [showToken, setShowToken] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [selectedAmbiente, setSelectedAmbiente] = useState<'sandbox' | 'producao'>('sandbox');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [cardapioApiKey, setCardapioApiKey] = useState('');
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+
+  // Sync local state with integration data
+  useEffect(() => {
+    if (integracao?.cardapio_api_key) {
+      setCardapioApiKey(integracao.cardapio_api_key);
+    }
+  }, [integracao?.cardapio_api_key]);
 
   const handleCopyToken = () => {
     if (integracao?.token) {
@@ -83,6 +95,21 @@ export function LojaIntegracaoCard({
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!integracao?.id || !onUpdateApiKey) return;
+    
+    setIsSavingApiKey(true);
+    try {
+      await onUpdateApiKey(integracao.id, cardapioApiKey);
+      toast.success('API Key do CardápioWeb salva com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar API Key:', error);
+      toast.error('Erro ao salvar API Key');
+    } finally {
+      setIsSavingApiKey(false);
     }
   };
 
@@ -271,6 +298,48 @@ export function LojaIntegracaoCard({
             )}
           </div>
         )}
+
+        {/* CardápioWeb API Key - Required for fetching order details */}
+        <div className="space-y-2 pt-4 border-t">
+          <Label className="text-xs text-muted-foreground flex items-center gap-2">
+            <Key className="h-3 w-3" />
+            API Key do CardápioWeb (para buscar detalhes dos pedidos)
+          </Label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input 
+                type={showApiKey ? 'text' : 'password'}
+                value={cardapioApiKey}
+                onChange={(e) => setCardapioApiKey(e.target.value)}
+                placeholder="Cole aqui a API Key do CardápioWeb"
+                className="font-mono text-xs h-9 pr-10"
+              />
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="absolute right-0 top-0 h-full px-2"
+                onClick={() => setShowApiKey(!showApiKey)}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={handleSaveApiKey}
+              disabled={isSavingApiKey || !onUpdateApiKey}
+            >
+              {isSavingApiKey ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Obtenha sua API Key no painel do CardápioWeb. Necessária para buscar os itens dos pedidos.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
