@@ -409,7 +409,6 @@ export type Database = {
           organization_id: string | null
           peso_total_g: number | null
           preenchido_na_sessao: boolean | null
-          saldo_atual: number | null
           updated_at: string
           usuario_id: string
           usuario_nome: string
@@ -429,7 +428,6 @@ export type Database = {
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
-          saldo_atual?: number | null
           updated_at?: string
           usuario_id: string
           usuario_nome: string
@@ -449,7 +447,6 @@ export type Database = {
           organization_id?: string | null
           peso_total_g?: number | null
           preenchido_na_sessao?: boolean | null
-          saldo_atual?: number | null
           updated_at?: string
           usuario_id?: string
           usuario_nome?: string
