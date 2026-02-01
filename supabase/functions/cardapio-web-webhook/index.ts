@@ -72,11 +72,12 @@ async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: stri
   
   const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
   console.log(`Buscando detalhes do pedido ${orderId} em: ${url}`);
+  console.log(`Usando API Key: ${apiKey.substring(0, 10)}... (${apiKey.length} chars)`);
   
   const response = await fetch(url, {
     method: 'GET',
     headers: { 
-      'Authorization': apiKey,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     }
   });
