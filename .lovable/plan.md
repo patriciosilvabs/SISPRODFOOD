@@ -1,73 +1,65 @@
 
 
-# Plano: Modelo Simplificado - Webhook Alimenta o Botão Azul ✅ IMPLEMENTADO
+# Plano: Adicionar Label "Sobra" aos Botões Azuis
 
-## Resumo da Solução
+## Objetivo
 
-O sistema agora usa o **Modelo Simplificado** onde:
-- O webhook do Cardápio Web **decrementa `final_sobra` diretamente**
-- `a_produzir = MAX(0, ideal_amanha - final_sobra)` (coluna gerada no banco)
-- Isso garante que `a_produzir` **nunca excede o ideal**
+Adicionar um label visual "SOBRA" acima dos botões azuis de quantidade para facilitar a identificação da coluna pelos usuários.
 
----
+## Situação Atual
 
-## Fluxo Operacional
+| Elemento | Descrição |
+|----------|-----------|
+| Botões Azuis | Controlam `final_sobra` (quantidade em estoque) |
+| Sem Label | Atualmente não há identificação visual da coluna |
+| Funcionamento | ✅ Já funciona - usuário e Cardápio Web podem alterar |
+| Cálculo | ✅ `a_produzir = ideal - final_sobra` (automático no banco) |
 
-| Hora | Evento | final_sobra | a_produzir |
-|------|--------|-------------|------------|
-| 00:00 | Dia começa (ideal = 100) | 100 | 0 |
-| 21:30 | Venda de 2 pizzas | 98 | **2** |
-| 22:15 | Venda de 3 pizzas | 95 | **5** |
-| 00:30 | Mais 100 vendas (esgotou) | 0 | **100** ✅ (máximo!) |
+## Mudança Visual Proposta
 
-### Antes (Modelo Antigo - Problemático)
+```text
+ANTES:
+┌───────────────────┐
+│  [-] [99] [+]     │
+└───────────────────┘
 
-```
-a_produzir = cardapio_web_baixa_total (vendas acumuladas)
-→ Podia mostrar 105 a produzir quando ideal era 100 ❌
-```
-
-### Depois (Modelo Simplificado - Correto)
-
-```
-final_sobra = MAX(0, estoque_atual - venda)
-a_produzir = MAX(0, ideal - final_sobra)
-→ Sempre limitado ao ideal ✅
+DEPOIS:
+┌───────────────────┐
+│     SOBRA         │  ← Label identificador
+│  [-] [99] [+]     │
+└───────────────────┘
 ```
 
----
+## Alteração Técnica
 
-## Mudanças Implementadas
+### Arquivo: `src/components/contagem/ContagemItemCard.tsx`
 
-### 1. Migration SQL
-- Removida coluna `saldo_atual` (não necessária)
-- Recriada coluna `a_produzir` como: `GREATEST(0, ideal_amanha - final_sobra)`
+Adicionar um container ao redor dos botões azuis com label "SOBRA":
 
-### 2. Edge Function (`cardapio-web-webhook`)
-- Agora **decrementa** `final_sobra` diretamente a cada venda
-- Ao criar contagem nova, inicializa `final_sobra = ideal_amanha` (estoque cheio)
-- Mantém `cardapio_web_baixa_total` apenas para auditoria
+```tsx
+{/* Controle de Quantidade com Label */}
+<div className="flex flex-col items-center">
+  <span className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-wide font-medium mb-1">
+    Sobra
+  </span>
+  <div className="flex items-center">
+    {/* Botões [-] [valor] [+] existentes */}
+  </div>
+</div>
+```
 
-### 3. Frontend
-- Removida coluna "Saldo Atual" (redundante com o botão azul)
-- Botão azul (`final_sobra`) agora reflete o estoque virtual
+## Fluxo Confirmado
 
----
+O sistema já está funcionando corretamente:
 
-## Vantagens
+1. **Usuário altera** → `final_sobra` atualizado → `a_produzir` recalculado automaticamente
+2. **Cardápio Web altera** (via webhook) → `final_sobra` decrementado → `a_produzir` recalculado automaticamente
 
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Complexidade | 3 camadas, cálculo JS | 1 campo, cálculo no banco |
-| Limite | Podia exceder ideal | Limitado automaticamente |
-| Visual | Funcionário não via vendas | Botão azul decresce em tempo real |
-| Auditoria | Campos separados | `cardapio_web_baixa_total` para histórico |
+A fórmula no banco garante que `a_produzir = MAX(0, ideal - sobra)` sempre seja atualizado em tempo real.
 
----
+## Arquivos a Modificar
 
-## Contagem Manual
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/contagem/ContagemItemCard.tsx` | Adicionar label "SOBRA" acima dos botões azuis |
 
-O funcionário ainda pode ajustar `final_sobra` manualmente:
-- Se a contagem física diferir do virtual, ele corrige
-- O sistema aceita o valor informado
-- Útil para ajustes/correções
