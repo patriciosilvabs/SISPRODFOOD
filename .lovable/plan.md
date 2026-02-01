@@ -1,230 +1,164 @@
 
 
-# Plano: Modelo de Três Camadas para Estoque Just-in-Time
+# Plano: Salvamento Automático em Tempo Real (Auto-Save com Debounce)
 
-## Diagnóstico do Problema Atual
+## Diagnóstico
 
-A solução implementada usa valores **negativos** no campo `final_sobra` para representar vendas, o que gera:
+| Operação | Fluxo Atual | Fluxo Ideal |
+|----------|-------------|-------------|
+| **Venda Cardápio Web** | Tempo real (webhook) | ✅ Já está correto |
+| **Ajuste manual sobra** | Requer clique em "Salvar" | ⚠️ Deveria ser automático |
+| **Ajuste peso** | Requer clique em "Salvar" | ⚠️ Deveria ser automático |
 
-| Problema | Impacto |
-|----------|---------|
-| **Confusão Cognitiva** | Funcionário vê "-10" e não entende - estoque físico não é negativo |
-| **Perda de Rastreabilidade** | Impossível distinguir ajuste manual de venda automática |
-| **Dificuldade de Auditoria** | Histórico mistura realidade física com fluxo de vendas |
-
-A boa notícia: **os campos já existem no banco de dados!** A tabela `contagem_porcionados` já possui:
-- `final_sobra` - para contagem física
-- `cardapio_web_baixa_total` - acumulado de vendas do dia
-- `cardapio_web_ultima_baixa_at` / `cardapio_web_ultima_baixa_qtd` - última baixa
+O botão "Salvar Alterações" faz sentido em formulários tradicionais, mas **não combina** com um sistema de contagem Just-in-Time onde a produção depende de dados atualizados em tempo real.
 
 ---
 
-## Arquitetura de Três Camadas Proposta
+## Solução: Auto-Save com Debounce
+
+Implementar salvamento automático após cada alteração, com um pequeno delay (debounce) para evitar requisições excessivas enquanto o usuário digita.
+
+### Fluxo Proposto
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CARD DE CONTAGEM                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  [MUSSARELA]                                                        │
-│                                                                     │
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────┐ │
-│  │  SOBRA      │   │  VENDAS     │   │  IDEAL      │   │   A     │ │
-│  │  FÍSICA     │   │  WEB        │   │   DIA       │   │PRODUZIR │ │
-│  │ ┌───────┐   │   │             │   │             │   │         │ │
-│  │ │  50   │   │   │   -15       │   │    100      │   │   65    │ │
-│  │ └───────┘   │   │  às 14:32   │   │   (Seg)     │   │         │ │
-│  │  [−] [+]    │   │             │   │             │   │         │ │
-│  │  (azul)     │   │  (violeta)  │   │  (cinza)    │   │(laranja)│ │
-│  └─────────────┘   └─────────────┘   └─────────────┘   └─────────┘ │
-│                                                                     │
-│  FUNCIONÁRIO     AUTOMÁTICO          CONFIGURAÇÃO     CALCULADO    │
-│  controla        (webhook)           (admin)          (sistema)    │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Nova Lógica de Cálculo
-
-A fórmula muda de:
-```
-// ANTES (problemático):
-a_produzir = ideal - final_sobra  // onde final_sobra pode ser negativo
-
-// DEPOIS (três camadas):
-a_produzir = ideal - sobra_fisica + vendas_pendentes
-           = 100   - 50           + 15
-           = 65 unidades
-```
-
-Ou simplificando:
-```
-a_produzir = (ideal - sobra_fisica) + cardapio_web_baixa_total
+Funcionário ajusta sobra: 50 → 51 → 52
+         ↓
+Debounce aguarda 800ms sem novas alterações
+         ↓
+Sistema salva automaticamente (sem clique)
+         ↓
+Toast discreto: "✓ Salvo" (fade out rápido)
+         ↓
+Produção atualizada em tempo real
 ```
 
 ---
 
 ## Mudanças Necessárias
 
-### 1. Edge Function: NÃO alterar `final_sobra`
-
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
-
-O webhook deve atualizar APENAS os campos de rastreamento, sem tocar no `final_sobra`:
-
-```typescript
-// ANTES (problemático):
-const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
-
-// DEPOIS (correto):
-// NÃO altera final_sobra - isso é campo do funcionário
-const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal
-const sobraFisica = contagem.final_sobra || 0
-const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
-
-await supabase.from('contagem_porcionados').update({
-  // final_sobra: NÃO ALTERAR - é campo do funcionário
-  ideal_amanha: idealDoDia,
-  a_produzir: novoAProduzir,
-  cardapio_web_baixa_total: novoTotalBaixas,
-  cardapio_web_ultima_baixa_at: agora,
-  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
-})
-```
-
-### 2. Frontend: Restaurar `final_sobra` apenas positivo
+### 1. Adicionar Auto-Save com Debounce
 
 **Arquivo:** `src/pages/ContagemPorcionados.tsx`
 
-Reverter as mudanças que permitiam negativos e ajustar o cálculo de `a_produzir`:
+Criar um `useEffect` que observa mudanças em `editingValues` e dispara o salvamento automático:
 
 ```typescript
-// Linha 540 - ANTES:
-const aProduzir = Math.max(0, idealAmanha - finalSobra);
+// Hook de debounce para auto-save
+const debouncedSave = useRef<NodeJS.Timeout | null>(null);
 
-// DEPOIS (três camadas):
-const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
-const aProduzir = Math.max(0, (idealAmanha - finalSobra) + cardapioWebBaixaTotal);
+useEffect(() => {
+  // Limpar timeout anterior
+  if (debouncedSave.current) {
+    clearTimeout(debouncedSave.current);
+  }
+
+  // Verificar se há alterações pendentes
+  const dirtyRows = getDirtyRows();
+  if (dirtyRows.length === 0) return;
+
+  // Agendar salvamento após 800ms de inatividade
+  debouncedSave.current = setTimeout(async () => {
+    for (const row of dirtyRows) {
+      await executeSave(row.lojaId, row.itemId);
+    }
+  }, 800);
+
+  return () => {
+    if (debouncedSave.current) {
+      clearTimeout(debouncedSave.current);
+    }
+  };
+}, [editingValues]);
 ```
+
+### 2. Substituir Toast Pesado por Indicador Discreto
+
+Alterar o feedback visual de:
+- **Antes:** Toast grande "Contagem salva! Sobra: 50 | Ideal: 100 | A Produzir: 50"
+- **Depois:** Toast discreto "✓ Salvo" com fade-out rápido (1.5s)
 
 ```typescript
-// Linha 952 - ANTES:
-const aProduzir = Math.max(0, idealFromConfig - finalSobra);
-
-// DEPOIS (três camadas):
-const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
-const aProduzir = Math.max(0, (idealFromConfig - finalSobra) + cardapioWebBaixaTotal);
+// Em executeSave, após sucesso:
+toast.success('✓ Salvo', { 
+  duration: 1500,
+  position: 'bottom-right',
+  style: { fontSize: '12px', padding: '8px 12px' }
+});
 ```
 
-### 3. Frontend: Restaurar validação >= 0 para sobra física
+### 3. Remover Botão "Salvar Alterações" do Footer
 
-**Arquivo:** `src/pages/ContagemPorcionados.tsx`
+**Arquivo:** `src/components/contagem/ContagemFixedFooter.tsx`
 
+O footer pode ser simplificado ou removido, já que não há mais ação pendente.
+
+**Opção A - Remover footer completamente:**
 ```typescript
-// Linha 514 - Restaurar validação:
-if (isNaN(finalSobra) || finalSobra < 0) {
-  toast.error('Valor de Sobra inválido. Insira um número >= 0.', { id: toastId });
-  // ...
-}
+// Em ContagemPorcionados.tsx, remover:
+<ContagemFixedFooter ... />
 ```
 
-```typescript
-// Linha 982 - Restaurar trava no zero:
-onDecrementSobra={() => finalSobra > 0 && handleValueChange(...)}
-```
+**Opção B - Manter footer apenas com status visual:**
+Exibir um indicador de "Todas as alterações salvas" ou "Salvando..." quando houver operação em andamento.
 
-### 4. Frontend: Restaurar input apenas numérico positivo
+### 4. Adicionar Indicador de Status de Salvamento
 
-**Arquivo:** `src/components/contagem/ContagemItemCard.tsx`
+Criar um pequeno badge/indicator que mostra o estado atual:
+- 🟢 "Salvo" (tudo sincronizado)
+- 🟡 "Salvando..." (operação em andamento)
+- 🔴 "Erro - Clique para tentar novamente" (fallback para retry manual)
 
-```typescript
-// Restaurar input original:
-<input
-  type="text"
-  inputMode="numeric"
-  pattern="[0-9]*"
-  value={finalSobra}
-  onChange={(e) => {
-    const val = e.target.value.replace(/\D/g, '');
-    onSobraChange(val === '' ? 0 : parseInt(val, 10));
-  }}
-  className={`h-12 w-16 text-center ... ${
-    isItemNaoPreenchido 
-      ? 'bg-amber-50 ... border-amber-400' 
-      : 'bg-white ... text-blue-600 border-blue-500'
-  }`}
-/>
-```
+---
 
-### 5. Ajustar label do campo Cardápio Web
+## Arquivos a Modificar
 
-O badge violeta já existe e já mostra as vendas. Apenas garantir que ele sempre apareça quando `cardapio_web_baixa_total > 0`:
-
-```typescript
-// Já existe no ContagemItemCard.tsx - linhas 206-223
-// O componente já exibe corretamente:
-{cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0 && (
-  <div className="... bg-violet-100 ...">
-    <Smartphone /> Cardápio Web
-    -{cardapioWebUltimaBaixaQtd} às {time}
-    Total: -{cardapioWebBaixaTotal} un hoje
-  </div>
-)}
-```
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/ContagemPorcionados.tsx` | Adicionar auto-save com debounce de 800ms, remover dependência do botão |
+| `src/components/contagem/ContagemFixedFooter.tsx` | Simplificar ou remover (substituir por indicador de status) |
 
 ---
 
 ## Fluxo Operacional Após Implementação
 
 ```text
-DIA ANTERIOR (20:00):
-├── Funcionário fecha contagem: sobra_fisica = 50
-├── cardapio_web_baixa_total = 0 (zerado no novo dia)
-└── a_produzir = 100 - 50 = 50
-
-INÍCIO DO DIA (00:00):
-├── Novo dia operacional
-├── sobra_fisica = 0 (não contou ainda)
-├── cardapio_web_baixa_total = 0
-└── a_produzir = 100
-
-DURANTE A NOITE (vendas):
-├── Venda 1: cardapio_web_baixa_total = 5
-├── sobra_fisica = 0 (funcionário não mexeu)
-├── a_produzir = (100 - 0) + 5 = 105
-│
-├── Venda 2: cardapio_web_baixa_total = 10
-├── a_produzir = (100 - 0) + 10 = 110
-
-MANHÃ (08:00) - Funcionário conta estoque:
-├── Vê que tem 30 massas físicas na bandeja
-├── Informa: sobra_fisica = 30
-├── cardapio_web_baixa_total = 10 (acumulado da noite)
-├── a_produzir = (100 - 30) + 10 = 80
-└── Interface mostra claramente:
-    [Sobra: 30] [Vendas Web: -10] [A Produzir: 80]
+1. Funcionário clica no "+" para incrementar sobra
+         ↓
+2. editingValues atualiza imediatamente (50 → 51)
+         ↓
+3. useEffect detecta mudança, inicia debounce de 800ms
+         ↓
+4. Funcionário clica "+" novamente (51 → 52)
+         ↓
+5. Debounce reinicia (mais 800ms)
+         ↓
+6. 800ms sem alterações
+         ↓
+7. executeSave() dispara automaticamente
+         ↓
+8. Banco atualizado, produção recalculada
+         ↓
+9. Toast discreto "✓ Salvo" (desaparece em 1.5s)
 ```
 
 ---
 
-## Resumo dos Arquivos a Modificar
+## Vantagens
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/cardapio-web-webhook/index.ts` | Não alterar `final_sobra`, apenas atualizar campos de rastreamento e recalcular `a_produzir` |
-| `src/pages/ContagemPorcionados.tsx` | Restaurar validação >= 0, ajustar fórmula de `a_produzir` para incluir vendas |
-| `src/components/contagem/ContagemItemCard.tsx` | Restaurar input numérico positivo, manter estilo azul |
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| **Consistência** | Vendas em tempo real, contagem manual | Tudo em tempo real |
+| **UX** | Funcionário precisa lembrar de salvar | Zero fricção |
+| **Risco de perda de dados** | Se esquecer de salvar, perde alterações | Impossível perder |
+| **Sincronização** | Produção desatualizada até salvar | Sempre atualizada |
 
 ---
 
-## Vantagens da Arquitetura de Três Camadas
+## Fallback para Falhas
 
-| Aspecto | Solução Atual | Modelo Três Camadas |
-|---------|---------------|---------------------|
-| **Clareza** | "-10" confunde funcionário | "50 sobra + 10 vendas" é claro |
-| **Rastreabilidade** | Tudo misturado | Campos separados para auditoria |
-| **Auditoria** | Impossível distinguir | Histórico limpo: contagem física vs vendas |
-| **Operação** | Funcionário não entende | Funcionário vê realidade física |
-| **Escalabilidade** | Cria dívida técnica | Modelo profissional e extensível |
+Se o auto-save falhar:
+1. Mostrar indicador vermelho "Erro de sincronização"
+2. Manter botão de retry manual como fallback
+3. Não bloquear a interface - permitir continuar editando
+4. Tentar novamente automaticamente na próxima alteração
 
