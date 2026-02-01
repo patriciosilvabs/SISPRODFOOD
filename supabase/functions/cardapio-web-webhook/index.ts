@@ -65,48 +65,65 @@ interface MapeamentoItem {
 const RELEVANT_STATUSES = ["confirmed", "preparing", "ready", "dispatched"];
 
 // Função para buscar detalhes do pedido via API do CardápioWeb
-// Testa múltiplos formatos de autenticação até encontrar um que funcione
+// Testa múltiplos ambientes e formatos de autenticação até encontrar um que funcione
 async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string): Promise<OrderData> {
-  const baseUrl = ambiente === 'sandbox' 
-    ? 'https://integracao.sandbox.cardapioweb.com'
-    : 'https://integracao.cardapioweb.com';
-  
-  const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
-  console.log(`Buscando detalhes do pedido ${orderId} em: ${url}`);
-  console.log(`API Key completa para debug: ${apiKey}`);
-  
-  // Tentar múltiplos formatos de autenticação
-  const authFormats: { name: string; headers: Record<string, string> }[] = [
-    { name: 'Bearer', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } },
-    { name: 'Auth direto', headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' } },
-    { name: 'X-API-KEY', headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' } },
-    { name: 'api_key header', headers: { 'api_key': apiKey, 'Content-Type': 'application/json' } },
+  // Tentar primeiro o ambiente configurado, depois o outro como fallback
+  const ambientes = [
+    {
+      name: ambiente === 'sandbox' ? 'SANDBOX' : 'PRODUÇÃO',
+      url: ambiente === 'sandbox' 
+        ? 'https://integracao.sandbox.cardapioweb.com'
+        : 'https://integracao.cardapioweb.com'
+    },
+    {
+      name: ambiente === 'sandbox' ? 'PRODUÇÃO (fallback)' : 'SANDBOX (fallback)',
+      url: ambiente === 'sandbox' 
+        ? 'https://integracao.cardapioweb.com'
+        : 'https://integracao.sandbox.cardapioweb.com'
+    }
   ];
   
-  for (const format of authFormats) {
-    console.log(`Tentando formato: ${format.name}`);
+  console.log(`Buscando detalhes do pedido ${orderId}`);
+  console.log(`API Key: ${apiKey.substring(0, 10)}...`);
+  console.log(`Ambiente configurado: ${ambiente}`);
+  
+  // Formatos de autenticação a testar (X-API-KEY primeiro conforme documentação)
+  const authFormats: { name: string; headers: Record<string, string> }[] = [
+    { name: 'X-API-KEY', headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' } },
+    { name: 'Bearer', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } },
+    { name: 'Auth direto', headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' } },
+  ];
+  
+  for (const amb of ambientes) {
+    const url = `${amb.url}/api/partner/v1/orders/${orderId}`;
+    console.log(`\n🔄 Tentando ambiente: ${amb.name}`);
+    console.log(`URL: ${url}`);
     
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: format.headers
-      });
+    for (const format of authFormats) {
+      console.log(`  Tentando formato: ${format.name}`);
       
-      if (response.ok) {
-        console.log(`✅ Formato ${format.name} funcionou!`);
-        const data = await response.json();
-        console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
-        return data.order || data;
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: format.headers
+        });
+        
+        if (response.ok) {
+          console.log(`  ✅ SUCESSO! Ambiente ${amb.name} com formato ${format.name}`);
+          const data = await response.json();
+          console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
+          return data.order || data;
+        }
+        
+        const errorText = await response.text();
+        console.log(`  ❌ ${format.name} falhou: ${response.status} - ${errorText.substring(0, 100)}`);
+      } catch (fetchError) {
+        console.log(`  ❌ ${format.name} erro de fetch: ${fetchError}`);
       }
-      
-      const errorText = await response.text();
-      console.log(`❌ Formato ${format.name} falhou: ${response.status} - ${errorText}`);
-    } catch (fetchError) {
-      console.log(`❌ Formato ${format.name} erro de fetch: ${fetchError}`);
     }
   }
   
-  throw new Error(`Todos os formatos de autenticação falharam para pedido ${orderId}`);
+  throw new Error(`Todos os ambientes e formatos de autenticação falharam para pedido ${orderId}. Verifique se a API Key está correta e ativa no CardápioWeb.`);
 }
 
 Deno.serve(async (req) => {
