@@ -21,15 +21,24 @@ interface MapeamentoCardapioItem {
   organization_id: string;
   cardapio_item_id: number;
   cardapio_item_nome: string;
-  item_porcionado_id: string;
+  item_porcionado_id: string | null;
   quantidade_consumida: number;
   ativo: boolean;
   created_at: string;
+  tipo?: string | null;
+  categoria?: string | null;
   // Joined data
   item_porcionado?: {
     id: string;
     nome: string;
-  };
+  } | null;
+}
+
+export interface ImportarMapeamentoItem {
+  tipo: string;
+  categoria: string;
+  nome: string;
+  codigo_interno: number;
 }
 
 interface CardapioWebPedidoLog {
@@ -308,6 +317,66 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Import mappings in batch
+  const importarMapeamentos = useMutation({
+    mutationFn: async (items: ImportarMapeamentoItem[]) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const mappings = items.map(item => ({
+        organization_id: organizationId,
+        cardapio_item_id: item.codigo_interno,
+        cardapio_item_nome: item.nome,
+        tipo: item.tipo,
+        categoria: item.categoria,
+        item_porcionado_id: null,
+        quantidade_consumida: 1,
+        ativo: true,
+      }));
+
+      const { data, error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .insert(mappings)
+        .select();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success(`${data.length} itens importados com sucesso!`);
+    },
+    onError: (error) => {
+      console.error('Erro ao importar mapeamentos:', error);
+      toast.error('Erro ao importar mapeamentos');
+    }
+  });
+
+  // Mutation: Update mapping with item porcionado link
+  const vincularItemPorcionado = useMutation({
+    mutationFn: async ({
+      id,
+      item_porcionado_id,
+    }: {
+      id: string;
+      item_porcionado_id: string;
+    }) => {
+      const { error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .update({ item_porcionado_id })
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Item vinculado com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao vincular item:', error);
+      toast.error('Erro ao vincular item');
+    }
+  });
+
   return {
     // Data
     integracao,
@@ -331,6 +400,8 @@ export function useCardapioWebIntegracao() {
     addMapeamento,
     updateMapeamento,
     deleteMapeamento,
+    importarMapeamentos,
+    vincularItemPorcionado,
     
     // Utils
     generateToken,

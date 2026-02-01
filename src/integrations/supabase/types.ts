@@ -1818,31 +1818,37 @@ export type Database = {
           ativo: boolean
           cardapio_item_id: number
           cardapio_item_nome: string
+          categoria: string | null
           created_at: string
           id: string
-          item_porcionado_id: string
+          item_porcionado_id: string | null
           organization_id: string
           quantidade_consumida: number
+          tipo: string | null
         }
         Insert: {
           ativo?: boolean
           cardapio_item_id: number
           cardapio_item_nome: string
+          categoria?: string | null
           created_at?: string
           id?: string
-          item_porcionado_id: string
+          item_porcionado_id?: string | null
           organization_id: string
           quantidade_consumida?: number
+          tipo?: string | null
         }
         Update: {
           ativo?: boolean
           cardapio_item_id?: number
           cardapio_item_nome?: string
+          categoria?: string | null
           created_at?: string
           id?: string
-          item_porcionado_id?: string
+          item_porcionado_id?: string | null
           organization_id?: string
           quantidade_consumida?: number
+          tipo?: string | null
         }
         Relationships: [
           {
