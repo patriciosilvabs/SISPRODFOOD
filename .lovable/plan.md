@@ -1,210 +1,121 @@
 
-
-# Plano: Suporte a Arquivos Excel e Correção de Notação Científica
+# Plano: Correção da Importação com Prevenção de Duplicatas
 
 ## Problemas Identificados
 
-### 1. Erro de Notação Científica
-O Excel salva números grandes em notação científica (ex: `9.31966655686356e+28`), que o `parseInt()` não consegue processar. O código atual:
-```typescript
-const codigo_interno = parseInt(codigoStr.replace(/\D/g, ''), 10);
-```
-Remove todos os caracteres não numéricos, mas a notação `e+28` quebra o parsing.
+### 1. Duplicatas Massivas no Banco
+Sua organização tem **305 itens únicos** mas **3.106 registros** (10x mais)! Isso ocorre porque cada vez que você importa, todos os itens são inseridos novamente.
 
-### 2. Suporte a Arquivos Excel
-O upload atual só aceita `.csv` e `.txt`. O usuário precisa importar diretamente de `.xls` e `.xlsx`.
+### 2. Sem Verificação de Duplicatas
+A tabela não possui restrição UNIQUE e a função de importação não verifica se os itens já existem.
 
 ---
 
 ## Solução
 
-### Parte 1: Instalar Biblioteca xlsx (SheetJS)
+### Parte 1: Limpeza dos Dados Duplicados
+Primeiro, vamos remover os registros duplicados mantendo apenas um de cada item por organização.
 
-Adicionar a dependência `xlsx` que permite ler arquivos Excel no navegador:
-```bash
-npm install xlsx
+### Parte 2: Adicionar Constraint UNIQUE
+Criar uma constraint UNIQUE para impedir que o mesmo `cardapio_item_id` seja inserido duas vezes na mesma organização.
+
+### Parte 3: Usar UPSERT na Importação
+Modificar a função de importação para usar `upsert` - se o item já existe, atualiza; se não existe, insere.
+
+---
+
+## Alterações
+
+### Alteração no Banco de Dados
+
+```sql
+-- Passo 1: Remover duplicatas mantendo apenas o registro mais antigo de cada item
+DELETE FROM mapeamento_cardapio_itens a
+USING mapeamento_cardapio_itens b
+WHERE a.organization_id = b.organization_id
+  AND a.cardapio_item_id = b.cardapio_item_id
+  AND a.created_at > b.created_at;
+
+-- Passo 2: Adicionar constraint UNIQUE para evitar futuras duplicatas
+ALTER TABLE mapeamento_cardapio_itens 
+ADD CONSTRAINT mapeamento_cardapio_itens_org_item_unique 
+UNIQUE (organization_id, cardapio_item_id);
 ```
 
-### Parte 2: Atualizar o Componente
+### Alteração no Código
 
-**Arquivo:** `src/components/modals/ImportarMapeamentoCardapioModal.tsx`
+**Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
 
-#### 2.1 Adicionar função para parsear números grandes
-
-```typescript
-// Converte strings de números (incluindo notação científica) para inteiro
-function parseNumericCode(value: string): number {
-  const sanitized = sanitizeText(value);
-  
-  // Se contém notação científica, usar parseFloat primeiro
-  if (sanitized.includes('e') || sanitized.includes('E')) {
-    const num = parseFloat(sanitized);
-    if (!isNaN(num) && isFinite(num)) {
-      // Converter para BigInt se for muito grande, depois para número
-      return Math.floor(num);
-    }
-  }
-  
-  // Tentar parsear como inteiro removendo não-dígitos
-  const digits = sanitized.replace(/[^\d]/g, '');
-  if (digits) {
-    return parseInt(digits, 10);
-  }
-  
-  return NaN;
-}
-```
-
-#### 2.2 Adicionar parser de Excel
+Modificar a função `importarMapeamentos` para usar `upsert`:
 
 ```typescript
-import * as XLSX from 'xlsx';
-
-async function parseExcel(file: File): Promise<ParsedCardapioItem[]> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        // Pegar primeira planilha
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { 
-          header: 1,
-          raw: false // Força strings para evitar notação científica
-        });
-        
-        if (jsonData.length < 2) {
-          resolve([]);
-          return;
-        }
-        
-        // Pular header (primeira linha)
-        const items = (jsonData as string[][]).slice(1)
-          .map(row => {
-            const tipo = sanitizeText(String(row[0] || ''));
-            const categoria = sanitizeText(String(row[1] || ''));
-            const nome = sanitizeText(String(row[2] || ''));
-            const codigoStr = String(row[3] || '');
-            const codigo_interno = parseNumericCode(codigoStr);
-            
-            return { tipo, categoria, nome, codigo_interno };
-          })
-          .filter(item => item.codigo_interno && !isNaN(item.codigo_interno) && item.nome);
-        
-        resolve(items);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
-    reader.readAsArrayBuffer(file);
-  });
-}
-```
-
-#### 2.3 Atualizar função handleFileRead
-
-```typescript
-const handleFileRead = useCallback(async (file: File) => {
-  setError('');
-  setFileName(file.name);
-  
-  try {
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    let items: ParsedCardapioItem[];
+// Mutation: Import mappings in batch (com upsert para evitar duplicatas)
+const importarMapeamentos = useMutation({
+  mutationFn: async (items: ImportarMapeamentoItem[]) => {
+    if (!organizationId) throw new Error('Organização não encontrada');
     
-    if (extension === 'xls' || extension === 'xlsx') {
-      // Arquivo Excel
-      items = await parseExcel(file);
-    } else {
-      // Arquivo CSV/TXT
-      const content = await file.text();
-      items = parseCSV(content);
-    }
+    const mappings = items.map(item => ({
+      organization_id: organizationId,
+      cardapio_item_id: item.codigo_interno,
+      cardapio_item_nome: item.nome,
+      tipo: item.tipo,
+      categoria: item.categoria,
+      item_porcionado_id: null,
+      quantidade_consumida: 1,
+      ativo: true,
+    }));
+
+    // Usar upsert para evitar duplicatas
+    const { data, error } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .upsert(mappings, {
+        onConflict: 'organization_id,cardapio_item_id',
+        ignoreDuplicates: false // Atualiza se já existir
+      })
+      .select();
     
-    if (items.length === 0) {
-      setError('Nenhum item válido encontrado no arquivo. Verifique o formato.');
-      setParsedItems([]);
-    } else {
-      setParsedItems(items);
-    }
-  } catch (err) {
-    console.error('Erro ao processar arquivo:', err);
-    setError('Erro ao processar o arquivo. Verifique o formato.');
-    setParsedItems([]);
+    if (error) throw error;
+    return data;
+  },
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    toast.success(`${data.length} itens importados/atualizados com sucesso!`);
+  },
+  onError: (error) => {
+    console.error('Erro ao importar mapeamentos:', error);
+    toast.error('Erro ao importar mapeamentos');
   }
-}, []);
-```
-
-#### 2.4 Atualizar input accept
-
-```typescript
-<input
-  ref={fileInputRef}
-  type="file"
-  accept=".csv,.txt,.xls,.xlsx"
-  onChange={handleFileChange}
-  className="hidden"
-/>
-```
-
-#### 2.5 Atualizar texto de instrução
-
-```typescript
-<p className="text-sm">
-  Formatos aceitos: CSV, TXT, XLS, XLSX
-</p>
-```
-
-#### 2.6 Atualizar parseCSV para usar a nova função de parsing
-
-```typescript
-function parseCSV(content: string): ParsedCardapioItem[] {
-  const sanitizedContent = sanitizeText(content);
-  const lines = sanitizedContent.split('\n').filter(line => line.trim());
-  if (lines.length < 2) return [];
-
-  const delimiter = detectDelimiter(lines[0]);
-  
-  return lines.slice(1)
-    .map(line => {
-      const parts = line.split(delimiter);
-      const tipo = sanitizeText(parts[0] || '');
-      const categoria = sanitizeText(parts[1] || '');
-      const nome = sanitizeText(parts[2] || '');
-      const codigoStr = parts[3] || '';
-      const codigo_interno = parseNumericCode(codigoStr);
-
-      return { tipo, categoria, nome, codigo_interno };
-    })
-    .filter(item => item.codigo_interno && !isNaN(item.codigo_interno) && item.nome);
-}
+});
 ```
 
 ---
 
 ## Resumo das Alterações
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `package.json` | Adicionar dependência `xlsx` |
-| `ImportarMapeamentoCardapioModal.tsx` | Adicionar import do xlsx |
-| `ImportarMapeamentoCardapioModal.tsx` | Criar função `parseNumericCode()` |
-| `ImportarMapeamentoCardapioModal.tsx` | Criar função `parseExcel()` |
-| `ImportarMapeamentoCardapioModal.tsx` | Atualizar `handleFileRead()` para ser async |
-| `ImportarMapeamentoCardapioModal.tsx` | Atualizar `parseCSV()` para usar novo parser |
-| `ImportarMapeamentoCardapioModal.tsx` | Atualizar input accept e texto de ajuda |
+| Componente | Alteração |
+|------------|-----------|
+| **Banco de Dados** | Remover duplicatas existentes |
+| **Banco de Dados** | Adicionar constraint UNIQUE (organization_id, cardapio_item_id) |
+| **useCardapioWebIntegracao.ts** | Usar `upsert` em vez de `insert` na importação |
 
 ---
 
-## Formatos Suportados Após Implementação
+## Resultado Esperado
 
-| Formato | Extensão | Descrição |
-|---------|----------|-----------|
-| CSV | `.csv` | Separado por vírgula, ponto-e-vírgula ou tab |
-| Texto | `.txt` | Separado por tab ou outros delimitadores |
-| Excel 97-2003 | `.xls` | Formato binário antigo |
-| Excel 2007+ | `.xlsx` | Formato XML moderno |
+Após as correções:
+- **Antes**: 3.106 registros (com duplicatas)
+- **Depois**: ~305 registros (apenas itens únicos)
+- **Futuro**: Impossível criar duplicatas - importações subsequentes apenas atualizam os dados existentes
 
+---
+
+## Detalhes Técnicos
+
+### Como o UPSERT Funciona
+Quando você importar um arquivo com itens que já existem:
+1. Itens **novos** → serão inseridos
+2. Itens **existentes** → serão atualizados (nome, tipo, categoria)
+3. **Vínculos mantidos** → o campo `item_porcionado_id` não será sobrescrito
+
+### Constraint UNIQUE
+A constraint `(organization_id, cardapio_item_id)` garante que cada código interno só pode existir uma vez por organização.
