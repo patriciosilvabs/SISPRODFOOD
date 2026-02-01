@@ -539,7 +539,7 @@ Deno.serve(async (req) => {
               dia_operacional: diaOperacional,
               final_sobra: sobraFisica, // NÃO altera - é campo do funcionário
               ideal_amanha: idealDoDia,
-              a_produzir: novoAProduzir,
+              // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               usuario_id: '00000000-0000-0000-0000-000000000000',
               usuario_nome: 'Cardápio Web',
               // Campos de rastreamento Cardápio Web
@@ -573,7 +573,7 @@ Deno.serve(async (req) => {
             .update({ 
               // final_sobra: NÃO ALTERAR - é campo do funcionário
               ideal_amanha: idealDoDia,
-              a_produzir: novoAProduzir,
+              // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               updated_at: agora,
               // Campos de rastreamento Cardápio Web
               cardapio_web_baixa_total: novoTotalBaixas,
