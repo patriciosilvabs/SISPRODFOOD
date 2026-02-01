@@ -1,0 +1,338 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { toast } from 'sonner';
+
+interface IntegracaoCardapioWeb {
+  id: string;
+  organization_id: string;
+  loja_id: string;
+  token: string;
+  ambiente: 'sandbox' | 'producao';
+  ativo: boolean;
+  url_webhook: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MapeamentoCardapioItem {
+  id: string;
+  organization_id: string;
+  cardapio_item_id: number;
+  cardapio_item_nome: string;
+  item_porcionado_id: string;
+  quantidade_consumida: number;
+  ativo: boolean;
+  created_at: string;
+  // Joined data
+  item_porcionado?: {
+    id: string;
+    nome: string;
+  };
+}
+
+interface CardapioWebPedidoLog {
+  id: string;
+  organization_id: string;
+  loja_id: string;
+  order_id: number;
+  evento: string;
+  payload: Record<string, unknown>;
+  itens_processados: Record<string, unknown>[] | null;
+  sucesso: boolean;
+  erro: string | null;
+  created_at: string;
+}
+
+export function useCardapioWebIntegracao() {
+  const { organizationId } = useOrganization();
+  const queryClient = useQueryClient();
+
+  // Query: Get integration config
+  const {
+    data: integracao,
+    isLoading: loadingIntegracao,
+    refetch: refetchIntegracao
+  } = useQuery({
+    queryKey: ['cardapio-web-integracao', organizationId],
+    queryFn: async () => {
+      if (!organizationId) return null;
+      
+      const { data, error } = await supabase
+        .from('integracoes_cardapio_web')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data as IntegracaoCardapioWeb | null;
+    },
+    enabled: !!organizationId,
+  });
+
+  // Query: Get mappings
+  const {
+    data: mapeamentos,
+    isLoading: loadingMapeamentos,
+    refetch: refetchMapeamentos
+  } = useQuery({
+    queryKey: ['cardapio-web-mapeamentos', organizationId],
+    queryFn: async () => {
+      if (!organizationId) return [];
+      
+      const { data, error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .select(`
+          *,
+          item_porcionado:itens_porcionados(id, nome)
+        `)
+        .eq('organization_id', organizationId)
+        .order('cardapio_item_nome', { ascending: true });
+      
+      if (error) throw error;
+      return (data || []) as MapeamentoCardapioItem[];
+    },
+    enabled: !!organizationId,
+  });
+
+  // Query: Get logs (last 50)
+  const {
+    data: logs,
+    isLoading: loadingLogs,
+    refetch: refetchLogs
+  } = useQuery({
+    queryKey: ['cardapio-web-logs', organizationId],
+    queryFn: async () => {
+      if (!organizationId) return [];
+      
+      const { data, error } = await supabase
+        .from('cardapio_web_pedidos_log')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      return (data || []) as CardapioWebPedidoLog[];
+    },
+    enabled: !!organizationId,
+  });
+
+  // Generate unique token
+  const generateToken = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < 40; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return token;
+  };
+
+  // Mutation: Create/Update integration
+  const createIntegracao = useMutation({
+    mutationFn: async ({ loja_id, ambiente }: { loja_id: string; ambiente: 'sandbox' | 'producao' }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const token = generateToken();
+      const url_webhook = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cardapio-web-webhook`;
+      
+      const { data, error } = await supabase
+        .from('integracoes_cardapio_web')
+        .upsert({
+          organization_id: organizationId,
+          loja_id,
+          token,
+          ambiente,
+          ativo: true,
+          url_webhook,
+        }, {
+          onConflict: 'organization_id,loja_id'
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      toast.success('Integração configurada com sucesso!');
+    },
+    onError: (error) => {
+      console.error('Erro ao criar integração:', error);
+      toast.error('Erro ao configurar integração');
+    }
+  });
+
+  // Mutation: Update integration status
+  const updateIntegracaoStatus = useMutation({
+    mutationFn: async ({ id, ativo }: { id: string; ativo: boolean }) => {
+      const { error } = await supabase
+        .from('integracoes_cardapio_web')
+        .update({ ativo, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      toast.success('Status atualizado');
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar status:', error);
+      toast.error('Erro ao atualizar status');
+    }
+  });
+
+  // Mutation: Regenerate token
+  const regenerateToken = useMutation({
+    mutationFn: async (id: string) => {
+      const newToken = generateToken();
+      
+      const { error } = await supabase
+        .from('integracoes_cardapio_web')
+        .update({ 
+          token: newToken, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', id);
+      
+      if (error) throw error;
+      return newToken;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      toast.success('Token regenerado com sucesso!');
+    },
+    onError: (error) => {
+      console.error('Erro ao regenerar token:', error);
+      toast.error('Erro ao regenerar token');
+    }
+  });
+
+  // Mutation: Add mapping
+  const addMapeamento = useMutation({
+    mutationFn: async ({
+      cardapio_item_id,
+      cardapio_item_nome,
+      item_porcionado_id,
+      quantidade_consumida = 1
+    }: {
+      cardapio_item_id: number;
+      cardapio_item_nome: string;
+      item_porcionado_id: string;
+      quantidade_consumida?: number;
+    }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const { data, error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .insert({
+          organization_id: organizationId,
+          cardapio_item_id,
+          cardapio_item_nome,
+          item_porcionado_id,
+          quantidade_consumida,
+          ativo: true
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Mapeamento adicionado');
+    },
+    onError: (error: Error) => {
+      console.error('Erro ao adicionar mapeamento:', error);
+      if (error.message?.includes('unique')) {
+        toast.error('Este mapeamento já existe');
+      } else {
+        toast.error('Erro ao adicionar mapeamento');
+      }
+    }
+  });
+
+  // Mutation: Update mapping
+  const updateMapeamento = useMutation({
+    mutationFn: async ({
+      id,
+      quantidade_consumida,
+      ativo
+    }: {
+      id: string;
+      quantidade_consumida?: number;
+      ativo?: boolean;
+    }) => {
+      const updates: Record<string, unknown> = {};
+      if (quantidade_consumida !== undefined) updates.quantidade_consumida = quantidade_consumida;
+      if (ativo !== undefined) updates.ativo = ativo;
+      
+      const { error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .update(updates)
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Mapeamento atualizado');
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar mapeamento:', error);
+      toast.error('Erro ao atualizar mapeamento');
+    }
+  });
+
+  // Mutation: Delete mapping
+  const deleteMapeamento = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Mapeamento removido');
+    },
+    onError: (error) => {
+      console.error('Erro ao remover mapeamento:', error);
+      toast.error('Erro ao remover mapeamento');
+    }
+  });
+
+  return {
+    // Data
+    integracao,
+    mapeamentos: mapeamentos || [],
+    logs: logs || [],
+    
+    // Loading states
+    loadingIntegracao,
+    loadingMapeamentos,
+    loadingLogs,
+    
+    // Refetch functions
+    refetchIntegracao,
+    refetchMapeamentos,
+    refetchLogs,
+    
+    // Mutations
+    createIntegracao,
+    updateIntegracaoStatus,
+    regenerateToken,
+    addMapeamento,
+    updateMapeamento,
+    deleteMapeamento,
+    
+    // Utils
+    generateToken,
+  };
+}

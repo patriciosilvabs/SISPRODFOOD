@@ -174,6 +174,60 @@ export type Database = {
           },
         ]
       }
+      cardapio_web_pedidos_log: {
+        Row: {
+          created_at: string
+          erro: string | null
+          evento: string
+          id: string
+          itens_processados: Json | null
+          loja_id: string
+          order_id: number
+          organization_id: string
+          payload: Json
+          sucesso: boolean
+        }
+        Insert: {
+          created_at?: string
+          erro?: string | null
+          evento?: string
+          id?: string
+          itens_processados?: Json | null
+          loja_id: string
+          order_id: number
+          organization_id: string
+          payload: Json
+          sucesso?: boolean
+        }
+        Update: {
+          created_at?: string
+          erro?: string | null
+          evento?: string
+          id?: string
+          itens_processados?: Json | null
+          loja_id?: string
+          order_id?: number
+          organization_id?: string
+          payload?: Json
+          sucesso?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cardapio_web_pedidos_log_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cardapio_web_pedidos_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       configuracao_alertas: {
         Row: {
           alertas_email_ativos: boolean | null
@@ -1284,6 +1338,57 @@ export type Database = {
           },
         ]
       }
+      integracoes_cardapio_web: {
+        Row: {
+          ambiente: string
+          ativo: boolean
+          created_at: string
+          id: string
+          loja_id: string
+          organization_id: string
+          token: string
+          updated_at: string
+          url_webhook: string | null
+        }
+        Insert: {
+          ambiente?: string
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          loja_id: string
+          organization_id: string
+          token: string
+          updated_at?: string
+          url_webhook?: string | null
+        }
+        Update: {
+          ambiente?: string
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          loja_id?: string
+          organization_id?: string
+          token?: string
+          updated_at?: string
+          url_webhook?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integracoes_cardapio_web_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "integracoes_cardapio_web_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integracoes_pdv: {
         Row: {
           api_key: string
@@ -1704,6 +1809,54 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mapeamento_cardapio_itens: {
+        Row: {
+          ativo: boolean
+          cardapio_item_id: number
+          cardapio_item_nome: string
+          created_at: string
+          id: string
+          item_porcionado_id: string
+          organization_id: string
+          quantidade_consumida: number
+        }
+        Insert: {
+          ativo?: boolean
+          cardapio_item_id: number
+          cardapio_item_nome: string
+          created_at?: string
+          id?: string
+          item_porcionado_id: string
+          organization_id: string
+          quantidade_consumida?: number
+        }
+        Update: {
+          ativo?: boolean
+          cardapio_item_id?: number
+          cardapio_item_nome?: string
+          created_at?: string
+          id?: string
+          item_porcionado_id?: string
+          organization_id?: string
+          quantidade_consumida?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mapeamento_cardapio_itens_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapeamento_cardapio_itens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]

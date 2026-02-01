@@ -395,6 +395,13 @@ const Configuracoes = () => {
       color: 'bg-teal-100 text-teal-600',
       onClick: () => navigate('/configurar-integracao-pdv'),
     }] : []),
+    ...(isAdmin() ? [{
+      title: 'Integração Cardápio Web',
+      description: 'Configure a baixa automática de estoque quando pedidos são feitos no Cardápio Web.',
+      icon: Link2,
+      color: 'bg-amber-100 text-amber-600',
+      onClick: () => navigate('/configurar-cardapio-web'),
+    }] : []),
   ];
 
   return (
