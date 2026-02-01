@@ -1,17 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Copy, RefreshCw, Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Eye, EyeOff, Upload, Link2 } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store } from 'lucide-react';
 import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
@@ -21,14 +20,17 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
+import { LojaIntegracaoCard } from '@/components/cardapio-web/LojaIntegracaoCard';
 
 export default function ConfigurarCardapioWeb() {
   const { organizationId } = useOrganization();
   const {
-    integracao,
+    integracoes,
+    todasLojas,
     mapeamentosAgrupados,
     logs,
-    loadingIntegracao,
+    loadingIntegracoes,
+    loadingLojas,
     loadingMapeamentos,
     loadingLogs,
     createIntegracao,
@@ -41,7 +43,6 @@ export default function ConfigurarCardapioWeb() {
     adicionarVinculo,
   } = useCardapioWebIntegracao();
 
-  const [showToken, setShowToken] = useState(false);
   const [novoMapeamentoOpen, setNovoMapeamentoOpen] = useState(false);
   const [importarModalOpen, setImportarModalOpen] = useState(false);
   const [adicionarVinculoModalOpen, setAdicionarVinculoModalOpen] = useState(false);
@@ -51,25 +52,6 @@ export default function ConfigurarCardapioWeb() {
     cardapio_item_nome: '',
     item_porcionado_id: '',
     quantidade_consumida: '1',
-  });
-  const [selectedLojaId, setSelectedLojaId] = useState('');
-  const [selectedAmbiente, setSelectedAmbiente] = useState<'sandbox' | 'producao'>('sandbox');
-
-  // Get lojas for select
-  const { data: lojas } = useQuery({
-    queryKey: ['lojas', organizationId],
-    queryFn: async () => {
-      if (!organizationId) return [];
-      const { data, error } = await supabase
-        .from('lojas')
-        .select('id, nome, tipo')
-        .eq('organization_id', organizationId)
-        .neq('tipo', 'cpd')
-        .order('nome');
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!organizationId,
   });
 
   // Get itens porcionados for mapping
@@ -89,28 +71,21 @@ export default function ConfigurarCardapioWeb() {
     enabled: !!organizationId,
   });
 
-  const handleCopyToken = () => {
-    if (integracao?.token) {
-      navigator.clipboard.writeText(integracao.token);
-      toast.success('Token copiado!');
-    }
-  };
+  // Combine lojas with their integrations
+  const lojasComIntegracao = useMemo(() => {
+    return todasLojas.map(loja => ({
+      loja,
+      integracao: integracoes.find(i => i.loja_id === loja.id) || null,
+    }));
+  }, [todasLojas, integracoes]);
 
-  const handleCopyWebhookUrl = () => {
-    if (integracao?.url_webhook) {
-      navigator.clipboard.writeText(integracao.url_webhook);
-      toast.success('URL copiada!');
-    }
-  };
+  // Count active integrations
+  const integracoesAtivas = integracoes.filter(i => i.ativo).length;
 
-  const handleCreateIntegracao = async () => {
-    if (!selectedLojaId) {
-      toast.error('Selecione uma loja');
-      return;
-    }
+  const handleCreateIntegracao = async (lojaId: string, ambiente: 'sandbox' | 'producao') => {
     await createIntegracao.mutateAsync({
-      loja_id: selectedLojaId,
-      ambiente: selectedAmbiente,
+      loja_id: lojaId,
+      ambiente,
     });
   };
 
@@ -166,15 +141,13 @@ export default function ConfigurarCardapioWeb() {
     });
   };
 
-  const lojaVinculada = lojas?.find(l => l.id === integracao?.loja_id);
-
   return (
     <Layout>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Integração Cardápio Web</h1>
           <p className="text-muted-foreground mt-1">
-            Configure a integração com o Cardápio Web para baixar automaticamente o estoque quando pedidos são feitos.
+            Configure a integração com o Cardápio Web para cada loja. A integração baixa automaticamente o estoque quando pedidos são feitos.
           </p>
         </div>
 
@@ -182,7 +155,10 @@ export default function ConfigurarCardapioWeb() {
           <TabsList>
             <TabsTrigger value="config" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Configuração
+              Lojas
+              {integracoesAtivas > 0 && (
+                <Badge variant="secondary" className="ml-1">{integracoesAtivas}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="mapeamento" className="flex items-center gap-2">
               <List className="h-4 w-4" />
@@ -197,171 +173,53 @@ export default function ConfigurarCardapioWeb() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Configuração Tab */}
+          {/* Configuração Tab - Lista de Lojas */}
           <TabsContent value="config" className="space-y-4">
-            {loadingIntegracao ? (
+            {(loadingIntegracoes || loadingLojas) ? (
               <Card>
                 <CardContent className="py-8 flex justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </CardContent>
               </Card>
-            ) : !integracao ? (
+            ) : lojasComIntegracao.length === 0 ? (
               <Card>
-                <CardHeader>
-                  <CardTitle>Configurar Integração</CardTitle>
-                  <CardDescription>
-                    Selecione a loja que receberá os pedidos do Cardápio Web e configure o ambiente.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Loja</Label>
-                      <Select value={selectedLojaId} onValueChange={setSelectedLojaId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione a loja" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {lojas?.map(loja => (
-                            <SelectItem key={loja.id} value={loja.id}>
-                              {loja.nome}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Ambiente</Label>
-                      <Select value={selectedAmbiente} onValueChange={(v) => setSelectedAmbiente(v as 'sandbox' | 'producao')}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sandbox">Sandbox (Testes)</SelectItem>
-                          <SelectItem value="producao">Produção</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <Button 
-                    onClick={handleCreateIntegracao} 
-                    disabled={!selectedLojaId || createIntegracao.isPending}
-                    className="w-full"
-                  >
-                    {createIntegracao.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Criar Integração
-                  </Button>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  <Store className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Nenhuma loja cadastrada</p>
+                  <p className="text-sm">Cadastre lojas para configurar integrações</p>
                 </CardContent>
               </Card>
             ) : (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        Integração Ativa
-                        <Badge variant={integracao.ativo ? 'default' : 'secondary'}>
-                          {integracao.ativo ? 'Ativa' : 'Inativa'}
-                        </Badge>
-                        <Badge variant="outline">
-                          {integracao.ambiente === 'producao' ? 'Produção' : 'Sandbox'}
-                        </Badge>
-                      </CardTitle>
-                      <CardDescription>
-                        Loja: <strong>{lojaVinculada?.nome || 'Não encontrada'}</strong>
-                      </CardDescription>
-                    </div>
-                    <Switch
-                      checked={integracao.ativo}
-                      onCheckedChange={(ativo) => updateIntegracaoStatus.mutate({ id: integracao.id, ativo })}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Webhook URL */}
-                  <div className="space-y-2">
-                    <Label>URL do Webhook</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Configure esta URL no painel do Cardápio Web para receber os pedidos.
-                    </p>
-                    <div className="flex gap-2">
-                      <Input 
-                        value={integracao.url_webhook || ''} 
-                        readOnly 
-                        className="font-mono text-sm"
-                      />
-                      <Button variant="outline" size="icon" onClick={handleCopyWebhookUrl}>
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Token/API Key */}
-                  <div className="space-y-2">
-                    <Label>Token (X-API-KEY)</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Use este token no header X-API-KEY das requisições do Cardápio Web.
-                    </p>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <Input 
-                          type={showToken ? 'text' : 'password'}
-                          value={integracao.token} 
-                          readOnly 
-                          className="font-mono text-sm pr-10"
-                        />
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="absolute right-0 top-0 h-full"
-                          onClick={() => setShowToken(!showToken)}
-                        >
-                          {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                      <Button variant="outline" size="icon" onClick={handleCopyToken}>
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="icon">
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Regenerar Token?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              O token atual será invalidado e você precisará atualizar a configuração no Cardápio Web.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => regenerateToken.mutate(integracao.id)}>
-                              Regenerar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </div>
-
-                  {/* Instruções */}
-                  <div className="rounded-lg border p-4 bg-muted/50">
-                    <h4 className="font-semibold mb-2">Como configurar no Cardápio Web:</h4>
+              <div className="space-y-4">
+                {/* Instruções */}
+                <Card className="bg-muted/50">
+                  <CardContent className="py-4">
+                    <h4 className="font-semibold mb-2">Como configurar:</h4>
                     <ol className="text-sm space-y-1 list-decimal list-inside text-muted-foreground">
-                      <li>Acesse o painel do Cardápio Web</li>
-                      <li>Vá em Configurações → Integrações → Webhooks</li>
-                      <li>Adicione a URL do webhook acima</li>
+                      <li>Configure o <strong>Código do Cardápio Web</strong> na página de Lojas (ex: 8268)</li>
+                      <li>Clique em "Configurar Integração" na loja desejada</li>
+                      <li>Copie a URL e Token e configure no painel do Cardápio Web</li>
                       <li>Configure o header <code className="bg-muted px-1 rounded">X-API-KEY</code> com o token</li>
-                      <li>Selecione o evento <code className="bg-muted px-1 rounded">order.created</code></li>
-                      <li>Salve e teste a conexão</li>
                     </ol>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                {/* Lista de Lojas */}
+                <div className="grid gap-4">
+                  {lojasComIntegracao.map(({ loja, integracao }) => (
+                    <LojaIntegracaoCard
+                      key={loja.id}
+                      loja={loja}
+                      integracao={integracao}
+                      onCreateIntegracao={handleCreateIntegracao}
+                      onUpdateStatus={(id, ativo) => updateIntegracaoStatus.mutate({ id, ativo })}
+                      onRegenerateToken={(id) => regenerateToken.mutate(id)}
+                      isCreating={createIntegracao.isPending}
+                      isUpdating={updateIntegracaoStatus.isPending}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
           </TabsContent>
 
@@ -388,92 +246,92 @@ export default function ConfigurarCardapioWeb() {
                           Adicionar
                         </Button>
                       </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Novo Mapeamento</DialogTitle>
-                        <DialogDescription>
-                          Vincule um produto do Cardápio Web a um item porcionado.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="grid gap-4 md:grid-cols-2">
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Novo Mapeamento</DialogTitle>
+                          <DialogDescription>
+                            Vincule um produto do Cardápio Web a um item porcionado.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>ID do Produto (Cardápio Web)</Label>
+                              <Input
+                                type="number"
+                                placeholder="Ex: 123"
+                                value={novoMapeamento.cardapio_item_id}
+                                onChange={(e) => setNovoMapeamento({
+                                  ...novoMapeamento,
+                                  cardapio_item_id: e.target.value
+                                })}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Nome do Produto</Label>
+                              <Input
+                                placeholder="Ex: Pizza Mussarela G"
+                                value={novoMapeamento.cardapio_item_nome}
+                                onChange={(e) => setNovoMapeamento({
+                                  ...novoMapeamento,
+                                  cardapio_item_nome: e.target.value
+                                })}
+                              />
+                            </div>
+                          </div>
+
                           <div className="space-y-2">
-                            <Label>ID do Produto (Cardápio Web)</Label>
+                            <Label>Item Porcionado</Label>
+                            <Select
+                              value={novoMapeamento.item_porcionado_id}
+                              onValueChange={(v) => setNovoMapeamento({
+                                ...novoMapeamento,
+                                item_porcionado_id: v
+                              })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione o item" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {itensPorcionados?.map(item => (
+                                  <SelectItem key={item.id} value={item.id}>
+                                    {item.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Quantidade Consumida</Label>
                             <Input
                               type="number"
-                              placeholder="Ex: 123"
-                              value={novoMapeamento.cardapio_item_id}
+                              min="1"
+                              value={novoMapeamento.quantidade_consumida}
                               onChange={(e) => setNovoMapeamento({
                                 ...novoMapeamento,
-                                cardapio_item_id: e.target.value
+                                quantidade_consumida: e.target.value
                               })}
                             />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Nome do Produto</Label>
-                            <Input
-                              placeholder="Ex: Pizza Mussarela G"
-                              value={novoMapeamento.cardapio_item_nome}
-                              onChange={(e) => setNovoMapeamento({
-                                ...novoMapeamento,
-                                cardapio_item_nome: e.target.value
-                              })}
-                            />
+                            <p className="text-xs text-muted-foreground">
+                              Quantos itens porcionados são consumidos por unidade do produto
+                            </p>
                           </div>
                         </div>
-
-                        <div className="space-y-2">
-                          <Label>Item Porcionado</Label>
-                          <Select
-                            value={novoMapeamento.item_porcionado_id}
-                            onValueChange={(v) => setNovoMapeamento({
-                              ...novoMapeamento,
-                              item_porcionado_id: v
-                            })}
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setNovoMapeamentoOpen(false)}>
+                            Cancelar
+                          </Button>
+                          <Button 
+                            onClick={handleAddMapeamento}
+                            disabled={addMapeamento.isPending}
                           >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione o item" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {itensPorcionados?.map(item => (
-                                <SelectItem key={item.id} value={item.id}>
-                                  {item.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Quantidade Consumida</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            value={novoMapeamento.quantidade_consumida}
-                            onChange={(e) => setNovoMapeamento({
-                              ...novoMapeamento,
-                              quantidade_consumida: e.target.value
-                            })}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Quantos itens porcionados são consumidos por unidade do produto
-                          </p>
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button variant="outline" onClick={() => setNovoMapeamentoOpen(false)}>
-                          Cancelar
-                        </Button>
-                        <Button 
-                          onClick={handleAddMapeamento}
-                          disabled={addMapeamento.isPending}
-                        >
-                          {addMapeamento.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Adicionar
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                            {addMapeamento.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Adicionar
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </div>
               </CardHeader>
@@ -520,7 +378,6 @@ export default function ConfigurarCardapioWeb() {
                           <TableCell>
                             <div className="space-y-1">
                               {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
-                                // No linked items yet - show select to link first item
                                 <Select
                                   value=""
                                   onValueChange={(v) => handleVincularItem(produto.vinculos[0]?.id || '', v)}
@@ -537,7 +394,6 @@ export default function ConfigurarCardapioWeb() {
                                   </SelectContent>
                                 </Select>
                               ) : (
-                                // Show linked items
                                 <div className="space-y-1">
                                   {produto.vinculos.filter(v => v.item_porcionado_id).map((vinculo) => (
                                     <div key={vinculo.id} className="flex items-center gap-2 text-sm">

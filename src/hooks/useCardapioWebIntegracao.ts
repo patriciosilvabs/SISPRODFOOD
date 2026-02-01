@@ -16,6 +16,15 @@ interface IntegracaoCardapioWeb {
   updated_at: string;
 }
 
+// Interface for integration with store data
+export interface IntegracaoCardapioWebComLoja extends IntegracaoCardapioWeb {
+  lojas: {
+    id: string;
+    nome: string;
+    codigo_cardapio_web: string | null;
+  } | null;
+}
+
 interface MapeamentoCardapioItem {
   id: string;
   organization_id: string;
@@ -74,24 +83,50 @@ export function useCardapioWebIntegracao() {
   const { organizationId } = useOrganization();
   const queryClient = useQueryClient();
 
-  // Query: Get integration config
+  // Query: Get all integrations with store data
   const {
-    data: integracao,
-    isLoading: loadingIntegracao,
-    refetch: refetchIntegracao
+    data: integracoes,
+    isLoading: loadingIntegracoes,
+    refetch: refetchIntegracoes
   } = useQuery({
-    queryKey: ['cardapio-web-integracao', organizationId],
+    queryKey: ['cardapio-web-integracoes', organizationId],
     queryFn: async () => {
-      if (!organizationId) return null;
+      if (!organizationId) return [];
       
       const { data, error } = await supabase
         .from('integracoes_cardapio_web')
-        .select('*')
+        .select(`
+          *,
+          lojas(id, nome, codigo_cardapio_web)
+        `)
         .eq('organization_id', organizationId)
-        .maybeSingle();
+        .order('created_at', { ascending: true });
       
       if (error) throw error;
-      return data as IntegracaoCardapioWeb | null;
+      return (data || []) as IntegracaoCardapioWebComLoja[];
+    },
+    enabled: !!organizationId,
+  });
+
+  // Query: Get all stores (to show stores without integration)
+  const {
+    data: todasLojas,
+    isLoading: loadingLojas,
+    refetch: refetchLojas
+  } = useQuery({
+    queryKey: ['lojas-integracao', organizationId],
+    queryFn: async () => {
+      if (!organizationId) return [];
+      
+      const { data, error } = await supabase
+        .from('lojas')
+        .select('id, nome, tipo, codigo_cardapio_web')
+        .eq('organization_id', organizationId)
+        .neq('tipo', 'cpd')
+        .order('nome');
+      
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!organizationId,
   });
@@ -480,18 +515,21 @@ export function useCardapioWebIntegracao() {
 
   return {
     // Data
-    integracao,
+    integracoes: integracoes || [],
+    todasLojas: todasLojas || [],
     mapeamentos: mapeamentos || [],
     mapeamentosAgrupados,
     logs: logs || [],
     
     // Loading states
-    loadingIntegracao,
+    loadingIntegracoes,
+    loadingLojas,
     loadingMapeamentos,
     loadingLogs,
     
     // Refetch functions
-    refetchIntegracao,
+    refetchIntegracoes,
+    refetchLojas,
     refetchMapeamentos,
     refetchLogs,
     
