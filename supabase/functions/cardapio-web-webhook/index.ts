@@ -5,13 +5,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key, x-webhook-token',
 }
 
-interface OrderComplement {
-  id?: number;
-  item_id?: number;
-  code?: string;
+interface OrderOption {
+  option_id: number;
   name: string;
   quantity: number;
-  price: number;
+  unit_price: number;
+  option_group_id?: number;
+  option_group_name?: string;
+  external_code?: string;
 }
 
 interface OrderItem {
@@ -21,7 +22,7 @@ interface OrderItem {
   unit_price: number;
   total_price: number;
   observation?: string;
-  complements?: OrderComplement[];
+  options?: OrderOption[];
 }
 
 interface OrderData {
@@ -406,13 +407,13 @@ Deno.serve(async (req) => {
     // Log detalhado de cada item para diagnóstico
     for (const item of orderData.items) {
       console.log(`📦 Item Principal: id=${item.item_id}, nome="${item.name}", qty=${item.quantity}`)
-      console.log(`   Complements: ${item.complements ? item.complements.length : 0} itens`)
-      if (item.complements && item.complements.length > 0) {
-        for (const c of item.complements) {
-          console.log(`   ↳ Complement: "${c.name}" (id=${c.id || 'N/A'}, item_id=${c.item_id || 'N/A'}, code=${c.code || 'N/A'})`)
+      console.log(`   Options: ${item.options ? item.options.length : 0} itens`)
+      if (item.options && item.options.length > 0) {
+        for (const opt of item.options) {
+          console.log(`   ↳ Option: "${opt.name}" (option_id=${opt.option_id}, group=${opt.option_group_name || 'N/A'})`)
         }
       } else {
-        console.log(`   ⚠️ Nenhum complemento encontrado para este item`)
+        console.log(`   ⚠️ Nenhuma option encontrada para este item`)
       }
     }
 
@@ -460,7 +461,7 @@ Deno.serve(async (req) => {
       itemId: number,
       itemName: string,
       quantity: number,
-      sourceType: 'main' | 'complement'
+      sourceType: 'main' | 'option'
     ): Promise<{ item_porcionado_id: string; quantidade_baixada: number }[]> => {
       const mappings = mapeamentoMap.get(itemId)
       
@@ -562,25 +563,24 @@ Deno.serve(async (req) => {
       const mainItemBaixados = await processItem(item.item_id, item.name, item.quantity, 'main')
       allItensBaixados.push(...mainItemBaixados)
 
-      // Process complements (sabores, opcionais, etc)
-      if (item.complements && item.complements.length > 0) {
-        console.log(`Processando ${item.complements.length} complementos do item ${item.name}`)
+      // Process options (sabores, massas, etc) - CardápioWeb usa 'options' com option_id
+      if (item.options && item.options.length > 0) {
+        console.log(`Processando ${item.options.length} options do item ${item.name}`)
         
-        for (const complement of item.complements) {
-          // Try different ID sources: id, item_id, or parse from code
-          const complementId = complement.id || complement.item_id || 
-            (complement.code ? parseInt(complement.code, 10) : null)
+        for (const option of item.options) {
+          // Use option_id como identificador
+          const optionId = option.option_id
           
-          if (complementId && !isNaN(complementId)) {
-            const complementBaixados = await processItem(
-              complementId, 
-              complement.name, 
-              item.quantity * (complement.quantity || 1), // Multiply by item quantity
-              'complement'
+          if (optionId && !isNaN(optionId)) {
+            const optionBaixados = await processItem(
+              optionId, 
+              option.name, 
+              item.quantity * (option.quantity || 1), // Multiply by item quantity
+              'option'
             )
-            allItensBaixados.push(...complementBaixados)
+            allItensBaixados.push(...optionBaixados)
           } else {
-            console.log(`Complemento "${complement.name}" não tem ID numérico válido`)
+            console.log(`Option "${option.name}" não tem option_id válido`)
           }
         }
       }
