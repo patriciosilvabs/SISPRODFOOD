@@ -456,7 +456,31 @@ Deno.serve(async (req) => {
 
     const erros: string[] = []
 
-    // Helper function to process a single item (main or complement)
+    // Helper function to get ideal stock for the day from weekly configuration
+    const getIdealDoDia = async (lojaId: string, itemPorcionadoId: string): Promise<number> => {
+      const diasMap = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'] as const
+      const diaSemana = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()
+      const diaColuna = diasMap[diaSemana]
+      
+      const { data: estoqueIdeal, error } = await supabase
+        .from('estoques_ideais_semanais')
+        .select('domingo, segunda, terca, quarta, quinta, sexta, sabado')
+        .eq('loja_id', lojaId)
+        .eq('item_porcionado_id', itemPorcionadoId)
+        .eq('organization_id', organization_id)
+        .single()
+      
+      if (error || !estoqueIdeal) {
+        console.log(`⚠️ Sem estoque ideal configurado para loja ${lojaId}, item ${itemPorcionadoId}`)
+        return 0
+      }
+      
+      const ideal = (estoqueIdeal as Record<string, number>)[diaColuna] || 0
+      console.log(`📊 Estoque ideal do dia (${diaColuna}): ${ideal}`)
+      return ideal
+    }
+
+    // Helper function to process a single item (main or option)
     const processItem = async (
       itemId: number,
       itemName: string,
@@ -481,6 +505,9 @@ Deno.serve(async (req) => {
         
         const quantidadeTotal = quantity * mapping.quantidade_consumida
 
+        // Buscar estoque ideal do dia para esta loja/item
+        const idealDoDia = await getIdealDoDia(loja_id, mapping.item_porcionado_id)
+
         // Update contagem_porcionados - decrement final_sobra
         const { data: contagem, error: contagemError } = await supabase
           .from('contagem_porcionados')
@@ -495,6 +522,11 @@ Deno.serve(async (req) => {
 
         if (contagemError || !contagem) {
           // Create new contagem if doesn't exist
+          const novoFinalSobra = -quantidadeTotal // Negative means consumed
+          const novoAProduzir = Math.max(0, idealDoDia - novoFinalSobra) // ideal - (-qty) = ideal + qty
+          
+          console.log(`📦 Criando contagem: final_sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+          
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
             .insert({
@@ -502,8 +534,9 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               organization_id,
               dia_operacional: diaOperacional,
-              final_sobra: -quantidadeTotal, // Negative means consumed
-              ideal_amanha: 0,
+              final_sobra: novoFinalSobra,
+              ideal_amanha: idealDoDia,
+              a_produzir: novoAProduzir,
               usuario_id: '00000000-0000-0000-0000-000000000000',
               usuario_nome: 'Cardápio Web',
               // Campos de rastreamento Cardápio Web
@@ -520,17 +553,22 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: -${quantidadeTotal}`)
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
           }
         } else {
           // Update existing contagem
           const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
+          const novoAProduzir = Math.max(0, idealDoDia - novoFinalSobra)
+          
+          console.log(`📦 Atualizando contagem: final_sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
               final_sobra: novoFinalSobra,
+              ideal_amanha: idealDoDia,
+              a_produzir: novoAProduzir,
               updated_at: agora,
               // Campos de rastreamento Cardápio Web
               cardapio_web_baixa_total: novoTotalBaixas,
@@ -547,7 +585,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: -${quantidadeTotal} (novo: ${novoFinalSobra})`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
           }
         }
       }
