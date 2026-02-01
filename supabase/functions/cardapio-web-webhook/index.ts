@@ -5,6 +5,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key, x-webhook-token',
 }
 
+interface OrderComplement {
+  id?: number;
+  item_id?: number;
+  code?: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
 interface OrderItem {
   item_id: number;
   name: string;
@@ -12,11 +21,7 @@ interface OrderItem {
   unit_price: number;
   total_price: number;
   observation?: string;
-  complements?: {
-    name: string;
-    quantity: number;
-    price: number;
-  }[];
+  complements?: OrderComplement[];
 }
 
 interface OrderData {
@@ -437,12 +442,18 @@ Deno.serve(async (req) => {
 
     const erros: string[] = []
 
-    for (const item of orderData.items) {
-      const mappings = mapeamentoMap.get(item.item_id)
+    // Helper function to process a single item (main or complement)
+    const processItem = async (
+      itemId: number,
+      itemName: string,
+      quantity: number,
+      sourceType: 'main' | 'complement'
+    ): Promise<{ item_porcionado_id: string; quantidade_baixada: number }[]> => {
+      const mappings = mapeamentoMap.get(itemId)
       
       if (!mappings || mappings.length === 0) {
-        console.log(`Item ${item.item_id} (${item.name}) não tem mapeamento configurado`)
-        continue
+        console.log(`[${sourceType}] Item ${itemId} (${itemName}) não tem mapeamento configurado`)
+        return []
       }
 
       const itensBaixados: { item_porcionado_id: string; quantidade_baixada: number }[] = []
@@ -450,11 +461,11 @@ Deno.serve(async (req) => {
       for (const mapping of mappings) {
         // Pular mapeamentos sem item_porcionado_id (ainda não vinculados)
         if (!mapping.item_porcionado_id) {
-          console.log(`Mapeamento para item ${item.item_id} não tem item_porcionado_id configurado`)
+          console.log(`[${sourceType}] Mapeamento para item ${itemId} não tem item_porcionado_id configurado`)
           continue
         }
         
-        const quantidadeTotal = item.quantity * mapping.quantidade_consumida
+        const quantidadeTotal = quantity * mapping.quantidade_consumida
 
         // Update contagem_porcionados - decrement final_sobra
         const { data: contagem, error: contagemError } = await supabase
@@ -495,6 +506,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: -${quantidadeTotal}`)
           }
         } else {
           // Update existing contagem
@@ -521,16 +533,51 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: -${quantidadeTotal} (novo: ${novoFinalSobra})`)
           }
         }
       }
 
-      if (itensBaixados.length > 0) {
+      return itensBaixados
+    }
+
+    // Process each item in the order
+    for (const item of orderData.items) {
+      const allItensBaixados: { item_porcionado_id: string; quantidade_baixada: number }[] = []
+
+      // Process main item
+      const mainItemBaixados = await processItem(item.item_id, item.name, item.quantity, 'main')
+      allItensBaixados.push(...mainItemBaixados)
+
+      // Process complements (sabores, opcionais, etc)
+      if (item.complements && item.complements.length > 0) {
+        console.log(`Processando ${item.complements.length} complementos do item ${item.name}`)
+        
+        for (const complement of item.complements) {
+          // Try different ID sources: id, item_id, or parse from code
+          const complementId = complement.id || complement.item_id || 
+            (complement.code ? parseInt(complement.code, 10) : null)
+          
+          if (complementId && !isNaN(complementId)) {
+            const complementBaixados = await processItem(
+              complementId, 
+              complement.name, 
+              item.quantity * (complement.quantity || 1), // Multiply by item quantity
+              'complement'
+            )
+            allItensBaixados.push(...complementBaixados)
+          } else {
+            console.log(`Complemento "${complement.name}" não tem ID numérico válido`)
+          }
+        }
+      }
+
+      if (allItensBaixados.length > 0) {
         itensProcessados.push({
           cardapio_item_id: item.item_id,
           cardapio_item_nome: item.name,
           quantidade_pedido: item.quantity,
-          itens_baixados: itensBaixados
+          itens_baixados: allItensBaixados
         })
       }
     }
