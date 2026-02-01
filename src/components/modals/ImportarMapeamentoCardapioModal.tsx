@@ -45,27 +45,33 @@ function detectDelimiter(line: string): string {
   return ',';
 }
 
+// Remove caracteres nulos, BOM e outros caracteres problemáticos
+function sanitizeText(text: string): string {
+  return text
+    .replace(/\u0000/g, '')
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/\uFFFD/g, '')
+    .trim();
+}
+
 function parseCSV(content: string): ParsedCardapioItem[] {
-  const lines = content.split('\n').filter(line => line.trim());
+  const sanitizedContent = sanitizeText(content);
+  const lines = sanitizedContent.split('\n').filter(line => line.trim());
   if (lines.length < 2) return [];
 
   const delimiter = detectDelimiter(lines[0]);
   
-  return lines.slice(1) // Skip header
+  return lines.slice(1)
     .map(line => {
       const parts = line.split(delimiter);
-      const tipo = parts[0]?.trim() || '';
-      const categoria = parts[1]?.trim() || '';
-      const nome = parts[2]?.trim() || '';
-      const codigoStr = parts[3]?.trim() || '';
+      const tipo = sanitizeText(parts[0] || '');
+      const categoria = sanitizeText(parts[1] || '');
+      const nome = sanitizeText(parts[2] || '');
+      const codigoStr = sanitizeText(parts[3] || '');
       const codigo_interno = parseInt(codigoStr.replace(/\D/g, ''), 10);
 
-      return {
-        tipo,
-        categoria,
-        nome,
-        codigo_interno,
-      };
+      return { tipo, categoria, nome, codigo_interno };
     })
     .filter(item => item.codigo_interno && item.nome);
 }
