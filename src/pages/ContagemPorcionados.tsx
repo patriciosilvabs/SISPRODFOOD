@@ -73,6 +73,8 @@ interface Contagem {
   cardapio_web_baixa_total?: number;
   cardapio_web_ultima_baixa_at?: string;
   cardapio_web_ultima_baixa_qtd?: number;
+  // Saldo virtual (Estoque Ideal - Vendas Web)
+  saldo_atual?: number;
 }
 
 interface EstoqueIdeal {
@@ -1112,9 +1114,11 @@ const ContagemPorcionados = () => {
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
                       const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
                       
-                      // MODELO 3 CAMADAS: a_produzir = (ideal - sobra_fisica) + vendas_web
-                      const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
-                      const aProduzir = Math.max(0, (idealFromConfig - finalSobra) + cardapioWebBaixaTotal);
+                      // NOVO MODELO: a_produzir e saldo_atual vêm do banco (colunas geradas)
+                      // a_produzir = vendas_web acumuladas
+                      // saldo_atual = ideal - vendas_web
+                      const aProduzir = contagem?.a_produzir ?? 0;
+                      const saldoAtual = contagem?.saldo_atual ?? idealFromConfig;
                       const isDirty = isRowDirty(loja.id, item.id);
                       
                       // Calcular lotes necessários para itens lote_masseira
@@ -1155,6 +1159,7 @@ const ContagemPorcionados = () => {
                           cardapioWebBaixaTotal={contagem?.cardapio_web_baixa_total}
                           cardapioWebUltimaBaixaAt={contagem?.cardapio_web_ultima_baixa_at}
                           cardapioWebUltimaBaixaQtd={contagem?.cardapio_web_ultima_baixa_qtd}
+                          saldoAtual={saldoAtual}
                         />
                       );
                     })}
