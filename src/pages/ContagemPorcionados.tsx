@@ -511,8 +511,8 @@ const ContagemPorcionados = () => {
     }
 
     const finalSobra = parseInt(values?.final_sobra);
-    if (isNaN(finalSobra)) {
-      toast.error('Valor de Sobra inválido. Insira um número válido.', { id: toastId });
+    if (isNaN(finalSobra) || finalSobra < 0) {
+      toast.error('Valor de Sobra inválido. Insira um número >= 0.', { id: toastId });
       setSavingKeys(prev => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
@@ -537,7 +537,12 @@ const ContagemPorcionados = () => {
         idealAmanha = estoqueSemanal[currentDay] || 0;
       }
       
-      const aProduzir = Math.max(0, idealAmanha - finalSobra);
+      // Buscar contagem existente para pegar o cardapio_web_baixa_total
+      const contagemExistente = contagens[lojaId]?.find(c => c.item_porcionado_id === itemId);
+      const cardapioWebBaixaTotal = contagemExistente?.cardapio_web_baixa_total || 0;
+      
+      // MODELO 3 CAMADAS: a_produzir = (ideal - sobra_fisica) + vendas_web
+      const aProduzir = Math.max(0, (idealAmanha - finalSobra) + cardapioWebBaixaTotal);
 
       // Buscar data do servidor (respeita fuso horário da organização)
       const { data: dataServidor } = await supabase.rpc('get_current_date');
@@ -949,7 +954,10 @@ const ContagemPorcionados = () => {
                       const estoqueKey = `${loja.id}-${item.id}`;
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
                       const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
-                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+                      
+                      // MODELO 3 CAMADAS: a_produzir = (ideal - sobra_fisica) + vendas_web
+                      const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
+                      const aProduzir = Math.max(0, (idealFromConfig - finalSobra) + cardapioWebBaixaTotal);
                       const isDirty = isRowDirty(loja.id, item.id);
                       
                       // Calcular lotes necessários para itens lote_masseira
@@ -979,7 +987,7 @@ const ContagemPorcionados = () => {
                           showAdminCols={showAdminCols}
                           lastUpdate={contagem?.updated_at}
                           onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
-                          onDecrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
+                          onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
                           onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
                           onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                           currentDayLabel={diasSemanaLabels[currentDay]}

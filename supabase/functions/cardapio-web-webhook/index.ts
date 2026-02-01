@@ -522,10 +522,13 @@ Deno.serve(async (req) => {
 
         if (contagemError || !contagem) {
           // Create new contagem if doesn't exist
-          const novoFinalSobra = -quantidadeTotal // Negative means consumed
-          const novoAProduzir = Math.max(0, idealDoDia - novoFinalSobra) // ideal - (-qty) = ideal + qty
+          // MODELO 3 CAMADAS: final_sobra = 0 (funcionário não contou ainda)
+          // Vendas são rastreadas separadamente em cardapio_web_baixa_total
+          const sobraFisica = 0 // Funcionário ainda não informou sobra
+          const novoTotalBaixas = quantidadeTotal
+          const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
           
-          console.log(`📦 Criando contagem: final_sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+          console.log(`📦 Criando contagem (3 camadas): sobra_fisica=${sobraFisica}, vendas_web=${novoTotalBaixas}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -534,13 +537,13 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               organization_id,
               dia_operacional: diaOperacional,
-              final_sobra: novoFinalSobra,
+              final_sobra: sobraFisica, // NÃO altera - é campo do funcionário
               ideal_amanha: idealDoDia,
               a_produzir: novoAProduzir,
               usuario_id: '00000000-0000-0000-0000-000000000000',
               usuario_nome: 'Cardápio Web',
               // Campos de rastreamento Cardápio Web
-              cardapio_web_baixa_total: quantidadeTotal,
+              cardapio_web_baixa_total: novoTotalBaixas,
               cardapio_web_ultima_baixa_at: agora,
               cardapio_web_ultima_baixa_qtd: quantidadeTotal,
             })
@@ -553,20 +556,22 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+            console.log(`[${sourceType}] ✅ Criou contagem (3 camadas) para ${itemName}: sobra=${sobraFisica}, vendas=${novoTotalBaixas}, a_produzir=${novoAProduzir}`)
           }
         } else {
           // Update existing contagem
-          const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
+          // MODELO 3 CAMADAS: NÃO alterar final_sobra - é campo do funcionário
+          const sobraFisica = contagem.final_sobra || 0
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
-          const novoAProduzir = Math.max(0, idealDoDia - novoFinalSobra)
+          // Nova fórmula: a_produzir = (ideal - sobra_fisica) + vendas_web
+          const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
           
-          console.log(`📦 Atualizando contagem: final_sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+          console.log(`📦 Atualizando contagem (3 camadas): sobra_fisica=${sobraFisica}, vendas_web=${novoTotalBaixas}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
-              final_sobra: novoFinalSobra,
+              // final_sobra: NÃO ALTERAR - é campo do funcionário
               ideal_amanha: idealDoDia,
               a_produzir: novoAProduzir,
               updated_at: agora,
@@ -585,7 +590,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: sobra=${novoFinalSobra}, ideal=${idealDoDia}, a_produzir=${novoAProduzir}`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem (3 camadas) para ${itemName}: sobra=${sobraFisica}, vendas=${novoTotalBaixas}, a_produzir=${novoAProduzir}`)
           }
         }
       }
