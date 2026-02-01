@@ -1,114 +1,166 @@
 
 
-# Plano: Modelo de Reposição por Consumo de Estoque Meta
+# Plano: Simplificar Modelo - Webhook Alimenta Diretamente o Botão Azul
 
-## ✅ Status: IMPLEMENTADO
+## Diagnóstico do Problema Atual
 
-## Visão Geral
+O modelo de 3 camadas está gerando valores incorretos:
 
-O sistema agora utiliza o **Modelo de Reposição por Consumo**, onde:
-- **Estoque Ideal (E.I.)** = teto diário configurado por dia da semana
-- **Vendas Web** consomem esse teto (via webhook do Cardápio Web)
-- **A Produzir** = quantidade consumida pelas vendas (para repor)
-- **Saldo Atual** = estoque virtual restante (Ideal - Vendas)
+| Campo | Valor Atual | Problema |
+|-------|-------------|----------|
+| `ideal_amanha` | 100 | ✅ Correto |
+| `final_sobra` | 100 | Não usado no cálculo |
+| `cardapio_web_baixa_total` | 105 | ⚠️ Acumulando vendas |
+| `a_produzir` | **105** | ❌ Deveria ser no máximo 100! |
+| `saldo_atual` | 0 | Correto (100 - 105 = 0) |
 
-### Comparação de Modelos
+### Causa Raiz
 
-| Modelo | Fórmula `A Produzir` | Exemplo (Ideal=100, Vendas=2) |
-|--------|---------------------|-------------------------------|
-| Antigo (Contagem Física) | `ideal - sobra_física` | Depende da contagem manual |
-| **Novo (Consumo do Teto)** | `vendas_web` | **2** (exato do consumo) ✅ |
+A fórmula atual é:
+```sql
+a_produzir = GREATEST(0, cardapio_web_baixa_total)  -- Apenas vendas!
+```
+
+Isso ignora o `final_sobra` e permite valores maiores que o ideal.
 
 ---
 
-## Arquitetura Implementada
+## Solução: Webhook Decrementa `final_sobra` Diretamente
 
-### Colunas na Tabela `contagem_porcionados`
+A ideia do usuário é muito mais simples e elegante:
 
-| Campo | Tipo | Fórmula |
-|-------|------|---------|
-| `saldo_atual` | integer (GENERATED) | `GREATEST(0, ideal_amanha - cardapio_web_baixa_total)` |
-| `a_produzir` | integer (GENERATED) | `GREATEST(0, cardapio_web_baixa_total)` |
+```text
+MODELO ATUAL (Complexo - 3 camadas):
+├── final_sobra = 100 (funcionário/manual)
+├── cardapio_web_baixa_total = 105 (rastreamento)
+├── a_produzir = 105 (vendas diretas)
+└── saldo_atual = 0 (calculado)
 
-### Fluxo Visual na Interface
+MODELO PROPOSTO (Simples - alimentar azul):
+├── final_sobra = -5 (100 inicial - 105 vendas)
+│   ou GREATEST(0, final_sobra) se não quiser negativo
+├── a_produzir = MAX(0, ideal - final_sobra) = 100
+└── Não precisa de cardapio_web_baixa_total no cálculo
+```
+
+### Fluxo Simplificado
+
+1. **Início do dia**: `final_sobra = ideal_amanha` (ex: 100)
+2. **Venda chega**: `final_sobra -= quantidade_vendida` (99, 98, 97...)
+3. **Cálculo**: `a_produzir = MAX(0, ideal - final_sobra)`
+
+---
+
+## Mudanças Técnicas
+
+### 1. Migration SQL - Restaurar Fórmula Original
+
+```sql
+-- Recriar a_produzir como ideal - final_sobra (fórmula clássica)
+ALTER TABLE contagem_porcionados DROP COLUMN a_produzir;
+ALTER TABLE contagem_porcionados DROP COLUMN saldo_atual;
+
+ALTER TABLE contagem_porcionados 
+ADD COLUMN a_produzir integer 
+GENERATED ALWAYS AS (
+  GREATEST(0, COALESCE(ideal_amanha, 0) - COALESCE(final_sobra, 0))
+) STORED;
+
+-- OPCIONAL: Adicionar coluna para não permitir negativo
+COMMENT ON COLUMN contagem_porcionados.final_sobra IS 
+  'Estoque atual (inicia com ideal, decrementado pelas vendas)';
+```
+
+### 2. Edge Function - Webhook Decrementa `final_sobra`
+
+Alterar `supabase/functions/cardapio-web-webhook/index.ts`:
+
+```typescript
+// ANTES (modelo complexo):
+// Atualiza cardapio_web_baixa_total, não mexe em final_sobra
+
+// DEPOIS (modelo simples):
+// Decrementa final_sobra diretamente
+const novoFinalSobra = Math.max(0, (contagem.final_sobra || 0) - quantidadeTotal);
+
+await supabase
+  .from('contagem_porcionados')
+  .update({ 
+    final_sobra: novoFinalSobra,  // DECREMENTAR DIRETO!
+    // cardapio_web_baixa_total permanece para auditoria
+    cardapio_web_baixa_total: novoTotalBaixas,
+    // ...
+  })
+  .eq('id', contagem.id)
+```
+
+### 3. Inicialização do Dia
+
+Quando criar nova contagem para o dia:
+```typescript
+// ANTES: final_sobra = 0 (funcionário não contou)
+// DEPOIS: final_sobra = ideal_amanha (começa cheio)
+
+const { error: insertError } = await supabase
+  .from('contagem_porcionados')
+  .insert({
+    final_sobra: idealDoDia,  // INICIAR COM IDEAL!
+    ideal_amanha: idealDoDia,
+    // ...
+  })
+```
+
+---
+
+## Comparação de Modelos
+
+| Cenário | Modelo Atual | Modelo Proposto |
+|---------|--------------|-----------------|
+| Início do dia | final_sobra=0, ideal=100, a_produzir=0 | final_sobra=100, ideal=100, a_produzir=0 |
+| Após 2 vendas | final_sobra=0, vendas=2, a_produzir=**2** | final_sobra=98, a_produzir=**2** ✅ |
+| Após 105 vendas | final_sobra=0, vendas=105, a_produzir=**105** ❌ | final_sobra=0 (mínimo), a_produzir=**100** ✅ |
+
+### Vantagens do Modelo Proposto
+
+- **Simplicidade**: Apenas 1 campo (final_sobra) reflete o estado atual
+- **Teto natural**: a_produzir nunca excede o ideal (GREATEST(0, ideal - final_sobra))
+- **Visual intuitivo**: Funcionário vê "estoque virtual" diminuindo
+- **Mantém auditoria**: cardapio_web_baixa_total ainda rastreia vendas totais
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| **Migration SQL** | Recriar `a_produzir = ideal - final_sobra`, remover `saldo_atual` |
+| `supabase/functions/cardapio-web-webhook/index.ts` | Decrementar `final_sobra` em vez de apenas incrementar `cardapio_web_baixa_total` |
+| `.lovable/plan.md` | Atualizar documentação |
+
+---
+
+## Regra de Contagem Manual
+
+O funcionário ainda pode ajustar `final_sobra` manualmente via interface:
+- Se a contagem física for diferente do "virtual", ele corrige
+- O sistema aceita o valor informado
+- Isso é útil para ajustes/correções
+
+---
+
+## Fluxo Visual Final
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Item: PIZZA CALABRESA                                       │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────────────┐  ┌────────────────────┐ │
-│  │ Saldo    │  │   Cardápio Web   │  │    A PRODUZIR      │ │
-│  │  Atual   │  │   (Vendas do Dia)│  │   (Laranja)        │ │
-│  │ ──────── │  │  ──────────────  │  │ ───────────────    │ │
-│  │    98    │  │   -2 às 14:32    │  │        2           │ │
-│  │  (verde) │  │   Total: -2 un   │  │                    │ │
-│  └──────────┘  └──────────────────┘  └────────────────────┘ │
+│  ┌──────────────────┐  ┌──────────┐  ┌────────────────────┐ │
+│  │  ESTOQUE ATUAL   │  │  IDEAL   │  │    A PRODUZIR      │ │
+│  │  (Botão Azul)    │  │   100    │  │   (Laranja)        │ │
+│  │ ──────────────── │  │          │  │ ───────────────    │ │
+│  │       98         │  │          │  │        2           │ │
+│  │ (100 - 2 vendas) │  │          │  │  (100 - 98)        │ │
+│  └──────────────────┘  └──────────┘  └────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Cores do Saldo Atual
-
-| Condição | Cor |
-|----------|-----|
-| `saldo_atual` > 30% do Ideal | 🟢 Verde (estoque OK) |
-| `saldo_atual` < 30% do Ideal | 🟡 Amarelo (baixo) |
-| `saldo_atual` = 0 | 🔴 Vermelho (esgotado) |
-
----
-
-## Fluxo Operacional
-
-### Exemplo: Dia Começa com Ideal = 100
-
-| Hora | Evento | vendas_web | saldo_atual | a_produzir |
-|------|--------|------------|-------------|------------|
-| 00:00 | Dia começa | 0 | 100 | 0 |
-| 21:30 | Venda de 2 pizzas | 2 | 98 | **2** |
-| 22:15 | Venda de 3 pizzas | 5 | 95 | **5** |
-| 23:00 | Venda de 1 pizza | 6 | 94 | **6** |
-| 06:00 | Produção manhã vê | - | - | **6** |
-
-### Reset Automático
-
-O reset acontece quando muda o `dia_operacional` (00:00 horário SP):
-- Nova contagem criada com `cardapio_web_baixa_total = 0`
-- `saldo_atual` = `ideal_amanha` (teto cheio)
-- `a_produzir` = 0 (nada a repor ainda)
-
----
-
-## Arquivos Modificados
-
-| Arquivo | Alteração |
-|---------|-----------|
-| **Migration SQL** | Recriou `a_produzir` e adicionou `saldo_atual` como colunas geradas |
-| `src/components/contagem/ContagemItemCard.tsx` | Adicionou coluna visual "Saldo" com ícone Package |
-| `src/pages/ContagemPorcionados.tsx` | Incluiu `saldo_atual` no tipo e passa como prop |
-
----
-
-## Considerações
-
-### Sobre o Campo `final_sobra` (Sobra Física)
-
-O campo `final_sobra` (contagem manual) foi mantido para:
-- Auditoria e contagem física real
-- Comparação entre estoque virtual vs estoque real
-
-### Sobre `cardapio_web_baixa_total`
-
-Este campo é usado apenas para:
-- Rastreamento de vendas web acumuladas
-- Cálculo automático de `a_produzir` e `saldo_atual` pelo banco
-- **NÃO** influencia mais a contagem manual
-
----
-
-## Vantagens do Novo Modelo
-
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Cálculo | Baseado em contagem manual | Automático por vendas |
-| Precisão | Depende do funcionário | Exato das vendas web |
-| Tempo real | Atualiza só na contagem | Atualiza a cada venda |
-| Visual | Apenas "A Produzir" | Saldo + Vendas + A Produzir |
