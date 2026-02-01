@@ -1,165 +1,91 @@
 
-# Plano: Suporte a Múltiplos Itens Porcionados por Produto
+# Plano: Integração Cardápio Web por Loja
 
-## Contexto
+## Situação Atual
 
-Atualmente, cada produto do Cardápio Web só pode ter **um único item porcionado** vinculado. O usuário precisa vincular **vários itens** ao mesmo produto (ex: 1 Pizza = 1 Massa + 1 Mussarela + 1 Molho).
+A arquitetura do banco já suporta múltiplas integrações (uma por loja), mas a interface só exibe UMA integração. Conforme as imagens:
+- O Cardápio Web fornece um **código da loja** (ex: 8268) e um **token** por loja
+- Você tem múltiplas lojas (ARMAZÉM, UNIDADE ALEIXO) que precisam de integrações separadas
 
-## Arquitetura Atual
+## Alterações Necessárias
 
-A Edge Function **já suporta** múltiplos vínculos (linhas 147-153 criam um Map de arrays):
-```typescript
-const mapeamentoMap = new Map<number, MapeamentoItem[]>()
-for (const m of mapeamentos) {
-  if (!mapeamentoMap.has(m.cardapio_item_id)) {
-    mapeamentoMap.set(m.cardapio_item_id, [])
-  }
-  mapeamentoMap.get(m.cardapio_item_id)!.push(m)
-}
-```
+### Parte 1: Adicionar Campo de Código da Loja
 
-O problema é a constraint UNIQUE que impede múltiplas linhas com o mesmo `cardapio_item_id`.
+Adicionar coluna `codigo_cardapio_web` na tabela `lojas` para armazenar o código que o Cardápio Web fornece (ex: 8268).
 
----
-
-## Solução
-
-### Parte 1: Alterar Banco de Dados
-
-**1.1 Remover constraint UNIQUE atual**
 ```sql
-ALTER TABLE mapeamento_cardapio_itens 
-DROP CONSTRAINT mapeamento_cardapio_itens_org_item_unique;
+ALTER TABLE lojas ADD COLUMN codigo_cardapio_web TEXT;
 ```
 
-**1.2 Criar nova constraint que permite múltiplos itens**
-```sql
-ALTER TABLE mapeamento_cardapio_itens 
-ADD CONSTRAINT mapeamento_cardapio_itens_unique_combo 
-UNIQUE (organization_id, cardapio_item_id, item_porcionado_id);
-```
-
-Isso permite:
-- Mesmo `cardapio_item_id` com diferentes `item_porcionado_id`
-- Impede duplicatas do mesmo par (produto + item porcionado)
-
-### Parte 2: Atualizar Hook
+### Parte 2: Atualizar Hook para Múltiplas Integrações
 
 **Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
 
-**2.1 Atualizar interface para agrupar itens**
-```typescript
-interface MapeamentoCardapioItemAgrupado {
-  cardapio_item_id: number;
-  cardapio_item_nome: string;
-  tipo: string | null;
-  categoria: string | null;
-  vinculos: {
-    id: string;
-    item_porcionado_id: string | null;
-    item_porcionado_nome: string | null;
-    quantidade_consumida: number;
-  }[];
-}
-```
+Modificar para carregar TODAS as integrações da organização em vez de apenas uma:
 
-**2.2 Adicionar função para agrupar mapeamentos**
 ```typescript
-// Agrupa mapeamentos pelo cardapio_item_id
-const mapeamentosAgrupados = useMemo(() => {
-  const grouped = new Map<number, MapeamentoCardapioItemAgrupado>();
-  
-  for (const m of mapeamentos) {
-    if (!grouped.has(m.cardapio_item_id)) {
-      grouped.set(m.cardapio_item_id, {
-        cardapio_item_id: m.cardapio_item_id,
-        cardapio_item_nome: m.cardapio_item_nome,
-        tipo: m.tipo,
-        categoria: m.categoria,
-        vinculos: []
-      });
-    }
-    
-    grouped.get(m.cardapio_item_id)!.vinculos.push({
-      id: m.id,
-      item_porcionado_id: m.item_porcionado_id,
-      item_porcionado_nome: m.item_porcionado?.nome || null,
-      quantidade_consumida: m.quantidade_consumida
-    });
-  }
-  
-  return Array.from(grouped.values());
-}, [mapeamentos]);
-```
+// Antes
+const { data: integracao } = useQuery({
+  queryFn: () => supabase.from('integracoes_cardapio_web')
+    .select('*').eq('organization_id', orgId).maybeSingle()
+});
 
-**2.3 Adicionar mutação para vincular item adicional**
-```typescript
-const adicionarVinculo = useMutation({
-  mutationFn: async ({
-    cardapio_item_id,
-    cardapio_item_nome,
-    tipo,
-    categoria,
-    item_porcionado_id,
-    quantidade_consumida = 1
-  }) => {
-    const { data, error } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .insert({
-        organization_id: organizationId,
-        cardapio_item_id,
-        cardapio_item_nome,
-        tipo,
-        categoria,
-        item_porcionado_id,
-        quantidade_consumida,
-        ativo: true
-      })
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
-  }
+// Depois
+const { data: integracoes } = useQuery({
+  queryFn: () => supabase.from('integracoes_cardapio_web')
+    .select('*, lojas(id, nome, codigo_cardapio_web)')
+    .eq('organization_id', orgId)
+    .order('created_at')
 });
 ```
 
-### Parte 3: Atualizar Interface
+### Parte 3: Redesenhar Interface de Configuração
 
 **Arquivo:** `src/pages/ConfigurarCardapioWeb.tsx`
 
-**3.1 Nova estrutura da tabela com linhas expansíveis**
+Transformar em uma lista de integrações por loja:
 
-Cada produto terá uma linha principal mostrando:
-- Tipo, Categoria, Nome, Código
-- Botão para adicionar vínculo
-- Lista de vínculos existentes como sub-linhas
-
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│ Integração Cardápio Web                                             │
+│ Configure a integração com o Cardápio Web para cada loja.          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ UNIDADE ALEIXO                                    [Ativa] ⚫  │  │
+│  │ Código: 8268  |  Ambiente: Sandbox                            │  │
+│  │ Token: ******** [👁] [📋] [🔄]                               │  │
+│  │ URL: https://...../cardapio-web-webhook           [📋]       │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ ARMAZÉM                                      [+ Configurar]   │  │
+│  │ Sem integração configurada                                    │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
-┌─────────┬───────────┬────────────────┬────────┬─────────────────────────┐
-│ Tipo    │ Categoria │ Produto        │ Código │ Itens Vinculados        │
-├─────────┼───────────┼────────────────┼────────┼─────────────────────────┤
-│ PRODUTO │ Pizzas    │ Pizza Marguer. │ 12345  │ ┌─ Massa G (1x)     [X] │
-│         │           │                │        │ ├─ Mussarela (2x)   [X] │
-│         │           │                │        │ └─ Molho (1x)       [X] │
-│         │           │                │        │ [+ Adicionar Item]      │
-├─────────┼───────────┼────────────────┼────────┼─────────────────────────┤
-│ PRODUTO │ Bebidas   │ Refrigerante   │ 67890  │ (Nenhum item vinculado) │
-│         │           │                │        │ [Vincular...]           │
-└─────────┴───────────┴────────────────┴────────┴─────────────────────────┘
+
+### Parte 4: Atualizar Página de Lojas
+
+**Arquivo:** `src/pages/Lojas.tsx`
+
+Adicionar campo para inserir o código do Cardápio Web no formulário de edição da loja:
+
+```typescript
+// Novo campo no formulário
+<div className="space-y-2">
+  <Label>Código Cardápio Web</Label>
+  <Input 
+    placeholder="Ex: 8268"
+    value={formData.codigo_cardapio_web}
+    onChange={...}
+  />
+  <p className="text-xs text-muted-foreground">
+    Código da loja no sistema Cardápio Web
+  </p>
+</div>
 ```
-
-**3.2 Modal de adicionar vínculo**
-
-Ao clicar em "+ Adicionar Item", abre um modal simples:
-- Select: Item porcionado
-- Input: Quantidade consumida
-- Botão: Adicionar
-
-**3.3 Atualizar importação**
-
-A importação continuará criando uma linha por produto SEM vínculo.
-O usuário então vincula os itens porcionados manualmente.
 
 ---
 
@@ -167,30 +93,36 @@ O usuário então vincula os itens porcionados manualmente.
 
 | Componente | Alteração |
 |------------|-----------|
-| **Banco de Dados** | Remover constraint única antiga |
-| **Banco de Dados** | Adicionar constraint que permite múltiplos (org + item_cardapio + item_porc) |
-| **useCardapioWebIntegracao.ts** | Adicionar função para agrupar mapeamentos |
-| **useCardapioWebIntegracao.ts** | Adicionar mutação `adicionarVinculo` |
-| **ConfigurarCardapioWeb.tsx** | Redesenhar tabela com sub-linhas de vínculos |
-| **ConfigurarCardapioWeb.tsx** | Adicionar modal para adicionar vínculo |
+| **Banco de Dados** | Adicionar coluna `codigo_cardapio_web` na tabela `lojas` |
+| **useCardapioWebIntegracao.ts** | Carregar array de integrações em vez de uma única |
+| **ConfigurarCardapioWeb.tsx** | Exibir lista de lojas com status de integração |
+| **Lojas.tsx** | Adicionar campo para código do Cardápio Web |
 
 ---
 
-## Fluxo de Uso
+## Fluxo de Configuração
 
-1. **Importar arquivo** → Cria registros com `item_porcionado_id = null`
-2. **Vincular primeiro item** → Atualiza o registro existente
-3. **Adicionar mais itens** → Cria novos registros com o mesmo `cardapio_item_id`
-4. **Remover vínculo** → Deleta apenas aquele registro específico
+1. **Cadastrar código da loja**: Na página Lojas, editar cada loja e informar o código do Cardápio Web (ex: 8268)
+2. **Ativar integração**: Na página de Integração, clicar em "Configurar" na loja desejada
+3. **Obter credenciais**: O sistema gera um token único para aquela loja
+4. **Configurar no Cardápio Web**: Usar a URL do webhook + token no painel do Cardápio Web
 
 ---
 
-## Resultado Esperado
+## Detalhes Técnicos
 
-Antes:
-- Pizza Marguerita → Massa G (1x)
+### Edge Function (já suporta múltiplas lojas)
 
-Depois:
-- Pizza Marguerita → Massa G (1x), Mussarela (2x), Molho (1x)
+A Edge Function já identifica a loja corretamente pelo token:
+```typescript
+const { data: integracao } = await supabase
+  .from('integracoes_cardapio_web')
+  .select('*')
+  .eq('token', apiKey)  // Cada loja tem seu token
+  .eq('ativo', true)
+  .single()
+```
 
-A Edge Function já processa todos os vínculos automaticamente!
+### Constraint Existente
+
+A constraint `UNIQUE (organization_id, loja_id)` garante que cada loja só pode ter uma integração.
