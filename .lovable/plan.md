@@ -1,112 +1,90 @@
 
 
-# Plano: Salvamento Automático em Tempo Real (Auto-Save com Debounce)
+# Plano: Corrigir Coluna Gerada `a_produzir`
 
-## Diagnóstico
+## Diagnóstico do Erro
 
-| Operação | Fluxo Atual | Fluxo Ideal |
-|----------|-------------|-------------|
-| **Venda Cardápio Web** | Tempo real (webhook) | ✅ Já está correto |
-| **Ajuste manual sobra** | Requer clique em "Salvar" | ⚠️ Deveria ser automático |
-| **Ajuste peso** | Requer clique em "Salvar" | ⚠️ Deveria ser automático |
+A imagem mostra o erro:
+```
+column "a_produzir" can only be updated to DEFAULT
+```
 
-O botão "Salvar Alterações" faz sentido em formulários tradicionais, mas **não combina** com um sistema de contagem Just-in-Time onde a produção depende de dados atualizados em tempo real.
+### Causa Raiz
+
+| Componente | Problema |
+|------------|----------|
+| **Banco de Dados** | `a_produzir` é uma coluna GENERATED com fórmula `GREATEST(0, (ideal_amanha - final_sobra))` |
+| **Edge Function** | Tenta fazer `UPDATE ... a_produzir = novoAProduzir` (linhas 542 e 576) |
+| **Fórmula Atual** | NÃO inclui `cardapio_web_baixa_total` - ignora vendas web |
 
 ---
 
-## Solução: Auto-Save com Debounce
+## Solução em Duas Partes
 
-Implementar salvamento automático após cada alteração, com um pequeno delay (debounce) para evitar requisições excessivas enquanto o usuário digita.
+### 1. Atualizar Fórmula da Coluna Gerada
 
-### Fluxo Proposto
+A fórmula precisa ser alterada de:
+```sql
+-- ANTES (ignora vendas web):
+a_produzir = GREATEST(0, (ideal_amanha - final_sobra))
+
+-- DEPOIS (modelo 3 camadas):
+a_produzir = GREATEST(0, (ideal_amanha - COALESCE(final_sobra, 0)) + COALESCE(cardapio_web_baixa_total, 0))
+```
+
+Isso significa que o `a_produzir` será calculado automaticamente assim:
+- `100 (ideal) - 50 (sobra) + 15 (vendas) = 65 unidades a produzir`
+
+### 2. Remover Tentativa de UPDATE na Edge Function
+
+**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+
+Remover `a_produzir` de todos os INSERTs e UPDATEs, já que será calculado automaticamente pelo banco:
+
+```typescript
+// Linha 542 - REMOVER a_produzir do INSERT:
+.insert({
+  loja_id,
+  item_porcionado_id: mapping.item_porcionado_id,
+  organization_id,
+  dia_operacional: diaOperacional,
+  final_sobra: 0,
+  ideal_amanha: idealDoDia,
+  // a_produzir: REMOVER - é coluna gerada
+  usuario_id: '00000000-0000-0000-0000-000000000000',
+  usuario_nome: 'Cardápio Web',
+  cardapio_web_baixa_total: novoTotalBaixas,
+  cardapio_web_ultima_baixa_at: agora,
+  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
+})
+
+// Linha 576 - REMOVER a_produzir do UPDATE:
+.update({ 
+  ideal_amanha: idealDoDia,
+  // a_produzir: REMOVER - é coluna gerada
+  updated_at: agora,
+  cardapio_web_baixa_total: novoTotalBaixas,
+  cardapio_web_ultima_baixa_at: agora,
+  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
+})
+```
+
+---
+
+## Fluxo Após Correção
 
 ```text
-Funcionário ajusta sobra: 50 → 51 → 52
+1. Webhook recebe venda de 5 unidades
          ↓
-Debounce aguarda 800ms sem novas alterações
+2. Edge Function atualiza APENAS:
+   - cardapio_web_baixa_total = 5
+   - ideal_amanha = 100 (do dia)
          ↓
-Sistema salva automaticamente (sem clique)
+3. Banco de dados CALCULA automaticamente:
+   a_produzir = GREATEST(0, (100 - 0) + 5) = 105
          ↓
-Toast discreto: "✓ Salvo" (fade out rápido)
-         ↓
-Produção atualizada em tempo real
+4. Frontend lê a_produzir = 105 ✅
 ```
-
----
-
-## Mudanças Necessárias
-
-### 1. Adicionar Auto-Save com Debounce
-
-**Arquivo:** `src/pages/ContagemPorcionados.tsx`
-
-Criar um `useEffect` que observa mudanças em `editingValues` e dispara o salvamento automático:
-
-```typescript
-// Hook de debounce para auto-save
-const debouncedSave = useRef<NodeJS.Timeout | null>(null);
-
-useEffect(() => {
-  // Limpar timeout anterior
-  if (debouncedSave.current) {
-    clearTimeout(debouncedSave.current);
-  }
-
-  // Verificar se há alterações pendentes
-  const dirtyRows = getDirtyRows();
-  if (dirtyRows.length === 0) return;
-
-  // Agendar salvamento após 800ms de inatividade
-  debouncedSave.current = setTimeout(async () => {
-    for (const row of dirtyRows) {
-      await executeSave(row.lojaId, row.itemId);
-    }
-  }, 800);
-
-  return () => {
-    if (debouncedSave.current) {
-      clearTimeout(debouncedSave.current);
-    }
-  };
-}, [editingValues]);
-```
-
-### 2. Substituir Toast Pesado por Indicador Discreto
-
-Alterar o feedback visual de:
-- **Antes:** Toast grande "Contagem salva! Sobra: 50 | Ideal: 100 | A Produzir: 50"
-- **Depois:** Toast discreto "✓ Salvo" com fade-out rápido (1.5s)
-
-```typescript
-// Em executeSave, após sucesso:
-toast.success('✓ Salvo', { 
-  duration: 1500,
-  position: 'bottom-right',
-  style: { fontSize: '12px', padding: '8px 12px' }
-});
-```
-
-### 3. Remover Botão "Salvar Alterações" do Footer
-
-**Arquivo:** `src/components/contagem/ContagemFixedFooter.tsx`
-
-O footer pode ser simplificado ou removido, já que não há mais ação pendente.
-
-**Opção A - Remover footer completamente:**
-```typescript
-// Em ContagemPorcionados.tsx, remover:
-<ContagemFixedFooter ... />
-```
-
-**Opção B - Manter footer apenas com status visual:**
-Exibir um indicador de "Todas as alterações salvas" ou "Salvando..." quando houver operação em andamento.
-
-### 4. Adicionar Indicador de Status de Salvamento
-
-Criar um pequeno badge/indicator que mostra o estado atual:
-- 🟢 "Salvo" (tudo sincronizado)
-- 🟡 "Salvando..." (operação em andamento)
-- 🔴 "Erro - Clique para tentar novamente" (fallback para retry manual)
 
 ---
 
@@ -114,51 +92,33 @@ Criar um pequeno badge/indicator que mostra o estado atual:
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ContagemPorcionados.tsx` | Adicionar auto-save com debounce de 800ms, remover dependência do botão |
-| `src/components/contagem/ContagemFixedFooter.tsx` | Simplificar ou remover (substituir por indicador de status) |
+| **Migration SQL** | Recriar coluna gerada com nova fórmula incluindo `cardapio_web_baixa_total` |
+| `supabase/functions/cardapio-web-webhook/index.ts` | Remover `a_produzir` dos INSERTs/UPDATEs |
 
 ---
 
-## Fluxo Operacional Após Implementação
+## Migration SQL
 
-```text
-1. Funcionário clica no "+" para incrementar sobra
-         ↓
-2. editingValues atualiza imediatamente (50 → 51)
-         ↓
-3. useEffect detecta mudança, inicia debounce de 800ms
-         ↓
-4. Funcionário clica "+" novamente (51 → 52)
-         ↓
-5. Debounce reinicia (mais 800ms)
-         ↓
-6. 800ms sem alterações
-         ↓
-7. executeSave() dispara automaticamente
-         ↓
-8. Banco atualizado, produção recalculada
-         ↓
-9. Toast discreto "✓ Salvo" (desaparece em 1.5s)
+```sql
+-- Recriar a coluna a_produzir com a nova fórmula do modelo 3 camadas
+ALTER TABLE contagem_porcionados 
+DROP COLUMN a_produzir;
+
+ALTER TABLE contagem_porcionados 
+ADD COLUMN a_produzir integer 
+GENERATED ALWAYS AS (
+  GREATEST(0, (COALESCE(ideal_amanha, 0) - COALESCE(final_sobra, 0)) + COALESCE(cardapio_web_baixa_total, 0))
+) STORED;
 ```
 
 ---
 
-## Vantagens
+## Vantagens da Solução
 
 | Aspecto | Antes | Depois |
 |---------|-------|--------|
-| **Consistência** | Vendas em tempo real, contagem manual | Tudo em tempo real |
-| **UX** | Funcionário precisa lembrar de salvar | Zero fricção |
-| **Risco de perda de dados** | Se esquecer de salvar, perde alterações | Impossível perder |
-| **Sincronização** | Produção desatualizada até salvar | Sempre atualizada |
-
----
-
-## Fallback para Falhas
-
-Se o auto-save falhar:
-1. Mostrar indicador vermelho "Erro de sincronização"
-2. Manter botão de retry manual como fallback
-3. Não bloquear a interface - permitir continuar editando
-4. Tentar novamente automaticamente na próxima alteração
+| **Consistência** | Fórmula no código E no banco | Fórmula apenas no banco |
+| **Manutenção** | Precisa sincronizar dois lugares | Única fonte de verdade |
+| **Erro de update** | Falha ao tentar atualizar coluna gerada | Nunca tenta atualizar |
+| **Cálculo** | Ignora vendas web | Inclui vendas web automaticamente |
 
