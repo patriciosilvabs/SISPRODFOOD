@@ -1,131 +1,131 @@
 
 
-# Plano: Coluna "Cardápio Web" na Contagem de Porcionados
+# Plano: Corrigir Integração CardápioWeb - Busca de Detalhes via API
 
-## Objetivo
+## Problema Identificado
 
-Adicionar uma nova coluna no card de contagem que mostra quando e quanto o Cardápio Web movimentou o estoque de cada item, permitindo que os operadores da loja saibam exatamente o horário que o sistema automático fez a baixa.
+O CardápioWeb envia apenas uma **notificação** com o `order_id`, não os detalhes completos do pedido. Nossa edge function espera receber `payload.order.items`, mas o payload real é:
 
-## Diagrama do Layout Proposto
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ UNIDADE ALEIXO                                                                                              │
-│ ✓ MASSA - PORCIONADO                                                                                        │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                                             │
-│  [- 0 +]  [Peso: 0 g]  ┌─────────────────────────┐  [A PRODUZIR]  [LOTES]  [Extra]                         │
-│                        │   📱 Cardápio Web        │      100          2                                     │
-│                        │   -15 un às 14:32       │                                                          │
-│                        │   Total: -23 un hoje    │                                                          │
-│                        └─────────────────────────┘                                                          │
-│                                                                                                             │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```json
+{
+  "event_id": "1pry7dk9gcgqmiqe7n8",
+  "event_type": "ORDER_CREATED",
+  "merchant_id": 8268,
+  "order_id": 179546164,
+  "order_status": "confirmed",
+  "created_at": "2026-02-01T14:22:26-03:00"
+}
 ```
 
-## Alterações Necessárias
+## Solução
 
-### Parte 1: Adicionar Campos no Banco de Dados
+Implementar a busca de detalhes do pedido via API do CardápioWeb quando recebermos apenas a notificação.
 
-Adicionar 3 novas colunas na tabela `contagem_porcionados`:
+---
+
+## Parte 1: Adicionar Campo API Key na Integração
+
+Adicionar coluna para armazenar a API Key do CardápioWeb (necessária para buscar detalhes):
 
 ```sql
--- Quantidade total baixada pelo Cardápio Web hoje
-cardapio_web_baixa_total INTEGER DEFAULT 0;
-
--- Horário da última baixa automática
-cardapio_web_ultima_baixa_at TIMESTAMPTZ;
-
--- Quantidade da última baixa individual
-cardapio_web_ultima_baixa_qtd INTEGER;
+ALTER TABLE integracoes_cardapio_web 
+ADD COLUMN cardapio_api_key TEXT;
 ```
 
-### Parte 2: Atualizar Edge Function do Webhook
+---
 
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+## Parte 2: Atualizar Edge Function
 
-Modificar o UPDATE para gravar os novos campos:
+Modificar `supabase/functions/cardapio-web-webhook/index.ts`:
+
+### 2.1 Nova Função para Buscar Detalhes
 
 ```typescript
-// Antes
-const { error: updateError } = await supabase
-  .from('contagem_porcionados')
-  .update({ 
-    final_sobra: novoFinalSobra,
-    updated_at: new Date().toISOString()
-  })
-  .eq('id', contagem.id)
-
-// Depois
-const agora = new Date().toISOString();
-const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
-
-const { error: updateError } = await supabase
-  .from('contagem_porcionados')
-  .update({ 
-    final_sobra: novoFinalSobra,
-    updated_at: agora,
-    // Novos campos para rastreamento
-    cardapio_web_baixa_total: novoTotalBaixas,
-    cardapio_web_ultima_baixa_at: agora,
-    cardapio_web_ultima_baixa_qtd: quantidadeTotal
-  })
-  .eq('id', contagem.id)
+async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string) {
+  const baseUrl = ambiente === 'sandbox' 
+    ? 'https://integracao.sandbox.cardapioweb.com'
+    : 'https://integracao.cardapioweb.com';
+  
+  const response = await fetch(`${baseUrl}/api/partner/v1/orders/${orderId}`, {
+    headers: { 'X-API-KEY': apiKey }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Falha ao buscar pedido: ${response.status}`);
+  }
+  
+  return await response.json();
+}
 ```
 
-### Parte 3: Atualizar Interface Contagem
-
-**Arquivo:** `src/components/contagem/ContagemItemCard.tsx`
-
-Adicionar nova coluna visual com as informações do Cardápio Web:
+### 2.2 Lógica Atualizada no Handler
 
 ```typescript
-// Novas props
-interface ContagemItemCardProps {
-  // ... props existentes
-  cardapioWebBaixaTotal?: number;
-  cardapioWebUltimaBaixaAt?: string;
-  cardapioWebUltimaBaixaQtd?: number;
+// Detectar formato do payload
+let orderData;
+
+if (payload.order && payload.order.items) {
+  // Formato completo - usar diretamente
+  orderData = payload.order;
+} else if (payload.order_id) {
+  // Apenas notificação - buscar detalhes via API
+  if (!integracao.cardapio_api_key) {
+    throw new Error('API Key do CardápioWeb não configurada');
+  }
+  
+  const detalhes = await fetchOrderDetails(
+    payload.order_id, 
+    integracao.cardapio_api_key,
+    integracao.ambiente
+  );
+  
+  orderData = detalhes.order || detalhes;
+} else {
+  throw new Error('Payload inválido: sem order nem order_id');
 }
 
-// Nova coluna no card
-{(cardapioWebBaixaTotal && cardapioWebBaixaTotal !== 0) && (
-  <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[100px] 
-                  bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700">
-    <span className="text-[10px] uppercase tracking-wide text-violet-600 dark:text-violet-400 flex items-center gap-1">
-      <Smartphone className="h-3 w-3" />
-      Cardápio Web
-    </span>
-    <span className="text-sm font-bold text-violet-700 dark:text-violet-300">
-      -{cardapioWebUltimaBaixaQtd} às {format(cardapioWebUltimaBaixaAt, 'HH:mm')}
-    </span>
-    <span className="text-[10px] text-violet-500">
-      Total: -{cardapioWebBaixaTotal} un hoje
-    </span>
-  </div>
-)}
+// Continuar processamento com orderData.items
 ```
 
-### Parte 4: Atualizar Página de Contagem
-
-**Arquivo:** `src/pages/ContagemPorcionados.tsx`
-
-Passar os novos dados para o componente:
+### 2.3 Processar Eventos Relevantes
 
 ```typescript
-// Na interface Contagem, adicionar:
-interface Contagem {
-  // ... campos existentes
-  cardapio_web_baixa_total?: number;
-  cardapio_web_ultima_baixa_at?: string;
-  cardapio_web_ultima_baixa_qtd?: number;
+const RELEVANT_STATUSES = ["confirmed", "preparing", "ready", "dispatched", "canceled"];
+
+// Só buscar detalhes e processar estoque para ORDER_CREATED e confirmed
+if (payload.event_type === 'ORDER_STATUS_UPDATED' && payload.order_status === 'canceled') {
+  // Log cancelamento mas não processa estoque
+  return { success: true, message: 'Pedido cancelado registrado' };
 }
 
-// Na query SELECT, adicionar os novos campos
-const { data: contagensData } = await supabase
-  .from('contagem_porcionados')
-  .select('*, cardapio_web_baixa_total, cardapio_web_ultima_baixa_at, cardapio_web_ultima_baixa_qtd')
-  .eq('dia_operacional', today)
+if (!RELEVANT_STATUSES.includes(payload.order_status)) {
+  return { success: true, message: 'Status ignorado' };
+}
+```
+
+---
+
+## Parte 3: Atualizar Interface de Configuração
+
+### 3.1 Adicionar Campo no Hook
+
+**Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
+
+Atualizar interface e mutation para incluir `cardapio_api_key`.
+
+### 3.2 Atualizar Card de Integração
+
+**Arquivo:** `src/components/cardapio-web/LojaIntegracaoCard.tsx`
+
+Adicionar campo de input para a API Key do CardápioWeb:
+
+```typescript
+<Input
+  type="password"
+  placeholder="API Key do CardápioWeb"
+  value={cardapioApiKey}
+  onChange={(e) => setCardapioApiKey(e.target.value)}
+/>
 ```
 
 ---
@@ -134,28 +134,33 @@ const { data: contagensData } = await supabase
 
 | Componente | Alteração |
 |------------|-----------|
-| **Banco de Dados** | 3 novas colunas: `cardapio_web_baixa_total`, `cardapio_web_ultima_baixa_at`, `cardapio_web_ultima_baixa_qtd` |
-| **cardapio-web-webhook** | Gravar horário e quantidade de cada baixa automática |
-| **ContagemItemCard.tsx** | Nova coluna visual roxa "Cardápio Web" |
-| **ContagemPorcionados.tsx** | Carregar e passar os novos dados para os cards |
+| **Banco de Dados** | Nova coluna `cardapio_api_key` na tabela `integracoes_cardapio_web` |
+| **cardapio-web-webhook** | Buscar detalhes via API quando receber apenas notificação |
+| **useCardapioWebIntegracao.ts** | Incluir `cardapio_api_key` nas operações |
+| **LojaIntegracaoCard.tsx** | Campo para configurar API Key do CardápioWeb |
 
 ---
 
-## Comportamento Esperado
+## Fluxo Corrigido
 
-1. **Cardápio Web recebe pedido** → Webhook processa
-2. **Webhook decrementa estoque** → Grava horário e quantidade nos novos campos
-3. **Operador visualiza contagem** → Vê coluna "Cardápio Web" mostrando:
-   - Quantidade da última baixa (ex: `-5 às 14:32`)
-   - Total baixado no dia (ex: `Total: -23 un hoje`)
-4. **Coluna só aparece** quando há movimentação do Cardápio Web (valor diferente de zero)
+```text
+1. CardápioWeb envia notificação: { event_type: "ORDER_CREATED", order_id: 12345 }
+2. Webhook valida token → Encontra integração ativa
+3. Detecta que payload não tem items → Busca detalhes via API
+4. GET https://integracao.cardapioweb.com/api/partner/v1/orders/12345
+5. Recebe items do pedido → Processa baixa de estoque
+6. Atualiza contagem_porcionados com dados de rastreamento
+```
 
 ---
 
-## Benefícios
+## Configuração Necessária pelo Usuário
 
-- Rastreabilidade completa das baixas automáticas
-- Horário exato de cada movimentação
-- Separação clara entre ajustes manuais e automáticos
-- Auditoria facilitada para o gestor
+Após a implementação, o usuário precisará:
+
+1. Acessar a tela de Configuração do Cardápio Web
+2. Informar a **API Key do CardápioWeb** (obtida no painel do CardápioWeb)
+3. Salvar a configuração
+
+Sem essa API Key, não é possível buscar os detalhes dos pedidos.
 
