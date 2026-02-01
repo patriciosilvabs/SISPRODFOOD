@@ -82,3 +82,6 @@ verify_jwt = false
 
 [functions.pdv-notify-shipment]
 verify_jwt = false
+
+[functions.cardapio-web-webhook]
+verify_jwt = false

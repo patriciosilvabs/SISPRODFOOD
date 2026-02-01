@@ -48,6 +48,7 @@ import AceitarConvite from "./pages/AceitarConvite";
 import ConfigurarLembretesAudio from "./pages/ConfigurarLembretesAudio";
 import ConfigurarIntegracaoPDV from "./pages/ConfigurarIntegracaoPDV";
 import DemandaPDV from "./pages/DemandaPDV";
+import ConfigurarCardapioWeb from "./pages/ConfigurarCardapioWeb";
 import {
   SuperAdminDashboard,
   SuperAdminOrganizacoes,
@@ -263,6 +264,14 @@ const App = () => (
                   element={
                     <ProtectedRoute requiredRoles={['Admin']}>
                       <ConfigurarIntegracaoPDV />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/configurar-cardapio-web"
+                  element={
+                    <ProtectedRoute requiredRoles={['Admin']}>
+                      <ConfigurarCardapioWeb />
                     </ProtectedRoute>
                   }
                 />

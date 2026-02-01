@@ -56,6 +56,7 @@ export const SYSTEM_PAGES: PageConfig[] = [
   { route: '/lojas', label: 'Gerenciar Lojas', description: 'Cadastro de lojas', section: 'admin' },
   { route: '/configurar-lembretes-audio', label: 'Lembretes de Áudio', description: 'Configurar lembretes sonoros', section: 'admin' },
   { route: '/configurar-integracao-pdv', label: 'Integração PDV', description: 'Configurar integração com PDV externo', section: 'admin' },
+  { route: '/configurar-cardapio-web', label: 'Cardápio Web', description: 'Integração com Cardápio Web para baixa automática', section: 'admin' },
   { route: '/demanda-pdv', label: 'Demanda PDV', description: 'Visualizar demanda do PDV', section: 'cpd' },
 ];
 
