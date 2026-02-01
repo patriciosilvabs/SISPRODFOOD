@@ -1,90 +1,146 @@
 
-# Plano: Integração Cardápio Web por Loja
 
-## Situação Atual
+# Plano: Botão Testar Conexão com API do Cardápio Web
 
-A arquitetura do banco já suporta múltiplas integrações (uma por loja), mas a interface só exibe UMA integração. Conforme as imagens:
-- O Cardápio Web fornece um **código da loja** (ex: 8268) e um **token** por loja
-- Você tem múltiplas lojas (ARMAZÉM, UNIDADE ALEIXO) que precisam de integrações separadas
+## Objetivo
+
+Adicionar um botão "Testar Conexão" em cada card de integração para verificar se o token configurado está funcionando corretamente com a Edge Function.
+
+## Arquitetura do Teste
+
+O teste enviará uma requisição simulada para a Edge Function usando o token da loja. A Edge Function:
+1. Validará o token
+2. Retornará sucesso se o token estiver ativo e válido
+3. Retornará erro se o token for inválido ou inativo
 
 ## Alterações Necessárias
 
-### Parte 1: Adicionar Campo de Código da Loja
+### Parte 1: Criar Edge Function de Teste
 
-Adicionar coluna `codigo_cardapio_web` na tabela `lojas` para armazenar o código que o Cardápio Web fornece (ex: 8268).
+**Arquivo:** `supabase/functions/cardapio-web-test/index.ts`
 
-```sql
-ALTER TABLE lojas ADD COLUMN codigo_cardapio_web TEXT;
+Uma Edge Function leve que apenas valida o token sem processar pedidos:
+
+```typescript
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  const apiKey = req.headers.get('X-API-KEY')
+  
+  if (!apiKey) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Token não fornecido' }),
+      { status: 401 }
+    )
+  }
+
+  // Validar token no banco
+  const { data: integracao } = await supabase
+    .from('integracoes_cardapio_web')
+    .select('id, loja_id, ambiente, ativo')
+    .eq('token', apiKey)
+    .single()
+
+  if (!integracao) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Token inválido' }),
+      { status: 401 }
+    )
+  }
+
+  if (!integracao.ativo) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Integração inativa' }),
+      { status: 403 }
+    )
+  }
+
+  return new Response(
+    JSON.stringify({ 
+      success: true, 
+      message: 'Conexão validada com sucesso!',
+      ambiente: integracao.ambiente
+    }),
+    { status: 200 }
+  )
+})
 ```
 
-### Parte 2: Atualizar Hook para Múltiplas Integrações
+### Parte 2: Adicionar Mutação de Teste no Hook
 
 **Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
 
-Modificar para carregar TODAS as integrações da organização em vez de apenas uma:
+Adicionar uma mutação para testar a conexão:
 
 ```typescript
-// Antes
-const { data: integracao } = useQuery({
-  queryFn: () => supabase.from('integracoes_cardapio_web')
-    .select('*').eq('organization_id', orgId).maybeSingle()
-});
-
-// Depois
-const { data: integracoes } = useQuery({
-  queryFn: () => supabase.from('integracoes_cardapio_web')
-    .select('*, lojas(id, nome, codigo_cardapio_web)')
-    .eq('organization_id', orgId)
-    .order('created_at')
+const testarConexao = useMutation({
+  mutationFn: async (token: string) => {
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cardapio-web-test`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': token,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Falha na conexão');
+    }
+    
+    return data;
+  }
 });
 ```
 
-### Parte 3: Redesenhar Interface de Configuração
+### Parte 3: Adicionar Botão no Card
 
-**Arquivo:** `src/pages/ConfigurarCardapioWeb.tsx`
+**Arquivo:** `src/components/cardapio-web/LojaIntegracaoCard.tsx`
 
-Transformar em uma lista de integrações por loja:
+Adicionar um botão "Testar Conexão" na seção de credenciais:
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Integração Cardápio Web                                             │
-│ Configure a integração com o Cardápio Web para cada loja.          │
+│ UNIDADE ALEIXO                                        [Ativa] ⚫   │
+│ Código: 8268  |  Ambiente: Sandbox                                  │
 ├─────────────────────────────────────────────────────────────────────┤
+│ URL do Webhook: https://...../cardapio-web-webhook      [📋]       │
+│ Token (X-API-KEY): ******** [👁] [📋] [🔄]                        │
 │                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │ UNIDADE ALEIXO                                    [Ativa] ⚫  │  │
-│  │ Código: 8268  |  Ambiente: Sandbox                            │  │
-│  │ Token: ******** [👁] [📋] [🔄]                               │  │
-│  │ URL: https://...../cardapio-web-webhook           [📋]       │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│     [🔌 Testar Conexão]    ← NOVO BOTÃO                           │
 │                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │ ARMAZÉM                                      [+ Configurar]   │  │
-│  │ Sem integração configurada                                    │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
+│     ✅ Conexão validada! (ou ❌ Erro: Token inválido)              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Parte 4: Atualizar Página de Lojas
-
-**Arquivo:** `src/pages/Lojas.tsx`
-
-Adicionar campo para inserir o código do Cardápio Web no formulário de edição da loja:
+Lógica do botão:
+- Estado `isTesting` para mostrar loading
+- Estado `testResult` para exibir resultado
+- Feedback visual: verde para sucesso, vermelho para erro
 
 ```typescript
-// Novo campo no formulário
-<div className="space-y-2">
-  <Label>Código Cardápio Web</Label>
-  <Input 
-    placeholder="Ex: 8268"
-    value={formData.codigo_cardapio_web}
-    onChange={...}
-  />
-  <p className="text-xs text-muted-foreground">
-    Código da loja no sistema Cardápio Web
-  </p>
-</div>
+const [testResult, setTestResult] = useState<{
+  success: boolean;
+  message: string;
+} | null>(null);
+
+const handleTestConnection = async () => {
+  setTestResult(null);
+  try {
+    const result = await onTestConnection(integracao.token);
+    setTestResult({ success: true, message: result.message });
+  } catch (error) {
+    setTestResult({ 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Erro desconhecido' 
+    });
+  }
+};
 ```
 
 ---
@@ -93,36 +149,29 @@ Adicionar campo para inserir o código do Cardápio Web no formulário de ediç�
 
 | Componente | Alteração |
 |------------|-----------|
-| **Banco de Dados** | Adicionar coluna `codigo_cardapio_web` na tabela `lojas` |
-| **useCardapioWebIntegracao.ts** | Carregar array de integrações em vez de uma única |
-| **ConfigurarCardapioWeb.tsx** | Exibir lista de lojas com status de integração |
-| **Lojas.tsx** | Adicionar campo para código do Cardápio Web |
+| **supabase/functions/cardapio-web-test** | Nova Edge Function para validar token |
+| **supabase/config.toml** | Registrar nova função |
+| **useCardapioWebIntegracao.ts** | Adicionar `testarConexao` mutation |
+| **LojaIntegracaoCard.tsx** | Adicionar botão e feedback visual |
+| **ConfigurarCardapioWeb.tsx** | Passar prop `onTestConnection` |
 
 ---
 
-## Fluxo de Configuração
+## Fluxo de Teste
 
-1. **Cadastrar código da loja**: Na página Lojas, editar cada loja e informar o código do Cardápio Web (ex: 8268)
-2. **Ativar integração**: Na página de Integração, clicar em "Configurar" na loja desejada
-3. **Obter credenciais**: O sistema gera um token único para aquela loja
-4. **Configurar no Cardápio Web**: Usar a URL do webhook + token no painel do Cardápio Web
+1. Usuário clica em "Testar Conexão"
+2. Frontend chama Edge Function com o token
+3. Edge Function valida token no banco
+4. Retorna sucesso/erro
+5. Card exibe feedback visual:
+   - ✅ **Verde**: "Conexão validada com sucesso!"
+   - ❌ **Vermelho**: "Erro: [mensagem]"
 
 ---
 
-## Detalhes Técnicos
+## Benefícios
 
-### Edge Function (já suporta múltiplas lojas)
+- **Validação imediata**: Confirma se as credenciais estão corretas
+- **Debug fácil**: Identifica problemas antes de configurar no Cardápio Web
+- **Feedback claro**: Usuário sabe exatamente se a integração está funcionando
 
-A Edge Function já identifica a loja corretamente pelo token:
-```typescript
-const { data: integracao } = await supabase
-  .from('integracoes_cardapio_web')
-  .select('*')
-  .eq('token', apiKey)  // Cada loja tem seu token
-  .eq('ativo', true)
-  .single()
-```
-
-### Constraint Existente
-
-A constraint `UNIQUE (organization_id, loja_id)` garante que cada loja só pode ter uma integração.
