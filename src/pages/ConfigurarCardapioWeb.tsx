@@ -11,14 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Copy, RefreshCw, Plus, Trash2, CheckCircle, XCircle, ExternalLink, Loader2, Settings, List, History, Eye, EyeOff } from 'lucide-react';
-import { useCardapioWebIntegracao } from '@/hooks/useCardapioWebIntegracao';
+import { Copy, RefreshCw, Plus, Trash2, CheckCircle, XCircle, ExternalLink, Loader2, Settings, List, History, Eye, EyeOff, Upload, AlertCircle } from 'lucide-react';
+import { useCardapioWebIntegracao, type ImportarMapeamentoItem } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
 
 export default function ConfigurarCardapioWeb() {
   const { organizationId } = useOrganization();
@@ -34,10 +35,13 @@ export default function ConfigurarCardapioWeb() {
     regenerateToken,
     addMapeamento,
     deleteMapeamento,
+    importarMapeamentos,
+    vincularItemPorcionado,
   } = useCardapioWebIntegracao();
 
   const [showToken, setShowToken] = useState(false);
   const [novoMapeamentoOpen, setNovoMapeamentoOpen] = useState(false);
+  const [importarModalOpen, setImportarModalOpen] = useState(false);
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
     cardapio_item_nome: '',
@@ -127,6 +131,17 @@ export default function ConfigurarCardapioWeb() {
       quantidade_consumida: '1',
     });
     setNovoMapeamentoOpen(false);
+  };
+
+  const handleImportarMapeamentos = async (items: ParsedCardapioItem[]) => {
+    await importarMapeamentos.mutateAsync(items as ImportarMapeamentoItem[]);
+  };
+
+  const handleVincularItem = async (mapeamentoId: string, itemPorcionadoId: string) => {
+    await vincularItemPorcionado.mutateAsync({
+      id: mapeamentoId,
+      item_porcionado_id: itemPorcionadoId,
+    });
   };
 
   const lojaVinculada = lojas?.find(l => l.id === integracao?.loja_id);
@@ -339,13 +354,18 @@ export default function ConfigurarCardapioWeb() {
                       Configure quais itens porcionados são consumidos para cada produto do cardápio.
                     </CardDescription>
                   </div>
-                  <Dialog open={novoMapeamentoOpen} onOpenChange={setNovoMapeamentoOpen}>
-                    <DialogTrigger asChild>
-                      <Button>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Adicionar
-                      </Button>
-                    </DialogTrigger>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setImportarModalOpen(true)}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Importar Arquivo
+                    </Button>
+                    <Dialog open={novoMapeamentoOpen} onOpenChange={setNovoMapeamentoOpen}>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Adicionar
+                        </Button>
+                      </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Novo Mapeamento</DialogTitle>
@@ -432,6 +452,7 @@ export default function ConfigurarCardapioWeb() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -449,26 +470,57 @@ export default function ConfigurarCardapioWeb() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>ID Cardápio</TableHead>
-                        <TableHead>Produto (Cardápio Web)</TableHead>
+                        <TableHead className="w-20">Tipo</TableHead>
+                        <TableHead>Categoria</TableHead>
+                        <TableHead>Produto</TableHead>
+                        <TableHead className="w-24">Código</TableHead>
                         <TableHead>Item Porcionado</TableHead>
-                        <TableHead className="text-center">Quantidade</TableHead>
-                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-center w-16">Qtd</TableHead>
                         <TableHead className="w-12"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {mapeamentos.map((m) => (
-                        <TableRow key={m.id}>
-                          <TableCell className="font-mono">{m.cardapio_item_id}</TableCell>
-                          <TableCell>{m.cardapio_item_nome}</TableCell>
-                          <TableCell>{m.item_porcionado?.nome || '-'}</TableCell>
-                          <TableCell className="text-center">{m.quantidade_consumida}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={m.ativo ? 'default' : 'secondary'}>
-                              {m.ativo ? 'Ativo' : 'Inativo'}
-                            </Badge>
+                        <TableRow key={m.id} className={!m.item_porcionado_id ? 'bg-muted/40' : ''}>
+                          <TableCell>
+                            {m.tipo && (
+                              <Badge variant={m.tipo === 'PRODUTO' ? 'default' : 'secondary'} className="text-xs">
+                                {m.tipo}
+                              </Badge>
+                            )}
                           </TableCell>
+                          <TableCell className="max-w-32 truncate text-sm" title={m.categoria || ''}>
+                            {m.categoria || '-'}
+                          </TableCell>
+                          <TableCell className="max-w-40 truncate" title={m.cardapio_item_nome}>
+                            {m.cardapio_item_nome}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{m.cardapio_item_id}</TableCell>
+                          <TableCell>
+                            {m.item_porcionado?.nome ? (
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-4 w-4 text-primary" />
+                                {m.item_porcionado.nome}
+                              </span>
+                            ) : (
+                              <Select
+                                value=""
+                                onValueChange={(v) => handleVincularItem(m.id, v)}
+                              >
+                                <SelectTrigger className="h-8 border-dashed border-primary/50">
+                                  <SelectValue placeholder="Vincular item..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {itensPorcionados?.map(item => (
+                                    <SelectItem key={item.id} value={item.id}>
+                                      {item.nome}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">{m.quantidade_consumida}</TableCell>
                           <TableCell>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -571,6 +623,14 @@ export default function ConfigurarCardapioWeb() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Modal de importação */}
+        <ImportarMapeamentoCardapioModal
+          open={importarModalOpen}
+          onOpenChange={setImportarModalOpen}
+          onImport={handleImportarMapeamentos}
+          isLoading={importarMapeamentos.isPending}
+        />
       </div>
     </Layout>
   );
