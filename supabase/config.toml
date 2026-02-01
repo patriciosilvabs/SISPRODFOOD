@@ -85,3 +85,6 @@ verify_jwt = false
 
 [functions.cardapio-web-webhook]
 verify_jwt = false
+
+[functions.cardapio-web-test]
+verify_jwt = false
