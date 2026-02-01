@@ -1,12 +1,11 @@
 import { Button } from '@/components/ui/button';
 import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
-  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers 
+  Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers, Smartphone 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useLongPress } from '@/hooks/useLongPress';
-
 interface ContagemItemCardProps {
   item: {
     id: string;
@@ -36,6 +35,10 @@ interface ContagemItemCardProps {
   // Props para itens lote_masseira
   isLoteMasseira?: boolean;
   lotesNecessarios?: number;
+  // Props para rastreamento Cardápio Web
+  cardapioWebBaixaTotal?: number;
+  cardapioWebUltimaBaixaAt?: string;
+  cardapioWebUltimaBaixaQtd?: number;
 }
 
 export const ContagemItemCard = ({
@@ -61,6 +64,9 @@ export const ContagemItemCard = ({
   onSolicitarProducaoExtra,
   isLoteMasseira = false,
   lotesNecessarios = 0,
+  cardapioWebBaixaTotal,
+  cardapioWebUltimaBaixaAt,
+  cardapioWebUltimaBaixaQtd,
 }: ContagemItemCardProps) => {
   // Hooks para segurar e acelerar os botões
   const decrementHandlers = useLongPress({
@@ -191,6 +197,25 @@ export const ContagemItemCard = ({
             ) : (
               <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
             )}
+          </div>
+        )}
+
+        {/* Coluna Cardápio Web - mostra baixas automáticas */}
+        {cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0 && (
+          <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[100px] 
+                          bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700">
+            <span className="text-[10px] uppercase tracking-wide text-violet-600 dark:text-violet-400 flex items-center gap-1">
+              <Smartphone className="h-3 w-3" />
+              Cardápio Web
+            </span>
+            {cardapioWebUltimaBaixaAt && cardapioWebUltimaBaixaQtd && (
+              <span className="text-sm font-bold text-violet-700 dark:text-violet-300">
+                -{cardapioWebUltimaBaixaQtd} às {format(new Date(cardapioWebUltimaBaixaAt), 'HH:mm')}
+              </span>
+            )}
+            <span className="text-[10px] text-violet-500 dark:text-violet-400">
+              Total: -{cardapioWebBaixaTotal} un hoje
+            </span>
           </div>
         )}
 

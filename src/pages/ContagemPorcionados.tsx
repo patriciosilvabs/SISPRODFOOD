@@ -69,6 +69,10 @@ interface Contagem {
   usuario_nome: string;
   updated_at: string;
   item_nome?: string;
+  // Campos de rastreamento Cardápio Web
+  cardapio_web_baixa_total?: number;
+  cardapio_web_ultima_baixa_at?: string;
+  cardapio_web_ultima_baixa_qtd?: number;
 }
 
 interface EstoqueIdeal {
@@ -983,6 +987,9 @@ const ContagemPorcionados = () => {
                           onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
                           isLoteMasseira={isLoteMasseira}
                           lotesNecessarios={lotesNecessarios}
+                          cardapioWebBaixaTotal={contagem?.cardapio_web_baixa_total}
+                          cardapioWebUltimaBaixaAt={contagem?.cardapio_web_ultima_baixa_at}
+                          cardapioWebUltimaBaixaQtd={contagem?.cardapio_web_ultima_baixa_qtd}
                         />
                       );
                     })}

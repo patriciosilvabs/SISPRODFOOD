@@ -186,12 +186,14 @@ Deno.serve(async (req) => {
         // Update contagem_porcionados - decrement final_sobra
         const { data: contagem, error: contagemError } = await supabase
           .from('contagem_porcionados')
-          .select('id, final_sobra')
+          .select('id, final_sobra, cardapio_web_baixa_total')
           .eq('loja_id', loja_id)
           .eq('item_porcionado_id', mapping.item_porcionado_id)
           .eq('organization_id', organization_id)
           .eq('dia_operacional', diaOperacional)
           .single()
+
+        const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
           // Create new contagem if doesn't exist
@@ -206,6 +208,10 @@ Deno.serve(async (req) => {
               ideal_amanha: 0,
               usuario_id: '00000000-0000-0000-0000-000000000000',
               usuario_nome: 'Cardápio Web',
+              // Campos de rastreamento Cardápio Web
+              cardapio_web_baixa_total: quantidadeTotal,
+              cardapio_web_ultima_baixa_at: agora,
+              cardapio_web_ultima_baixa_qtd: quantidadeTotal,
             })
 
           if (insertError) {
@@ -220,12 +226,17 @@ Deno.serve(async (req) => {
         } else {
           // Update existing contagem
           const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
+          const novoTotalBaixas = ((contagem as any).cardapio_web_baixa_total || 0) + quantidadeTotal
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
               final_sobra: novoFinalSobra,
-              updated_at: new Date().toISOString()
+              updated_at: agora,
+              // Campos de rastreamento Cardápio Web
+              cardapio_web_baixa_total: novoTotalBaixas,
+              cardapio_web_ultima_baixa_at: agora,
+              cardapio_web_ultima_baixa_qtd: quantidadeTotal,
             })
             .eq('id', contagem.id)
 
