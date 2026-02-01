@@ -1,73 +1,76 @@
 
-# Plano: Corrigir Autenticação da API CardápioWeb
+# Plano: Investigar e Corrigir Autenticação CardápioWeb API
 
-## Problema Identificado
+## Situação Atual
 
-A API Key está salva corretamente no banco (`7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNNJwckvE`), mas a chamada para buscar detalhes do pedido retorna **401 Unauthorized**.
+O erro persiste mesmo após a alteração do header. Analisando:
 
-Erro nos logs:
-```
-Erro ao buscar pedido: 401 - {"code":4010,"message":"Token inválido."}
-```
+| Dado | Valor |
+|------|-------|
+| API Key no banco | `7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNNJwckvE` |
+| Webhook token | `DfYVqc4zNpuInstwZUG7zxzT6OQD9DnugQm2zxF5` |
+| Ambiente | sandbox |
+| Endpoint | `https://integracao.sandbox.cardapioweb.com/api/partner/v1/orders/{id}` |
+| Erro | 401 - Token inválido |
 
-## Análise
+## Problema Provável
 
-Baseado na documentação do CardápioWeb que você enviou, o header de autenticação pode variar. Precisamos testar o formato correto.
-
-A documentação mostra que o endpoint é:
-```
-GET https://integracao.sandbox.cardapioweb.com/api/partner/v1/orders/{orderId}
-```
+Baseado na documentação que você mostrou anteriormente, o CardápioWeb pode usar formatos diferentes de autenticação:
+1. `Authorization: {token}` (sem prefixo)
+2. `Authorization: Bearer {token}` (com prefixo Bearer)
+3. `X-API-KEY: {token}` (header customizado)
 
 ## Solução
 
-Modificar a edge function `cardapio-web-webhook` para usar o formato correto de autenticação conforme a documentação do CardápioWeb.
+Modificar a edge function para:
+1. Adicionar log mostrando exatamente qual API Key está sendo usada
+2. Testar o formato `Authorization: Bearer {token}` que é o padrão mais comum em APIs REST
 
 ### Alteração no Arquivo
 
 **Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
 
-**De (linhas 76-82):**
+**Função `fetchOrderDetails` (linhas 68-95):**
+
 ```typescript
-const response = await fetch(url, {
-  method: 'GET',
-  headers: { 
-    'X-API-KEY': apiKey,
-    'Content-Type': 'application/json'
+async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string): Promise<OrderData> {
+  const baseUrl = ambiente === 'sandbox' 
+    ? 'https://integracao.sandbox.cardapioweb.com'
+    : 'https://integracao.cardapioweb.com';
+  
+  const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
+  console.log(`Buscando detalhes do pedido ${orderId} em: ${url}`);
+  console.log(`Usando API Key: ${apiKey.substring(0, 10)}... (${apiKey.length} chars)`);
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 
+      'Authorization': `Bearer ${apiKey}`,  // Adicionando prefixo Bearer
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Erro ao buscar pedido: ${response.status} - ${errorText}`);
+    throw new Error(`Falha ao buscar pedido ${orderId}: ${response.status}`);
   }
-});
+  
+  const data = await response.json();
+  console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
+  
+  return data.order || data;
+}
 ```
 
-**Para:**
-```typescript
-const response = await fetch(url, {
-  method: 'GET',
-  headers: { 
-    'Authorization': apiKey,
-    'Content-Type': 'application/json'
-  }
-});
-```
+## Resumo das Mudanças
 
-Nota: A documentação do CardápioWeb que você mostrou na imagem indica que o header `Authorization` deve conter a API Key diretamente (sem prefixo "Bearer").
+1. Adicionar log para mostrar qual API Key está sendo usada (primeiros 10 chars + tamanho)
+2. Alterar formato de `Authorization: {token}` para `Authorization: Bearer {token}`
 
----
+## Após Implementação
 
-## Detalhes Técnicos
-
-| Aspecto | Atual | Correto (Conforme Doc) |
-|---------|-------|------------------------|
-| Header Name | `X-API-KEY` | `Authorization` |
-| Header Value | `7nSyGq...` | `7nSyGq...` |
-| Formato | `X-API-KEY: {token}` | `Authorization: {token}` |
-
-## Teste Após Correção
-
-1. Deploy automático da edge function
+1. A edge function será deployada automaticamente
 2. Fazer nova venda de teste no CardápioWeb
-3. Verificar nos logs se a busca de detalhes foi bem-sucedida
-4. Confirmar baixa de estoque na contagem
-
-## Resumo
-
-Uma única alteração no header de autenticação de `X-API-KEY` para `Authorization` na função `fetchOrderDetails`.
+3. Verificar logs para confirmar se a API Key correta está sendo usada
+4. Se ainda falhar, testaremos outros formatos baseado na resposta
