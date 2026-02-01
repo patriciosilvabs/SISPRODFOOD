@@ -65,6 +65,7 @@ interface MapeamentoItem {
 const RELEVANT_STATUSES = ["confirmed", "preparing", "ready", "dispatched"];
 
 // Função para buscar detalhes do pedido via API do CardápioWeb
+// Testa múltiplos formatos de autenticação até encontrar um que funcione
 async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string): Promise<OrderData> {
   const baseUrl = ambiente === 'sandbox' 
     ? 'https://integracao.sandbox.cardapioweb.com'
@@ -72,27 +73,40 @@ async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: stri
   
   const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
   console.log(`Buscando detalhes do pedido ${orderId} em: ${url}`);
-  console.log(`Usando API Key: ${apiKey.substring(0, 10)}... (${apiKey.length} chars)`);
+  console.log(`API Key completa para debug: ${apiKey}`);
   
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { 
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+  // Tentar múltiplos formatos de autenticação
+  const authFormats: { name: string; headers: Record<string, string> }[] = [
+    { name: 'Bearer', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' } },
+    { name: 'Auth direto', headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' } },
+    { name: 'X-API-KEY', headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' } },
+    { name: 'api_key header', headers: { 'api_key': apiKey, 'Content-Type': 'application/json' } },
+  ];
+  
+  for (const format of authFormats) {
+    console.log(`Tentando formato: ${format.name}`);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: format.headers
+      });
+      
+      if (response.ok) {
+        console.log(`✅ Formato ${format.name} funcionou!`);
+        const data = await response.json();
+        console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
+        return data.order || data;
+      }
+      
+      const errorText = await response.text();
+      console.log(`❌ Formato ${format.name} falhou: ${response.status} - ${errorText}`);
+    } catch (fetchError) {
+      console.log(`❌ Formato ${format.name} erro de fetch: ${fetchError}`);
     }
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Erro ao buscar pedido: ${response.status} - ${errorText}`);
-    throw new Error(`Falha ao buscar pedido ${orderId}: ${response.status}`);
   }
   
-  const data = await response.json();
-  console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
-  
-  // A API pode retornar { order: {...} } ou diretamente {...}
-  return data.order || data;
+  throw new Error(`Todos os formatos de autenticação falharam para pedido ${orderId}`);
 }
 
 Deno.serve(async (req) => {
