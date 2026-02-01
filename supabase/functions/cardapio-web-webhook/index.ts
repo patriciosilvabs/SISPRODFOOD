@@ -70,15 +70,81 @@ Deno.serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+  // Log all headers for debugging
+  console.log('=== Cardápio Web Webhook Recebido ===')
+  console.log('Method:', req.method)
+  console.log('URL:', req.url)
+  
+  const headersObj: Record<string, string> = {}
+  req.headers.forEach((value, key) => {
+    headersObj[key] = key.toLowerCase().includes('key') || key.toLowerCase().includes('auth') 
+      ? value.substring(0, 10) + '...' 
+      : value
+  })
+  console.log('Headers:', JSON.stringify(headersObj, null, 2))
+
   try {
-    // 1. Get API Key from header
-    const apiKey = req.headers.get('X-API-KEY')
+    // Clone request to read body for logging and token extraction
+    const rawBody = await req.text()
+    console.log('Body recebido:', rawBody.substring(0, 500))
+    
+    // 1. Try to get API Key from multiple sources
+    let apiKey = req.headers.get('X-API-KEY') || req.headers.get('x-api-key')
+    
+    // Try Authorization header (Bearer token)
+    if (!apiKey) {
+      const authHeader = req.headers.get('Authorization') || req.headers.get('authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        apiKey = authHeader.substring(7)
+        console.log('API Key encontrada no Authorization header')
+      }
+    }
+    
+    // Try query parameter
+    if (!apiKey) {
+      const url = new URL(req.url)
+      apiKey = url.searchParams.get('token') || url.searchParams.get('api_key') || url.searchParams.get('apiKey')
+      if (apiKey) {
+        console.log('API Key encontrada na query string')
+      }
+    }
+    
+    // Try to extract from body
+    if (!apiKey && rawBody) {
+      try {
+        const bodyJson = JSON.parse(rawBody)
+        apiKey = bodyJson.token || bodyJson.api_key || bodyJson.apiKey
+        if (apiKey) {
+          console.log('API Key encontrada no body')
+        }
+      } catch {
+        // Body is not JSON, ignore
+      }
+    }
     
     if (!apiKey) {
-      console.log('Webhook recebido sem X-API-KEY')
+      console.log('❌ Webhook recebido sem API Key em nenhuma fonte')
+      console.log('Headers disponíveis:', Object.keys(headersObj).join(', '))
       return new Response(
-        JSON.stringify({ error: 'API Key not provided' }),
+        JSON.stringify({ 
+          error: 'API Key not provided',
+          hint: 'Send token via X-API-KEY header, Authorization Bearer, query param (token), or in body (token)'
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
+    console.log('✅ API Key encontrada:', apiKey.substring(0, 10) + '...')
+    
+    // Parse the body we already read
+    let payload: OrderPayload
+    try {
+      payload = JSON.parse(rawBody)
+    } catch {
+      console.error('Erro ao parsear body como JSON')
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -101,8 +167,6 @@ Deno.serve(async (req) => {
     const { organization_id, loja_id } = integracao as IntegracaoCardapioWeb
     console.log(`Webhook recebido para organização ${organization_id}, loja ${loja_id}`)
 
-    // 3. Parse webhook payload
-    const payload: OrderPayload = await req.json()
     console.log('Payload recebido:', JSON.stringify(payload, null, 2))
 
     // 4. Handle different events
