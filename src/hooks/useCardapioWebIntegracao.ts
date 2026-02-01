@@ -317,7 +317,7 @@ export function useCardapioWebIntegracao() {
     }
   });
 
-  // Mutation: Import mappings in batch
+  // Mutation: Import mappings in batch (com upsert para evitar duplicatas)
   const importarMapeamentos = useMutation({
     mutationFn: async (items: ImportarMapeamentoItem[]) => {
       if (!organizationId) throw new Error('Organização não encontrada');
@@ -333,9 +333,13 @@ export function useCardapioWebIntegracao() {
         ativo: true,
       }));
 
+      // Usar upsert para evitar duplicatas - se já existir, atualiza nome/tipo/categoria
       const { data, error } = await supabase
         .from('mapeamento_cardapio_itens')
-        .insert(mappings)
+        .upsert(mappings, {
+          onConflict: 'organization_id,cardapio_item_id',
+          ignoreDuplicates: false
+        })
         .select();
       
       if (error) throw error;
@@ -343,7 +347,7 @@ export function useCardapioWebIntegracao() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-      toast.success(`${data.length} itens importados com sucesso!`);
+      toast.success(`${data.length} itens importados/atualizados com sucesso!`);
     },
     onError: (error) => {
       console.error('Erro ao importar mapeamentos:', error);
