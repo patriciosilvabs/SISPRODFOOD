@@ -116,7 +116,7 @@ async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: stri
         if (response.ok) {
           console.log(`  ✅ SUCESSO! Ambiente ${amb.name} com formato ${format.name}`);
           const data = await response.json();
-          console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 500));
+          console.log('Detalhes do pedido recebidos:', JSON.stringify(data, null, 2).substring(0, 5000));
           return data.order || data;
         }
         
@@ -402,6 +402,19 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Processando ${orderData.items.length} itens do pedido ${orderId}`)
+    
+    // Log detalhado de cada item para diagnóstico
+    for (const item of orderData.items) {
+      console.log(`📦 Item Principal: id=${item.item_id}, nome="${item.name}", qty=${item.quantity}`)
+      console.log(`   Complements: ${item.complements ? item.complements.length : 0} itens`)
+      if (item.complements && item.complements.length > 0) {
+        for (const c of item.complements) {
+          console.log(`   ↳ Complement: "${c.name}" (id=${c.id || 'N/A'}, item_id=${c.item_id || 'N/A'}, code=${c.code || 'N/A'})`)
+        }
+      } else {
+        console.log(`   ⚠️ Nenhum complemento encontrado para este item`)
+      }
+    }
 
     // 6. Get mappings for this organization
     const { data: mapeamentos, error: mapError } = await supabase
