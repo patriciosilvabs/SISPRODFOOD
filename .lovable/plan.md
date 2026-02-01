@@ -1,74 +1,54 @@
 
 
-# Plano: Adicionar Teste Direto com Ambiente de Produção
+# Plano: Verificar e Corrigir Interface de Mapeamento
 
-## Diagnóstico Atual
+## Status Atual
 
-| Item | Status |
-|------|--------|
-| Webhook Token | ✅ Funcionando (eventos chegam) |
-| API Key Sandbox | ❌ 401 em todos os formatos |
-| Ambiente configurado | sandbox |
+| Componente | Status |
+|------------|--------|
+| Webhook | ✅ Funcionando |
+| API CardápioWeb | ✅ Funcionando (Produção + X-API-KEY) |
+| Fallback de ambiente | ✅ Implementado |
+| Coluna na contagem | ✅ Código existe |
+| **Mapeamentos** | ❌ **305 itens sem vínculo** |
 
-## Hipótese Principal
+## O Problema Real
 
-A API Key pode estar vinculada ao ambiente de **produção** no CardápioWeb, mas estamos tentando usar no endpoint de **sandbox**.
-
-## Solução Proposta
-
-Modificar a edge function para:
-
-1. **Tentar AMBOS os ambientes** quando a autenticação falhar
-2. Primeiro tenta o ambiente configurado (sandbox)
-3. Se falhar, automaticamente tenta o outro ambiente (produção)
-4. Registra qual ambiente funcionou para debug
-
-### Alteração no Arquivo
-
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
-
-**Modificação na função `fetchOrderDetails`:**
-
-```typescript
-async function fetchOrderDetails(orderId: number, apiKey: string, ambiente: string): Promise<OrderData> {
-  // Tentar primeiro o ambiente configurado, depois o outro
-  const ambientes = [
-    ambiente === 'sandbox' 
-      ? 'https://integracao.sandbox.cardapioweb.com'
-      : 'https://integracao.cardapioweb.com',
-    // Fallback para o outro ambiente
-    ambiente === 'sandbox' 
-      ? 'https://integracao.cardapioweb.com'  // tenta produção
-      : 'https://integracao.sandbox.cardapioweb.com'  // tenta sandbox
-  ];
-  
-  const authFormats = [
-    { name: 'X-API-KEY', headers: { 'X-API-KEY': apiKey } },
-    { name: 'Bearer', headers: { 'Authorization': `Bearer ${apiKey}` } },
-    { name: 'Auth direto', headers: { 'Authorization': apiKey } },
-  ];
-  
-  for (const baseUrl of ambientes) {
-    const url = `${baseUrl}/api/partner/v1/orders/${orderId}`;
-    console.log(`Tentando ambiente: ${baseUrl}`);
-    
-    for (const format of authFormats) {
-      // ... tentativas de autenticação
-    }
-  }
-}
+Os logs mostram claramente:
+```
+"Mapeamento para item 2791009 não tem item_porcionado_id configurado"
 ```
 
-## Alternativa: Verificação Manual
+Dos 305+ itens importados do CardápioWeb, **apenas 1** tem vínculo configurado:
+- "CALABRESA (G)" → vinculado ao item `5071a067-...`
 
-Antes de implementar, você pode verificar rapidamente:
+Todos os outros itens como "Calabresa (Grande)", "Combo: Calabresa + Refri", etc. estão com `item_porcionado_id = null`.
 
-1. Acesse o painel do CardápioWeb
-2. Verifique se você está no ambiente **SANDBOX** ou **PRODUÇÃO**
-3. Confirme se a API Key foi gerada nesse mesmo ambiente
-4. Se necessário, mude o ambiente no nosso sistema para "produção"
+## Solução
 
-## Resumo
+### Passo 1: Você precisa configurar os vínculos
 
-Esta alteração vai testar automaticamente ambos os ambientes do CardápioWeb, resolvendo o problema caso a chave seja de um ambiente diferente do configurado.
+1. Acesse a aba **Mapeamento** na tela de integração do Cardápio Web
+2. Para cada produto que deseja rastrear estoque:
+   - Clique no item do cardápio
+   - Selecione o **item porcionado do sistema** correspondente
+   - Defina a **quantidade consumida** (ex: 1 pizza = 1 bolinha)
+3. Salve o vínculo
+
+### Passo 2: Verificar Interface de Mapeamento (técnico)
+
+Vou verificar se a interface de mapeamento permite fazer esse vínculo de forma adequada. Se não permitir ou tiver problemas, farei os ajustes necessários.
+
+## Arquivos a Verificar
+
+1. `src/pages/ConfigurarCardapioWeb.tsx` - Página principal de configuração
+2. Componentes de mapeamento relacionados
+3. Modal de vínculo de itens
+
+## Resultado Esperado
+
+Após configurar os vínculos:
+1. Uma venda no CardápioWeb vai baixar automaticamente o estoque
+2. A coluna "Cardápio Web" vai aparecer mostrando: `-1 às 14:30` e `Total: -5 un hoje`
+3. O `final_sobra` será decrementado automaticamente
 
