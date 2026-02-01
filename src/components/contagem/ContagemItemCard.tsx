@@ -131,42 +131,47 @@ export const ContagemItemCard = ({
 
       {/* Controles de Sobra e Peso */}
       <div className="flex items-center gap-4 flex-wrap">
-        {/* Controle de Quantidade */}
-        <div className="flex items-center">
-          <Button 
-            type="button"
-            variant="default" 
-            size="icon" 
-            className="h-12 w-12 rounded-l-xl rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
-            {...decrementHandlers}
-          >
-            <Minus className="h-5 w-5" />
-          </Button>
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={finalSobra}
-            onChange={(e) => {
-              // Apenas números positivos - sobra física não pode ser negativa
-              const val = e.target.value.replace(/\D/g, '');
-              onSobraChange(val === '' ? 0 : parseInt(val, 10));
-            }}
-            className={`h-12 w-16 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
-              isItemNaoPreenchido 
-                ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
-                : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
-            }`}
-          />
-          <Button 
-            type="button"
-            variant="default" 
-            size="icon" 
-            className="h-12 w-12 rounded-r-xl rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
-            {...incrementHandlers}
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
+      {/* Controle de Quantidade com Label */}
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-wide font-medium mb-1">
+            Sobra
+          </span>
+          <div className="flex items-center">
+            <Button 
+              type="button"
+              variant="default" 
+              size="icon" 
+              className="h-12 w-12 rounded-l-xl rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+              {...decrementHandlers}
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={finalSobra}
+              onChange={(e) => {
+                // Apenas números positivos - sobra física não pode ser negativa
+                const val = e.target.value.replace(/\D/g, '');
+                onSobraChange(val === '' ? 0 : parseInt(val, 10));
+              }}
+              className={`h-12 w-16 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
+                isItemNaoPreenchido 
+                  ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
+                  : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
+              }`}
+            />
+            <Button 
+              type="button"
+              variant="default" 
+              size="icon" 
+              className="h-12 w-12 rounded-r-xl rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+              {...incrementHandlers}
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Campo de Peso */}
