@@ -89,9 +89,22 @@ Deno.serve(async (req) => {
     console.log('Body recebido:', rawBody.substring(0, 500))
     
     // 1. Try to get API Key from multiple sources
-    let apiKey = req.headers.get('X-API-KEY') || req.headers.get('x-api-key')
+    // Cardápio Web sends token via x-webhook-token header
+    let apiKey = req.headers.get('x-webhook-token') || req.headers.get('X-Webhook-Token')
     
-    // Try Authorization header (Bearer token)
+    if (apiKey) {
+      console.log('✅ API Key encontrada no x-webhook-token header')
+    }
+    
+    // Fallback: Try X-API-KEY header
+    if (!apiKey) {
+      apiKey = req.headers.get('X-API-KEY') || req.headers.get('x-api-key')
+      if (apiKey) {
+        console.log('API Key encontrada no X-API-KEY header')
+      }
+    }
+    
+    // Fallback: Try Authorization header (Bearer token)
     if (!apiKey) {
       const authHeader = req.headers.get('Authorization') || req.headers.get('authorization')
       if (authHeader?.startsWith('Bearer ')) {
