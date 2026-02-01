@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -32,6 +32,22 @@ interface MapeamentoCardapioItem {
     id: string;
     nome: string;
   } | null;
+}
+
+// Interface for grouped mappings (one product can have multiple linked items)
+export interface VinculoItem {
+  id: string;
+  item_porcionado_id: string | null;
+  item_porcionado_nome: string | null;
+  quantidade_consumida: number;
+}
+
+export interface MapeamentoCardapioItemAgrupado {
+  cardapio_item_id: number;
+  cardapio_item_nome: string;
+  tipo: string | null;
+  categoria: string | null;
+  vinculos: VinculoItem[];
 }
 
 export interface ImportarMapeamentoItem {
@@ -104,6 +120,34 @@ export function useCardapioWebIntegracao() {
     },
     enabled: !!organizationId,
   });
+
+  // Group mappings by cardapio_item_id for UI display (one product can have multiple linked items)
+  const mapeamentosAgrupados = useMemo(() => {
+    if (!mapeamentos || mapeamentos.length === 0) return [];
+    
+    const grouped = new Map<number, MapeamentoCardapioItemAgrupado>();
+    
+    for (const m of mapeamentos) {
+      if (!grouped.has(m.cardapio_item_id)) {
+        grouped.set(m.cardapio_item_id, {
+          cardapio_item_id: m.cardapio_item_id,
+          cardapio_item_nome: m.cardapio_item_nome,
+          tipo: m.tipo || null,
+          categoria: m.categoria || null,
+          vinculos: []
+        });
+      }
+      
+      grouped.get(m.cardapio_item_id)!.vinculos.push({
+        id: m.id,
+        item_porcionado_id: m.item_porcionado_id,
+        item_porcionado_nome: m.item_porcionado?.nome || null,
+        quantidade_consumida: m.quantidade_consumida
+      });
+    }
+    
+    return Array.from(grouped.values());
+  }, [mapeamentos]);
 
   // Query: Get logs (last 50)
   const {
@@ -317,7 +361,8 @@ export function useCardapioWebIntegracao() {
     }
   });
 
-  // Mutation: Import mappings in batch (com upsert para evitar duplicatas)
+  // Mutation: Import mappings in batch (creates base records without item_porcionado_id)
+  // Using insert with conflict handling - if product already exists, we skip it
   const importarMapeamentos = useMutation({
     mutationFn: async (items: ImportarMapeamentoItem[]) => {
       if (!organizationId) throw new Error('Organização não encontrada');
@@ -333,11 +378,12 @@ export function useCardapioWebIntegracao() {
         ativo: true,
       }));
 
-      // Usar upsert para evitar duplicatas - se já existir, atualiza nome/tipo/categoria
+      // Use upsert with new constraint (org + item_cardapio + item_porc)
+      // Since item_porcionado_id is null, this will create new base records
       const { data, error } = await supabase
         .from('mapeamento_cardapio_itens')
         .upsert(mappings, {
-          onConflict: 'organization_id,cardapio_item_id',
+          onConflict: 'organization_id,cardapio_item_id,item_porcionado_id',
           ignoreDuplicates: false
         })
         .select();
@@ -352,6 +398,57 @@ export function useCardapioWebIntegracao() {
     onError: (error) => {
       console.error('Erro ao importar mapeamentos:', error);
       toast.error('Erro ao importar mapeamentos');
+    }
+  });
+
+  // Mutation: Add additional item link to existing product (for multiple items per product)
+  const adicionarVinculo = useMutation({
+    mutationFn: async ({
+      cardapio_item_id,
+      cardapio_item_nome,
+      tipo,
+      categoria,
+      item_porcionado_id,
+      quantidade_consumida = 1
+    }: {
+      cardapio_item_id: number;
+      cardapio_item_nome: string;
+      tipo: string | null;
+      categoria: string | null;
+      item_porcionado_id: string;
+      quantidade_consumida?: number;
+    }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const { data, error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .insert({
+          organization_id: organizationId,
+          cardapio_item_id,
+          cardapio_item_nome,
+          tipo,
+          categoria,
+          item_porcionado_id,
+          quantidade_consumida,
+          ativo: true
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Item vinculado com sucesso!');
+    },
+    onError: (error: Error) => {
+      console.error('Erro ao adicionar vínculo:', error);
+      if (error.message?.includes('unique') || error.message?.includes('duplicate')) {
+        toast.error('Este item já está vinculado a este produto');
+      } else {
+        toast.error('Erro ao adicionar vínculo');
+      }
     }
   });
 
@@ -385,6 +482,7 @@ export function useCardapioWebIntegracao() {
     // Data
     integracao,
     mapeamentos: mapeamentos || [],
+    mapeamentosAgrupados,
     logs: logs || [],
     
     // Loading states
@@ -406,6 +504,7 @@ export function useCardapioWebIntegracao() {
     deleteMapeamento,
     importarMapeamentos,
     vincularItemPorcionado,
+    adicionarVinculo,
     
     // Utils
     generateToken,
