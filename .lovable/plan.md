@@ -1,61 +1,73 @@
-# Plano: Corrigir Integração CardápioWeb - Busca de Detalhes via API
 
-## ✅ IMPLEMENTADO
+# Plano: Corrigir Autenticação da API CardápioWeb
 
 ## Problema Identificado
 
-O CardápioWeb envia apenas uma **notificação** com o `order_id`, não os detalhes completos do pedido. Nossa edge function espera receber `payload.order.items`, mas o payload real é:
+A API Key está salva corretamente no banco (`7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNNJwckvE`), mas a chamada para buscar detalhes do pedido retorna **401 Unauthorized**.
 
-```json
-{
-  "event_id": "1pry7dk9gcgqmiqe7n8",
-  "event_type": "ORDER_CREATED",
-  "merchant_id": 8268,
-  "order_id": 179546164,
-  "order_status": "confirmed",
-  "created_at": "2026-02-01T14:22:26-03:00"
-}
+Erro nos logs:
+```
+Erro ao buscar pedido: 401 - {"code":4010,"message":"Token inválido."}
 ```
 
-## Solução Implementada
+## Análise
 
-1. ✅ **Migração de Banco de Dados**: Adicionada coluna `cardapio_api_key` na tabela `integracoes_cardapio_web`
+Baseado na documentação do CardápioWeb que você enviou, o header de autenticação pode variar. Precisamos testar o formato correto.
 
-2. ✅ **Edge Function Atualizada** (`cardapio-web-webhook`):
-   - Nova função `fetchOrderDetails()` para buscar detalhes do pedido via API
-   - Lógica para detectar se payload tem items ou precisa buscar
-   - Suporte para ambientes sandbox e produção
-   - Logging detalhado para debug
-
-3. ✅ **Hook Atualizado** (`useCardapioWebIntegracao.ts`):
-   - Interface `IntegracaoCardapioWeb` inclui `cardapio_api_key`
-   - Nova mutation `updateCardapioApiKey` para salvar a API Key
-
-4. ✅ **Interface de Configuração** (`LojaIntegracaoCard.tsx`):
-   - Campo para configurar API Key do CardápioWeb
-   - Botão de salvar com feedback visual
-   - Texto explicativo
-
-5. ✅ **Página de Configuração** (`ConfigurarCardapioWeb.tsx`):
-   - Prop `onUpdateApiKey` passada ao componente
-
-## Fluxo Corrigido
-
-```text
-1. CardápioWeb envia notificação: { event_type: "ORDER_CREATED", order_id: 12345 }
-2. Webhook valida token → Encontra integração ativa
-3. Detecta que payload não tem items → Busca detalhes via API
-4. GET https://integracao.cardapioweb.com/api/partner/v1/orders/12345
-5. Recebe items do pedido → Processa baixa de estoque
-6. Atualiza contagem_porcionados com dados de rastreamento
+A documentação mostra que o endpoint é:
+```
+GET https://integracao.sandbox.cardapioweb.com/api/partner/v1/orders/{orderId}
 ```
 
-## Configuração Necessária pelo Usuário
+## Solução
 
-Após a implementação, o usuário precisa:
+Modificar a edge function `cardapio-web-webhook` para usar o formato correto de autenticação conforme a documentação do CardápioWeb.
 
-1. Acessar a tela de Configuração do Cardápio Web
-2. Informar a **API Key do CardápioWeb** (obtida no painel do CardápioWeb)
-3. Clicar no botão de salvar
+### Alteração no Arquivo
 
-Sem essa API Key, não é possível buscar os detalhes dos pedidos.
+**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+
+**De (linhas 76-82):**
+```typescript
+const response = await fetch(url, {
+  method: 'GET',
+  headers: { 
+    'X-API-KEY': apiKey,
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+**Para:**
+```typescript
+const response = await fetch(url, {
+  method: 'GET',
+  headers: { 
+    'Authorization': apiKey,
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+Nota: A documentação do CardápioWeb que você mostrou na imagem indica que o header `Authorization` deve conter a API Key diretamente (sem prefixo "Bearer").
+
+---
+
+## Detalhes Técnicos
+
+| Aspecto | Atual | Correto (Conforme Doc) |
+|---------|-------|------------------------|
+| Header Name | `X-API-KEY` | `Authorization` |
+| Header Value | `7nSyGq...` | `7nSyGq...` |
+| Formato | `X-API-KEY: {token}` | `Authorization: {token}` |
+
+## Teste Após Correção
+
+1. Deploy automático da edge function
+2. Fazer nova venda de teste no CardápioWeb
+3. Verificar nos logs se a busca de detalhes foi bem-sucedida
+4. Confirmar baixa de estoque na contagem
+
+## Resumo
+
+Uma única alteração no header de autenticação de `X-API-KEY` para `Authorization` na função `fetchOrderDetails`.
