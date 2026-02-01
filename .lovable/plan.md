@@ -1,146 +1,131 @@
 
 
-# Plano: Botão Testar Conexão com API do Cardápio Web
+# Plano: Coluna "Cardápio Web" na Contagem de Porcionados
 
 ## Objetivo
 
-Adicionar um botão "Testar Conexão" em cada card de integração para verificar se o token configurado está funcionando corretamente com a Edge Function.
+Adicionar uma nova coluna no card de contagem que mostra quando e quanto o Cardápio Web movimentou o estoque de cada item, permitindo que os operadores da loja saibam exatamente o horário que o sistema automático fez a baixa.
 
-## Arquitetura do Teste
+## Diagrama do Layout Proposto
 
-O teste enviará uma requisição simulada para a Edge Function usando o token da loja. A Edge Function:
-1. Validará o token
-2. Retornará sucesso se o token estiver ativo e válido
-3. Retornará erro se o token for inválido ou inativo
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ UNIDADE ALEIXO                                                                                              │
+│ ✓ MASSA - PORCIONADO                                                                                        │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                             │
+│  [- 0 +]  [Peso: 0 g]  ┌─────────────────────────┐  [A PRODUZIR]  [LOTES]  [Extra]                         │
+│                        │   📱 Cardápio Web        │      100          2                                     │
+│                        │   -15 un às 14:32       │                                                          │
+│                        │   Total: -23 un hoje    │                                                          │
+│                        └─────────────────────────┘                                                          │
+│                                                                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Alterações Necessárias
 
-### Parte 1: Criar Edge Function de Teste
+### Parte 1: Adicionar Campos no Banco de Dados
 
-**Arquivo:** `supabase/functions/cardapio-web-test/index.ts`
+Adicionar 3 novas colunas na tabela `contagem_porcionados`:
 
-Uma Edge Function leve que apenas valida o token sem processar pedidos:
+```sql
+-- Quantidade total baixada pelo Cardápio Web hoje
+cardapio_web_baixa_total INTEGER DEFAULT 0;
+
+-- Horário da última baixa automática
+cardapio_web_ultima_baixa_at TIMESTAMPTZ;
+
+-- Quantidade da última baixa individual
+cardapio_web_ultima_baixa_qtd INTEGER;
+```
+
+### Parte 2: Atualizar Edge Function do Webhook
+
+**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+
+Modificar o UPDATE para gravar os novos campos:
 
 ```typescript
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+// Antes
+const { error: updateError } = await supabase
+  .from('contagem_porcionados')
+  .update({ 
+    final_sobra: novoFinalSobra,
+    updated_at: new Date().toISOString()
+  })
+  .eq('id', contagem.id)
 
-  const apiKey = req.headers.get('X-API-KEY')
-  
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Token não fornecido' }),
-      { status: 401 }
-    )
-  }
+// Depois
+const agora = new Date().toISOString();
+const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
 
-  // Validar token no banco
-  const { data: integracao } = await supabase
-    .from('integracoes_cardapio_web')
-    .select('id, loja_id, ambiente, ativo')
-    .eq('token', apiKey)
-    .single()
-
-  if (!integracao) {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Token inválido' }),
-      { status: 401 }
-    )
-  }
-
-  if (!integracao.ativo) {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Integração inativa' }),
-      { status: 403 }
-    )
-  }
-
-  return new Response(
-    JSON.stringify({ 
-      success: true, 
-      message: 'Conexão validada com sucesso!',
-      ambiente: integracao.ambiente
-    }),
-    { status: 200 }
-  )
-})
+const { error: updateError } = await supabase
+  .from('contagem_porcionados')
+  .update({ 
+    final_sobra: novoFinalSobra,
+    updated_at: agora,
+    // Novos campos para rastreamento
+    cardapio_web_baixa_total: novoTotalBaixas,
+    cardapio_web_ultima_baixa_at: agora,
+    cardapio_web_ultima_baixa_qtd: quantidadeTotal
+  })
+  .eq('id', contagem.id)
 ```
 
-### Parte 2: Adicionar Mutação de Teste no Hook
+### Parte 3: Atualizar Interface Contagem
 
-**Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
+**Arquivo:** `src/components/contagem/ContagemItemCard.tsx`
 
-Adicionar uma mutação para testar a conexão:
+Adicionar nova coluna visual com as informações do Cardápio Web:
 
 ```typescript
-const testarConexao = useMutation({
-  mutationFn: async (token: string) => {
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cardapio-web-test`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-API-KEY': token,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Falha na conexão');
-    }
-    
-    return data;
-  }
-});
+// Novas props
+interface ContagemItemCardProps {
+  // ... props existentes
+  cardapioWebBaixaTotal?: number;
+  cardapioWebUltimaBaixaAt?: string;
+  cardapioWebUltimaBaixaQtd?: number;
+}
+
+// Nova coluna no card
+{(cardapioWebBaixaTotal && cardapioWebBaixaTotal !== 0) && (
+  <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[100px] 
+                  bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700">
+    <span className="text-[10px] uppercase tracking-wide text-violet-600 dark:text-violet-400 flex items-center gap-1">
+      <Smartphone className="h-3 w-3" />
+      Cardápio Web
+    </span>
+    <span className="text-sm font-bold text-violet-700 dark:text-violet-300">
+      -{cardapioWebUltimaBaixaQtd} às {format(cardapioWebUltimaBaixaAt, 'HH:mm')}
+    </span>
+    <span className="text-[10px] text-violet-500">
+      Total: -{cardapioWebBaixaTotal} un hoje
+    </span>
+  </div>
+)}
 ```
 
-### Parte 3: Adicionar Botão no Card
+### Parte 4: Atualizar Página de Contagem
 
-**Arquivo:** `src/components/cardapio-web/LojaIntegracaoCard.tsx`
+**Arquivo:** `src/pages/ContagemPorcionados.tsx`
 
-Adicionar um botão "Testar Conexão" na seção de credenciais:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ UNIDADE ALEIXO                                        [Ativa] ⚫   │
-│ Código: 8268  |  Ambiente: Sandbox                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│ URL do Webhook: https://...../cardapio-web-webhook      [📋]       │
-│ Token (X-API-KEY): ******** [👁] [📋] [🔄]                        │
-│                                                                     │
-│     [🔌 Testar Conexão]    ← NOVO BOTÃO                           │
-│                                                                     │
-│     ✅ Conexão validada! (ou ❌ Erro: Token inválido)              │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-Lógica do botão:
-- Estado `isTesting` para mostrar loading
-- Estado `testResult` para exibir resultado
-- Feedback visual: verde para sucesso, vermelho para erro
+Passar os novos dados para o componente:
 
 ```typescript
-const [testResult, setTestResult] = useState<{
-  success: boolean;
-  message: string;
-} | null>(null);
+// Na interface Contagem, adicionar:
+interface Contagem {
+  // ... campos existentes
+  cardapio_web_baixa_total?: number;
+  cardapio_web_ultima_baixa_at?: string;
+  cardapio_web_ultima_baixa_qtd?: number;
+}
 
-const handleTestConnection = async () => {
-  setTestResult(null);
-  try {
-    const result = await onTestConnection(integracao.token);
-    setTestResult({ success: true, message: result.message });
-  } catch (error) {
-    setTestResult({ 
-      success: false, 
-      message: error instanceof Error ? error.message : 'Erro desconhecido' 
-    });
-  }
-};
+// Na query SELECT, adicionar os novos campos
+const { data: contagensData } = await supabase
+  .from('contagem_porcionados')
+  .select('*, cardapio_web_baixa_total, cardapio_web_ultima_baixa_at, cardapio_web_ultima_baixa_qtd')
+  .eq('dia_operacional', today)
 ```
 
 ---
@@ -149,29 +134,28 @@ const handleTestConnection = async () => {
 
 | Componente | Alteração |
 |------------|-----------|
-| **supabase/functions/cardapio-web-test** | Nova Edge Function para validar token |
-| **supabase/config.toml** | Registrar nova função |
-| **useCardapioWebIntegracao.ts** | Adicionar `testarConexao` mutation |
-| **LojaIntegracaoCard.tsx** | Adicionar botão e feedback visual |
-| **ConfigurarCardapioWeb.tsx** | Passar prop `onTestConnection` |
+| **Banco de Dados** | 3 novas colunas: `cardapio_web_baixa_total`, `cardapio_web_ultima_baixa_at`, `cardapio_web_ultima_baixa_qtd` |
+| **cardapio-web-webhook** | Gravar horário e quantidade de cada baixa automática |
+| **ContagemItemCard.tsx** | Nova coluna visual roxa "Cardápio Web" |
+| **ContagemPorcionados.tsx** | Carregar e passar os novos dados para os cards |
 
 ---
 
-## Fluxo de Teste
+## Comportamento Esperado
 
-1. Usuário clica em "Testar Conexão"
-2. Frontend chama Edge Function com o token
-3. Edge Function valida token no banco
-4. Retorna sucesso/erro
-5. Card exibe feedback visual:
-   - ✅ **Verde**: "Conexão validada com sucesso!"
-   - ❌ **Vermelho**: "Erro: [mensagem]"
+1. **Cardápio Web recebe pedido** → Webhook processa
+2. **Webhook decrementa estoque** → Grava horário e quantidade nos novos campos
+3. **Operador visualiza contagem** → Vê coluna "Cardápio Web" mostrando:
+   - Quantidade da última baixa (ex: `-5 às 14:32`)
+   - Total baixado no dia (ex: `Total: -23 un hoje`)
+4. **Coluna só aparece** quando há movimentação do Cardápio Web (valor diferente de zero)
 
 ---
 
 ## Benefícios
 
-- **Validação imediata**: Confirma se as credenciais estão corretas
-- **Debug fácil**: Identifica problemas antes de configurar no Cardápio Web
-- **Feedback claro**: Usuário sabe exatamente se a integração está funcionando
+- Rastreabilidade completa das baixas automáticas
+- Horário exato de cada movimentação
+- Separação clara entre ajustes manuais e automáticos
+- Auditoria facilitada para o gestor
 
