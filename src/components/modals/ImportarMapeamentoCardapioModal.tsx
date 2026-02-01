@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Upload, FileText, AlertCircle, Check } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,42 @@ function sanitizeText(text: string): string {
     .trim();
 }
 
+// Converte strings de números (incluindo notação científica) para inteiro
+function parseNumericCode(value: string): number {
+  const sanitized = sanitizeText(value);
+  
+  // Se contém notação científica, usar parseFloat primeiro
+  if (sanitized.includes('e') || sanitized.includes('E')) {
+    const num = parseFloat(sanitized);
+    if (!isNaN(num) && isFinite(num)) {
+      // Para números muito grandes, usar BigInt para preservar precisão
+      try {
+        // Converter para string sem notação científica e depois para número
+        const bigIntValue = BigInt(Math.floor(num));
+        // Se o número for maior que Number.MAX_SAFE_INTEGER, retornar como number mesmo
+        // O banco de dados bigint suporta esses valores
+        return Number(bigIntValue);
+      } catch {
+        return Math.floor(num);
+      }
+    }
+  }
+  
+  // Tentar parsear como inteiro removendo não-dígitos
+  const digits = sanitized.replace(/[^\d]/g, '');
+  if (digits) {
+    // Para strings muito longas, usar BigInt
+    try {
+      const bigIntValue = BigInt(digits);
+      return Number(bigIntValue);
+    } catch {
+      return parseInt(digits, 10);
+    }
+  }
+  
+  return NaN;
+}
+
 function parseCSV(content: string): ParsedCardapioItem[] {
   const sanitizedContent = sanitizeText(content);
   const lines = sanitizedContent.split('\n').filter(line => line.trim());
@@ -68,12 +105,55 @@ function parseCSV(content: string): ParsedCardapioItem[] {
       const tipo = sanitizeText(parts[0] || '');
       const categoria = sanitizeText(parts[1] || '');
       const nome = sanitizeText(parts[2] || '');
-      const codigoStr = sanitizeText(parts[3] || '');
-      const codigo_interno = parseInt(codigoStr.replace(/\D/g, ''), 10);
+      const codigoStr = parts[3] || '';
+      const codigo_interno = parseNumericCode(codigoStr);
 
       return { tipo, categoria, nome, codigo_interno };
     })
-    .filter(item => item.codigo_interno && item.nome);
+    .filter(item => !isNaN(item.codigo_interno) && item.codigo_interno > 0 && item.nome);
+}
+
+async function parseExcel(file: File): Promise<ParsedCardapioItem[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Pegar primeira planilha
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { 
+          header: 1,
+          raw: false // Força strings para evitar notação científica
+        });
+        
+        if (jsonData.length < 2) {
+          resolve([]);
+          return;
+        }
+        
+        // Pular header (primeira linha)
+        const items = (jsonData as unknown[][]).slice(1)
+          .map(row => {
+            const tipo = sanitizeText(String(row[0] ?? ''));
+            const categoria = sanitizeText(String(row[1] ?? ''));
+            const nome = sanitizeText(String(row[2] ?? ''));
+            const codigoStr = String(row[3] ?? '');
+            const codigo_interno = parseNumericCode(codigoStr);
+            
+            return { tipo, categoria, nome, codigo_interno };
+          })
+          .filter(item => !isNaN(item.codigo_interno) && item.codigo_interno > 0 && item.nome);
+        
+        resolve(items);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 export function ImportarMapeamentoCardapioModal({
@@ -86,34 +166,40 @@ export function ImportarMapeamentoCardapioModal({
   const [fileName, setFileName] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileRead = useCallback((file: File) => {
+  const handleFileRead = useCallback(async (file: File) => {
     setError('');
     setFileName(file.name);
+    setIsProcessing(true);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const items = parseCSV(content);
-        
-        if (items.length === 0) {
-          setError('Nenhum item válido encontrado no arquivo. Verifique o formato.');
-          setParsedItems([]);
-        } else {
-          setParsedItems(items);
-        }
-      } catch (err) {
-        setError('Erro ao processar o arquivo. Verifique o formato.');
-        setParsedItems([]);
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      let items: ParsedCardapioItem[];
+      
+      if (extension === 'xls' || extension === 'xlsx') {
+        // Arquivo Excel
+        items = await parseExcel(file);
+      } else {
+        // Arquivo CSV/TXT
+        const content = await file.text();
+        items = parseCSV(content);
       }
-    };
-    reader.onerror = () => {
-      setError('Erro ao ler o arquivo.');
+      
+      if (items.length === 0) {
+        setError('Nenhum item válido encontrado no arquivo. Verifique o formato.');
+        setParsedItems([]);
+      } else {
+        setParsedItems(items);
+      }
+    } catch (err) {
+      console.error('Erro ao processar arquivo:', err);
+      setError('Erro ao processar o arquivo. Verifique o formato.');
       setParsedItems([]);
-    };
-    reader.readAsText(file);
+    } finally {
+      setIsProcessing(false);
+    }
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,7 +250,7 @@ export function ImportarMapeamentoCardapioModal({
         <DialogHeader>
           <DialogTitle>Importar Itens do Cardápio Web</DialogTitle>
           <DialogDescription>
-            Faça upload de um arquivo CSV ou TXT exportado do Cardápio Web
+            Faça upload de um arquivo CSV, TXT ou Excel exportado do Cardápio Web
           </DialogDescription>
         </DialogHeader>
 
@@ -186,12 +272,17 @@ export function ImportarMapeamentoCardapioModal({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".csv,.txt,.xls,.xlsx"
               onChange={handleFileChange}
               className="hidden"
             />
             
-            {fileName ? (
+            {isProcessing ? (
+              <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span>Processando arquivo...</span>
+              </div>
+            ) : fileName ? (
               <div className="flex items-center justify-center gap-2 text-primary">
                 <FileText className="h-6 w-6" />
                 <span className="font-medium">{fileName}</span>
@@ -204,7 +295,7 @@ export function ImportarMapeamentoCardapioModal({
                   Arraste o arquivo aqui ou clique para selecionar
                 </p>
                 <p className="text-sm">
-                  Formatos aceitos: CSV, TXT (separado por tab)
+                  Formatos aceitos: CSV, TXT, XLS, XLSX
                 </p>
               </div>
             )}
@@ -276,12 +367,12 @@ export function ImportarMapeamentoCardapioModal({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={isLoading}>
+          <Button variant="outline" onClick={handleClose} disabled={isLoading || isProcessing}>
             Cancelar
           </Button>
           <Button 
             onClick={handleImport} 
-            disabled={parsedItems.length === 0 || isLoading}
+            disabled={parsedItems.length === 0 || isLoading || isProcessing}
           >
             {isLoading ? 'Importando...' : `Importar ${parsedItems.length} itens`}
           </Button>
