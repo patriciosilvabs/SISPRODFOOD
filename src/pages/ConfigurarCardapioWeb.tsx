@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Copy, RefreshCw, Plus, Trash2, CheckCircle, XCircle, ExternalLink, Loader2, Settings, List, History, Eye, EyeOff, Upload, AlertCircle } from 'lucide-react';
-import { useCardapioWebIntegracao, type ImportarMapeamentoItem } from '@/hooks/useCardapioWebIntegracao';
+import { Copy, RefreshCw, Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Eye, EyeOff, Upload, Link2 } from 'lucide-react';
+import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,12 +20,13 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
+import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
 
 export default function ConfigurarCardapioWeb() {
   const { organizationId } = useOrganization();
   const {
     integracao,
-    mapeamentos,
+    mapeamentosAgrupados,
     logs,
     loadingIntegracao,
     loadingMapeamentos,
@@ -37,11 +38,14 @@ export default function ConfigurarCardapioWeb() {
     deleteMapeamento,
     importarMapeamentos,
     vincularItemPorcionado,
+    adicionarVinculo,
   } = useCardapioWebIntegracao();
 
   const [showToken, setShowToken] = useState(false);
   const [novoMapeamentoOpen, setNovoMapeamentoOpen] = useState(false);
   const [importarModalOpen, setImportarModalOpen] = useState(false);
+  const [adicionarVinculoModalOpen, setAdicionarVinculoModalOpen] = useState(false);
+  const [produtoSelecionado, setProdutoSelecionado] = useState<MapeamentoCardapioItemAgrupado | null>(null);
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
     cardapio_item_nome: '',
@@ -144,6 +148,24 @@ export default function ConfigurarCardapioWeb() {
     });
   };
 
+  const handleAbrirModalVinculo = (produto: MapeamentoCardapioItemAgrupado) => {
+    setProdutoSelecionado(produto);
+    setAdicionarVinculoModalOpen(true);
+  };
+
+  const handleAdicionarVinculo = async (itemPorcionadoId: string, quantidade: number) => {
+    if (!produtoSelecionado) return;
+    
+    await adicionarVinculo.mutateAsync({
+      cardapio_item_id: produtoSelecionado.cardapio_item_id,
+      cardapio_item_nome: produtoSelecionado.cardapio_item_nome,
+      tipo: produtoSelecionado.tipo,
+      categoria: produtoSelecionado.categoria,
+      item_porcionado_id: itemPorcionadoId,
+      quantidade_consumida: quantidade,
+    });
+  };
+
   const lojaVinculada = lojas?.find(l => l.id === integracao?.loja_id);
 
   return (
@@ -165,8 +187,8 @@ export default function ConfigurarCardapioWeb() {
             <TabsTrigger value="mapeamento" className="flex items-center gap-2">
               <List className="h-4 w-4" />
               Mapeamento
-              {mapeamentos.length > 0 && (
-                <Badge variant="secondary" className="ml-1">{mapeamentos.length}</Badge>
+              {mapeamentosAgrupados.length > 0 && (
+                <Badge variant="secondary" className="ml-1">{mapeamentosAgrupados.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="logs" className="flex items-center gap-2">
@@ -460,7 +482,7 @@ export default function ConfigurarCardapioWeb() {
                   <div className="py-8 flex justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                ) : mapeamentos.length === 0 ? (
+                ) : mapeamentosAgrupados.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <List className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Nenhum mapeamento configurado</p>
@@ -474,78 +496,104 @@ export default function ConfigurarCardapioWeb() {
                         <TableHead>Categoria</TableHead>
                         <TableHead>Produto</TableHead>
                         <TableHead className="w-24">Código</TableHead>
-                        <TableHead>Item Porcionado</TableHead>
-                        <TableHead className="text-center w-16">Qtd</TableHead>
-                        <TableHead className="w-12"></TableHead>
+                        <TableHead>Itens Vinculados</TableHead>
+                        <TableHead className="w-24"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {mapeamentos.map((m) => (
-                        <TableRow key={m.id} className={!m.item_porcionado_id ? 'bg-muted/40' : ''}>
+                      {mapeamentosAgrupados.map((produto) => (
+                        <TableRow key={produto.cardapio_item_id}>
                           <TableCell>
-                            {m.tipo && (
-                              <Badge variant={m.tipo === 'PRODUTO' ? 'default' : 'secondary'} className="text-xs">
-                                {m.tipo}
+                            {produto.tipo && (
+                              <Badge variant={produto.tipo === 'PRODUTO' ? 'default' : 'secondary'} className="text-xs">
+                                {produto.tipo}
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="max-w-32 truncate text-sm" title={m.categoria || ''}>
-                            {m.categoria || '-'}
+                          <TableCell className="max-w-32 truncate text-sm" title={produto.categoria || ''}>
+                            {produto.categoria || '-'}
                           </TableCell>
-                          <TableCell className="max-w-40 truncate" title={m.cardapio_item_nome}>
-                            {m.cardapio_item_nome}
+                          <TableCell className="max-w-40 truncate" title={produto.cardapio_item_nome}>
+                            {produto.cardapio_item_nome}
                           </TableCell>
-                          <TableCell className="font-mono text-sm">{m.cardapio_item_id}</TableCell>
+                          <TableCell className="font-mono text-sm">{produto.cardapio_item_id}</TableCell>
                           <TableCell>
-                            {m.item_porcionado?.nome ? (
-                              <span className="flex items-center gap-1">
-                                <CheckCircle className="h-4 w-4 text-primary" />
-                                {m.item_porcionado.nome}
-                              </span>
-                            ) : (
-                              <Select
-                                value=""
-                                onValueChange={(v) => handleVincularItem(m.id, v)}
-                              >
-                                <SelectTrigger className="h-8 border-dashed border-primary/50">
-                                  <SelectValue placeholder="Vincular item..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {itensPorcionados?.map(item => (
-                                    <SelectItem key={item.id} value={item.id}>
-                                      {item.nome}
-                                    </SelectItem>
+                            <div className="space-y-1">
+                              {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
+                                // No linked items yet - show select to link first item
+                                <Select
+                                  value=""
+                                  onValueChange={(v) => handleVincularItem(produto.vinculos[0]?.id || '', v)}
+                                >
+                                  <SelectTrigger className="h-8 border-dashed border-primary/50">
+                                    <SelectValue placeholder="Vincular item..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {itensPorcionados?.map(item => (
+                                      <SelectItem key={item.id} value={item.id}>
+                                        {item.nome}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                // Show linked items
+                                <div className="space-y-1">
+                                  {produto.vinculos.filter(v => v.item_porcionado_id).map((vinculo) => (
+                                    <div key={vinculo.id} className="flex items-center gap-2 text-sm">
+                                      <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />
+                                      <span className="truncate">{vinculo.item_porcionado_nome}</span>
+                                      <Badge variant="outline" className="text-xs shrink-0">
+                                        {vinculo.quantidade_consumida}x
+                                      </Badge>
+                                      <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0">
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Remover vínculo?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                              O item "{vinculo.item_porcionado_nome}" não será mais consumido quando este produto for vendido.
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction 
+                                              onClick={() => deleteMapeamento.mutate(vinculo.id)}
+                                              className="bg-destructive text-destructive-foreground"
+                                            >
+                                              Remover
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
+                                    </div>
                                   ))}
-                                </SelectContent>
-                              </Select>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">{m.quantidade_consumida}</TableCell>
-                          <TableCell>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-destructive">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Remover mapeamento?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Pedidos futuros com o produto "{m.cardapio_item_nome}" não serão processados.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction 
-                                    onClick={() => deleteMapeamento.mutate(m.id)}
-                                    className="bg-destructive text-destructive-foreground"
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-primary hover:text-primary"
+                                    onClick={() => handleAbrirModalVinculo(produto)}
                                   >
-                                    Remover
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                                    <Plus className="h-3.5 w-3.5 mr-1" />
+                                    Adicionar item
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {produto.vinculos.length > 0 && produto.vinculos.some(v => v.item_porcionado_id) && (
+                              <div className="flex items-center gap-1">
+                                <Link2 className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">
+                                  {produto.vinculos.filter(v => v.item_porcionado_id).length}
+                                </span>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -602,12 +650,12 @@ export default function ConfigurarCardapioWeb() {
                           </TableCell>
                           <TableCell className="text-center">
                             {log.sucesso ? (
-                              <CheckCircle className="h-5 w-5 text-green-500 mx-auto" />
+                              <CheckCircle className="h-5 w-5 text-primary mx-auto" />
                             ) : (
                               <div className="flex items-center justify-center gap-1">
-                                <XCircle className="h-5 w-5 text-red-500" />
+                                <XCircle className="h-5 w-5 text-destructive" />
                                 {log.erro && (
-                                  <span className="text-xs text-red-500 max-w-32 truncate" title={log.erro}>
+                                  <span className="text-xs text-destructive max-w-32 truncate" title={log.erro}>
                                     {log.erro}
                                   </span>
                                 )}
@@ -630,6 +678,16 @@ export default function ConfigurarCardapioWeb() {
           onOpenChange={setImportarModalOpen}
           onImport={handleImportarMapeamentos}
           isLoading={importarMapeamentos.isPending}
+        />
+
+        {/* Modal de adicionar vínculo */}
+        <AdicionarVinculoCardapioModal
+          open={adicionarVinculoModalOpen}
+          onOpenChange={setAdicionarVinculoModalOpen}
+          produtoNome={produtoSelecionado?.cardapio_item_nome || ''}
+          itensPorcionados={itensPorcionados || []}
+          onConfirm={handleAdicionarVinculo}
+          isLoading={adicionarVinculo.isPending}
         />
       </div>
     </Layout>
