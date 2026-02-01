@@ -1,76 +1,145 @@
 
 
-# Plano: Adaptar Interface para Modelo Just-in-Time (Valores Negativos)
+# Plano: Modelo de Três Camadas para Estoque Just-in-Time
 
-## Contexto do Problema
+## Diagnóstico do Problema Atual
 
-A imagem mostra o cenário atual na tela de contagem:
+A solução implementada usa valores **negativos** no campo `final_sobra` para representar vendas, o que gera:
 
-| Campo | Valor Atual | Problema |
-|-------|-------------|----------|
-| Campo Azul (Sobra) | **100** | Deveria ser negativo se só há vendas |
-| Cardápio Web | **-50 às 14:54** | Mostra que houve baixa automática |
-| A Produzir | **0** | Deveria mostrar demanda real |
+| Problema | Impacto |
+|----------|---------|
+| **Confusão Cognitiva** | Funcionário vê "-10" e não entende - estoque físico não é negativo |
+| **Perda de Rastreabilidade** | Impossível distinguir ajuste manual de venda automática |
+| **Dificuldade de Auditoria** | Histórico mistura realidade física com fluxo de vendas |
 
-### O que aconteceu?
-
-Alguém ajustou manualmente o campo para 100, sobrepondo as vendas automáticas. O sistema calculou: `a_produzir = 100 (ideal) - 100 (sobra) = 0`.
-
-### Por que isso é um problema?
-
-O modelo antigo assumia que o funcionário informava a **sobra física real** (sempre positiva). No modelo Just-in-Time, o webhook decrementa automaticamente a cada venda, podendo gerar valores **negativos** (que representam o acumulado de vendas).
+A boa notícia: **os campos já existem no banco de dados!** A tabela `contagem_porcionados` já possui:
+- `final_sobra` - para contagem física
+- `cardapio_web_baixa_total` - acumulado de vendas do dia
+- `cardapio_web_ultima_baixa_at` / `cardapio_web_ultima_baixa_qtd` - última baixa
 
 ---
 
-## Bloqueios Identificados
+## Arquitetura de Três Camadas Proposta
 
-| Arquivo | Linha | Bloqueio | Impacto |
-|---------|-------|----------|---------|
-| `ContagemPorcionados.tsx` | 514 | `finalSobra < 0` impede salvar negativos | Não salva contagens com vendas |
-| `ContagemPorcionados.tsx` | 982 | `finalSobra > 0 &&` impede decrementar abaixo de zero | Botão "-" trava em 0 |
-| `ContagemItemCard.tsx` | 148 | `pattern="[0-9]*"` só aceita dígitos | Input não aceita "-" |
-| `ContagemItemCard.tsx` | 151 | `.replace(/\D/g, '')` remove não-dígitos | Remove o sinal negativo |
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CARD DE CONTAGEM                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  [MUSSARELA]                                                        │
+│                                                                     │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────┐ │
+│  │  SOBRA      │   │  VENDAS     │   │  IDEAL      │   │   A     │ │
+│  │  FÍSICA     │   │  WEB        │   │   DIA       │   │PRODUZIR │ │
+│  │ ┌───────┐   │   │             │   │             │   │         │ │
+│  │ │  50   │   │   │   -15       │   │    100      │   │   65    │ │
+│  │ └───────┘   │   │  às 14:32   │   │   (Seg)     │   │         │ │
+│  │  [−] [+]    │   │             │   │             │   │         │ │
+│  │  (azul)     │   │  (violeta)  │   │  (cinza)    │   │(laranja)│ │
+│  └─────────────┘   └─────────────┘   └─────────────┘   └─────────┘ │
+│                                                                     │
+│  FUNCIONÁRIO     AUTOMÁTICO          CONFIGURAÇÃO     CALCULADO    │
+│  controla        (webhook)           (admin)          (sistema)    │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Solução Proposta
+## Nova Lógica de Cálculo
 
-### 1. Permitir Valores Negativos na Validação
+A fórmula muda de:
+```
+// ANTES (problemático):
+a_produzir = ideal - final_sobra  // onde final_sobra pode ser negativo
+
+// DEPOIS (três camadas):
+a_produzir = ideal - sobra_fisica + vendas_pendentes
+           = 100   - 50           + 15
+           = 65 unidades
+```
+
+Ou simplificando:
+```
+a_produzir = (ideal - sobra_fisica) + cardapio_web_baixa_total
+```
+
+---
+
+## Mudanças Necessárias
+
+### 1. Edge Function: NÃO alterar `final_sobra`
+
+**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+
+O webhook deve atualizar APENAS os campos de rastreamento, sem tocar no `final_sobra`:
+
+```typescript
+// ANTES (problemático):
+const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
+
+// DEPOIS (correto):
+// NÃO altera final_sobra - isso é campo do funcionário
+const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal
+const sobraFisica = contagem.final_sobra || 0
+const novoAProduzir = Math.max(0, (idealDoDia - sobraFisica) + novoTotalBaixas)
+
+await supabase.from('contagem_porcionados').update({
+  // final_sobra: NÃO ALTERAR - é campo do funcionário
+  ideal_amanha: idealDoDia,
+  a_produzir: novoAProduzir,
+  cardapio_web_baixa_total: novoTotalBaixas,
+  cardapio_web_ultima_baixa_at: agora,
+  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
+})
+```
+
+### 2. Frontend: Restaurar `final_sobra` apenas positivo
+
+**Arquivo:** `src/pages/ContagemPorcionados.tsx`
+
+Reverter as mudanças que permitiam negativos e ajustar o cálculo de `a_produzir`:
+
+```typescript
+// Linha 540 - ANTES:
+const aProduzir = Math.max(0, idealAmanha - finalSobra);
+
+// DEPOIS (três camadas):
+const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
+const aProduzir = Math.max(0, (idealAmanha - finalSobra) + cardapioWebBaixaTotal);
+```
+
+```typescript
+// Linha 952 - ANTES:
+const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+
+// DEPOIS (três camadas):
+const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
+const aProduzir = Math.max(0, (idealFromConfig - finalSobra) + cardapioWebBaixaTotal);
+```
+
+### 3. Frontend: Restaurar validação >= 0 para sobra física
 
 **Arquivo:** `src/pages/ContagemPorcionados.tsx`
 
 ```typescript
-// Linha 514 - ANTES:
+// Linha 514 - Restaurar validação:
 if (isNaN(finalSobra) || finalSobra < 0) {
-  toast.error('Valor de Sobra inválido. Insira um número válido (≥ 0).', { id: toastId });
-  ...
-}
-
-// Linha 514 - DEPOIS:
-if (isNaN(finalSobra)) {
-  toast.error('Valor de Sobra inválido. Insira um número válido.', { id: toastId });
-  ...
+  toast.error('Valor de Sobra inválido. Insira um número >= 0.', { id: toastId });
+  // ...
 }
 ```
-
-### 2. Permitir Decrementar Abaixo de Zero
-
-**Arquivo:** `src/pages/ContagemPorcionados.tsx`
 
 ```typescript
-// Linha 982 - ANTES:
+// Linha 982 - Restaurar trava no zero:
 onDecrementSobra={() => finalSobra > 0 && handleValueChange(...)}
-
-// Linha 982 - DEPOIS:
-onDecrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
 ```
 
-### 3. Adaptar Input para Aceitar Negativos
+### 4. Frontend: Restaurar input apenas numérico positivo
 
 **Arquivo:** `src/components/contagem/ContagemItemCard.tsx`
 
 ```typescript
-// Linha 145-153 - ANTES:
+// Restaurar input original:
 <input
   type="text"
   inputMode="numeric"
@@ -80,70 +149,82 @@ onDecrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', Strin
     const val = e.target.value.replace(/\D/g, '');
     onSobraChange(val === '' ? 0 : parseInt(val, 10));
   }}
-
-// DEPOIS:
-<input
-  type="text"
-  inputMode="text"  // Permitir entrada de "-"
-  value={finalSobra}
-  onChange={(e) => {
-    // Permitir apenas números e sinal negativo
-    const val = e.target.value.replace(/[^-\d]/g, '');
-    // Garantir que "-" só apareça no início
-    const sanitized = val.replace(/(?!^)-/g, '');
-    onSobraChange(sanitized === '' || sanitized === '-' ? 0 : parseInt(sanitized, 10));
-  }}
+  className={`h-12 w-16 text-center ... ${
+    isItemNaoPreenchido 
+      ? 'bg-amber-50 ... border-amber-400' 
+      : 'bg-white ... text-blue-600 border-blue-500'
+  }`}
+/>
 ```
 
-### 4. Estilização Visual para Valores Negativos
+### 5. Ajustar label do campo Cardápio Web
+
+O badge violeta já existe e já mostra as vendas. Apenas garantir que ele sempre apareça quando `cardapio_web_baixa_total > 0`:
 
 ```typescript
-// Adicionar destaque visual quando valor é negativo:
-className={`... ${
-  finalSobra < 0 
-    ? 'bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 border-red-400'
-    : isItemNaoPreenchido 
-      ? 'bg-amber-50 ...' 
-      : 'bg-white ...'
-}`}
+// Já existe no ContagemItemCard.tsx - linhas 206-223
+// O componente já exibe corretamente:
+{cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0 && (
+  <div className="... bg-violet-100 ...">
+    <Smartphone /> Cardápio Web
+    -{cardapioWebUltimaBaixaQtd} às {time}
+    Total: -{cardapioWebBaixaTotal} un hoje
+  </div>
+)}
 ```
 
 ---
 
-## Fluxo Após Implementação
+## Fluxo Operacional Após Implementação
 
 ```text
-Início do dia (00:00):
-├── final_sobra: 0 (sem contagem física)
-├── ideal_amanha: 100
-└── a_produzir: 100
+DIA ANTERIOR (20:00):
+├── Funcionário fecha contagem: sobra_fisica = 50
+├── cardapio_web_baixa_total = 0 (zerado no novo dia)
+└── a_produzir = 100 - 50 = 50
 
-Após 10 vendas via Cardápio Web:
-├── final_sobra: -10 (vermelho, indicando consumo)
-├── ideal_amanha: 100  
-└── a_produzir: 110 (100 - (-10) = 110)
+INÍCIO DO DIA (00:00):
+├── Novo dia operacional
+├── sobra_fisica = 0 (não contou ainda)
+├── cardapio_web_baixa_total = 0
+└── a_produzir = 100
 
-Funcionário ajusta +5 (encontrou sobra física):
-├── final_sobra: -5 (ajustado)
-├── ideal_amanha: 100
-└── a_produzir: 105
+DURANTE A NOITE (vendas):
+├── Venda 1: cardapio_web_baixa_total = 5
+├── sobra_fisica = 0 (funcionário não mexeu)
+├── a_produzir = (100 - 0) + 5 = 105
+│
+├── Venda 2: cardapio_web_baixa_total = 10
+├── a_produzir = (100 - 0) + 10 = 110
+
+MANHÃ (08:00) - Funcionário conta estoque:
+├── Vê que tem 30 massas físicas na bandeja
+├── Informa: sobra_fisica = 30
+├── cardapio_web_baixa_total = 10 (acumulado da noite)
+├── a_produzir = (100 - 30) + 10 = 80
+└── Interface mostra claramente:
+    [Sobra: 30] [Vendas Web: -10] [A Produzir: 80]
 ```
 
 ---
 
-## Arquivos a Modificar
+## Resumo dos Arquivos a Modificar
 
-| Arquivo | Mudanças |
-|---------|----------|
-| `src/pages/ContagemPorcionados.tsx` | Remover validação `< 0`, permitir decremento sem limite |
-| `src/components/contagem/ContagemItemCard.tsx` | Aceitar input negativo, estilização visual |
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/cardapio-web-webhook/index.ts` | Não alterar `final_sobra`, apenas atualizar campos de rastreamento e recalcular `a_produzir` |
+| `src/pages/ContagemPorcionados.tsx` | Restaurar validação >= 0, ajustar fórmula de `a_produzir` para incluir vendas |
+| `src/components/contagem/ContagemItemCard.tsx` | Restaurar input numérico positivo, manter estilo azul |
 
 ---
 
-## Resultado Visual Esperado
+## Vantagens da Arquitetura de Três Camadas
 
-O campo azul exibirá:
-- **Valores positivos (azul)**: sobra física real
-- **Valores negativos (vermelho)**: déficit acumulado por vendas
-- **Botão laranja**: sempre mostra `ideal - final_sobra`, funcionando corretamente com negativos
+| Aspecto | Solução Atual | Modelo Três Camadas |
+|---------|---------------|---------------------|
+| **Clareza** | "-10" confunde funcionário | "50 sobra + 10 vendas" é claro |
+| **Rastreabilidade** | Tudo misturado | Campos separados para auditoria |
+| **Auditoria** | Impossível distinguir | Histórico limpo: contagem física vs vendas |
+| **Operação** | Funcionário não entende | Funcionário vê realidade física |
+| **Escalabilidade** | Cria dívida técnica | Modelo profissional e extensível |
 
