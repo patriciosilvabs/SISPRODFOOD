@@ -1114,9 +1114,9 @@ const ContagemPorcionados = () => {
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
                       const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
                       
-                      // MODELO SIMPLIFICADO: a_produzir = ideal - final_sobra
-                      // final_sobra = estoque atual (decrementado pelas vendas web)
-                      const aProduzir = contagem?.a_produzir ?? 0;
+                      // MODELO SIMPLIFICADO: a_produzir = ideal - final_sobra (recalculado em tempo real)
+                      // Usa o valor local de finalSobra para feedback imediato na UI
+                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
                       const isDirty = isRowDirty(loja.id, item.id);
                       
                       // Calcular lotes necessários para itens lote_masseira
