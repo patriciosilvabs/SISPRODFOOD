@@ -390,7 +390,22 @@ export default function ConfigurarCardapioWeb() {
                               {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
                                 <Select
                                   value=""
-                                  onValueChange={(v) => handleVincularItem(produto.vinculos[0]?.id || '', v)}
+                                  onValueChange={(v) => {
+                                    // Se já existe um registro sem vínculo, atualiza ele
+                                    if (produto.vinculos[0]?.id) {
+                                      handleVincularItem(produto.vinculos[0].id, v);
+                                    } else {
+                                      // Caso contrário, cria um novo vínculo
+                                      adicionarVinculo.mutate({
+                                        cardapio_item_id: produto.cardapio_item_id,
+                                        cardapio_item_nome: produto.cardapio_item_nome,
+                                        tipo: produto.tipo,
+                                        categoria: produto.categoria,
+                                        item_porcionado_id: v,
+                                        quantidade_consumida: 1,
+                                      });
+                                    }
+                                  }}
                                 >
                                   <SelectTrigger className="h-8 border-dashed border-primary/50">
                                     <SelectValue placeholder="Vincular item..." />
