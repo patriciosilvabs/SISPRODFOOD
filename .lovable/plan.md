@@ -1,198 +1,175 @@
 
-# Plano: Integração Cardápio Web via Webhook
+# Plano: Importação em Massa do Mapeamento Cardápio Web
 
-## Visão Geral
+## Objetivo
 
-Implementar integração com o Cardápio Web para baixar automaticamente o consumo de itens porcionados na contagem quando um pedido é feito, baseado no mapeamento de produtos do cardápio com os itens porcionados do CPD.
+Criar uma funcionalidade de importação de arquivo CSV/Excel para cadastrar automaticamente os itens do Cardápio Web no sistema de mapeamento. O arquivo segue o formato:
 
-## Arquitetura da Solução
+| Tipo | Categoria/Complemento | Nome | Código interno | Preço |
+|------|----------------------|------|----------------|-------|
+| PRODUTO | As + Vendidas | Combo: Calabresa + Refri 1 litro | 2108351 | |
+| OPÇÃO | Massas & Bordas (Grande) | # Massa Tradicional | 2001010 | |
+
+## Alterações no Banco de Dados
+
+Adicionar duas novas colunas na tabela `mapeamento_cardapio_itens`:
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| tipo | text | PRODUTO ou OPÇÃO |
+| categoria | text | Categoria/Complemento do item |
+
+Isso permitirá organizar melhor os mapeamentos e filtrar por tipo/categoria.
+
+## Fluxo da Importação
 
 ```text
-┌─────────────────┐      POST /cardapio-web-webhook      ┌──────────────────────┐
-│  Cardápio Web   │ ─────────────────────────────────────>│   Edge Function      │
-│  (order.created)│     X-API-KEY: token_loja           │ cardapio-web-webhook │
-└─────────────────┘                                      └──────────┬───────────┘
-                                                                    │
-                    1. Valida token (identifica loja)               │
-                    2. Busca mapeamento produto → itens             │
-                    3. Para cada item do pedido:                    │
-                       - Busca itens porcionados mapeados           │
-                       - Decrementa final_sobra na contagem_porcionados
-                    4. Registra log do webhook                      │
-                                                                    ▼
-                                                         ┌──────────────────────┐
-                                                         │ contagem_porcionados │
-                                                         │ (final_sobra - X)    │
-                                                         └──────────────────────┘
+1. Usuário faz upload do arquivo (CSV ou Excel exportado como CSV/TXT)
+2. Sistema parseia o arquivo e extrai as colunas
+3. Exibe preview dos itens a serem importados
+4. Usuário vincula cada item (ou grupo) a um item porcionado
+5. Sistema insere os mapeamentos no banco
 ```
 
-## Componentes a Criar
+## Componentes a Criar/Modificar
 
-### 1. Banco de Dados
+### 1. Migração SQL
 
-**Tabela: `integracoes_cardapio_web`** (configuração por loja)
+Adicionar colunas `tipo` e `categoria` à tabela `mapeamento_cardapio_itens`.
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| organization_id | uuid | FK organizações |
-| loja_id | uuid | FK lojas - qual loja recebe pedidos deste token |
-| token | text | API Key única gerada para este estabelecimento |
-| ambiente | text | 'sandbox' ou 'producao' |
-| ativo | boolean | Integração ativa/inativa |
-| url_webhook | text | URL do webhook (para referência) |
-| created_at | timestamp | Data criação |
-| updated_at | timestamp | Última atualização |
+### 2. Hook: `useCardapioWebIntegracao.ts`
 
-**Tabela: `mapeamento_cardapio_itens`** (produto do cardápio → itens porcionados)
+- Adicionar mutation `importarMapeamentos` para inserção em lote
+- Atualizar interface `MapeamentoCardapioItem` com novos campos
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| organization_id | uuid | FK organizações |
-| cardapio_item_id | integer | ID do produto no Cardápio Web (item_id) |
-| cardapio_item_nome | text | Nome do produto (para referência) |
-| item_porcionado_id | uuid | FK itens_porcionados |
-| quantidade_consumida | integer | Quantos porcionados são consumidos (default: 1) |
-| ativo | boolean | Mapeamento ativo |
-| created_at | timestamp | Data criação |
+### 3. Página: `ConfigurarCardapioWeb.tsx`
 
-**Tabela: `cardapio_web_pedidos_log`** (auditoria de webhooks)
+Adicionar nova funcionalidade no tab "Mapeamento":
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| organization_id | uuid | FK organizações |
-| loja_id | uuid | FK lojas |
-| order_id | integer | ID do pedido no Cardápio Web |
-| payload | jsonb | Payload completo recebido |
-| itens_processados | jsonb | Detalhes dos itens baixados |
-| sucesso | boolean | Processamento bem-sucedido |
-| erro | text | Mensagem de erro (se houver) |
-| created_at | timestamp | Data/hora do webhook |
+- Botão "Importar Arquivo"
+- Modal/Dialog de importação com:
+  - Área de upload/drag-and-drop para arquivo
+  - Preview dos itens parseados em tabela
+  - Coluna adicional para selecionar item porcionado
+  - Opção de importar em lote
 
-### 2. Edge Function: `cardapio-web-webhook`
+### 4. Componente: `ImportarMapeamentoModal.tsx`
 
-**Responsabilidades:**
-1. Receber POST com evento `order.created`
-2. Identificar loja pelo header `X-API-KEY`
-3. Para cada item do pedido:
-   - Buscar mapeamento `cardapio_item_id` → `item_porcionado_id`
-   - Multiplicar `quantity` do pedido × `quantidade_consumida` do mapeamento
-   - Decrementar `final_sobra` na `contagem_porcionados` da loja
-4. Registrar log do webhook
-5. Retornar status de sucesso
+Modal dedicado para a importação com:
+- Upload de arquivo CSV/TXT
+- Parser que detecta delimitador (tab, vírgula, ponto-e-vírgula)
+- Tabela editável com os itens parseados
+- Select para vincular item porcionado a cada linha
+- Botão de importar todos
 
-**Configuração:**
-- `verify_jwt = false` (webhook externo)
-- Validação por token no header
+## Estrutura do Parser
 
-### 3. Interface do Usuário
+O arquivo pode vir em diferentes formatos:
+- CSV com vírgula
+- CSV com ponto-e-vírgula
+- TXT com tab (padrão Excel)
 
-**Página: `/configurar-cardapio-web`**
+O parser detectará automaticamente o delimitador analisando a primeira linha.
 
-Seções:
-1. **Configuração da Integração**
-   - Selecionar loja vinculada
-   - Gerar/visualizar token (API Key)
-   - Ambiente (Sandbox/Produção)
-   - Ativar/Desativar integração
-   - URL do webhook para copiar
+Colunas esperadas:
+1. Tipo (PRODUTO/OPÇÃO)
+2. Categoria/Complemento
+3. Nome
+4. Código interno (será usado como `cardapio_item_id`)
+5. Preço (opcional, não usado no mapeamento)
 
-2. **Mapeamento de Produtos**
-   - Tabela com: Produto do Cardápio | Item Porcionado | Quantidade
-   - Formulário para adicionar novo mapeamento
-   - Opção de editar/excluir mapeamentos
-
-3. **Logs de Pedidos**
-   - Histórico dos últimos webhooks recebidos
-   - Status (sucesso/erro)
-   - Detalhes do processamento
-
-## Fluxo de Processamento
+## Interface do Modal de Importação
 
 ```text
-1. Cardápio Web envia: POST /cardapio-web-webhook
-   Headers: X-API-KEY: abc123
-
-2. Edge Function:
-   a) Valida token → Identifica loja_id e organization_id
-   b) Extrai items[] do payload
-   c) Para cada item:
-      - Busca mapeamento por cardapio_item_id
-      - Se encontrado:
-        * quantidade = item.quantity × mapeamento.quantidade_consumida
-        * UPDATE contagem_porcionados
-          SET final_sobra = final_sobra - quantidade
-          WHERE loja_id = X AND item_porcionado_id = Y
-            AND dia_operacional = hoje
-   d) Registra log com resultado
-   e) Retorna { success: true, processed_items: [...] }
-
-3. Resultado: Contagem da loja é atualizada automaticamente
+┌────────────────────────────────────────────────────────────────┐
+│ Importar Itens do Cardápio Web                            [X] │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  📄 Arraste o arquivo aqui ou clique para selecionar     │  │
+│  │     Formatos aceitos: CSV, TXT (separado por tab)        │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                │
+│  ✓ 15 itens encontrados no arquivo                             │
+│                                                                │
+│  ┌─────────────────────────────────────────────────────────────┤
+│  │ Tipo    │ Categoria         │ Nome              │ Código   ││
+│  ├─────────┼───────────────────┼───────────────────┼──────────┤│
+│  │ PRODUTO │ As + Vendidas     │ Combo Calabresa   │ 2108351  ││
+│  │ OPÇÃO   │ Massas & Bordas   │ # Massa Tradicional│ 2001010 ││
+│  │ OPÇÃO   │ Massas & Bordas   │ # Borda de Cheddar│ 2001011  ││
+│  │ ...     │ ...               │ ...               │ ...      ││
+│  └─────────────────────────────────────────────────────────────┘
+│                                                                │
+│  Estes itens serão cadastrados SEM vínculo a item porcionado.  │
+│  Você poderá vincular cada um individualmente depois.          │
+│                                                                │
+│                      [Cancelar]  [Importar 15 itens]           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## Exemplo Prático
+## Arquivos a Modificar
 
-**Pedido recebido:**
-```json
-{
-  "event": "order.created",
-  "order": {
-    "id": 12345,
-    "items": [
-      { "item_id": 9, "name": "Pizza Mussarela G", "quantity": 2 }
-    ]
-  }
+| Arquivo | Ação |
+|---------|------|
+| Migração SQL | Adicionar colunas `tipo` e `categoria` |
+| `src/integrations/supabase/types.ts` | Atualizado automaticamente |
+| `src/hooks/useCardapioWebIntegracao.ts` | Adicionar mutation de importação em lote |
+| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar botão e modal de importação |
+| `src/components/modals/ImportarMapeamentoCardapioModal.tsx` | Criar modal de importação |
+
+## Fluxo após Importação
+
+1. Itens são importados com `item_porcionado_id = NULL`
+2. Na tabela de mapeamentos, itens sem vínculo aparecem destacados
+3. Usuário clica em cada item para vincular ao item porcionado
+4. Alternativamente: botão "Vincular em Lote" para associar vários itens de uma vez
+
+## Detalhes Técnicos
+
+### Parser de Arquivo
+
+```typescript
+function parseCSV(content: string): ParsedItem[] {
+  const lines = content.split('\n');
+  const delimiter = detectDelimiter(lines[0]); // tab, comma, or semicolon
+  
+  return lines.slice(1) // Skip header
+    .filter(line => line.trim())
+    .map(line => {
+      const [tipo, categoria, nome, codigo] = line.split(delimiter);
+      return {
+        tipo: tipo?.trim(),
+        categoria: categoria?.trim(),
+        nome: nome?.trim(),
+        codigo_interno: parseInt(codigo?.trim()),
+      };
+    })
+    .filter(item => item.codigo_interno && item.nome);
 }
 ```
 
-**Mapeamento configurado:**
-| cardapio_item_id | item_porcionado (nome) | quantidade_consumida |
-|------------------|------------------------|----------------------|
-| 9 | Massa Grande | 1 |
-| 9 | Mussarela Porcionada | 1 |
+### Insert em Lote
 
-**Resultado:**
-- `contagem_porcionados` onde `item_nome = 'Massa Grande'`: `final_sobra -= 2`
-- `contagem_porcionados` onde `item_nome = 'Mussarela Porcionada'`: `final_sobra -= 2`
+```typescript
+await supabase
+  .from('mapeamento_cardapio_itens')
+  .insert(items.map(item => ({
+    organization_id: organizationId,
+    cardapio_item_id: item.codigo_interno,
+    cardapio_item_nome: item.nome,
+    tipo: item.tipo,
+    categoria: item.categoria,
+    item_porcionado_id: null, // Vinculado depois
+    quantidade_consumida: 1,
+    ativo: true,
+  })));
+```
 
-## Arquivos a Criar/Modificar
+## Observação sobre Nullabilidade
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/migrations/xxx_cardapio_web.sql` | Criar | Tabelas e RLS |
-| `supabase/functions/cardapio-web-webhook/index.ts` | Criar | Edge function |
-| `supabase/config.toml` | Modificar | Adicionar função |
-| `src/pages/ConfigurarCardapioWeb.tsx` | Criar | Página de configuração |
-| `src/hooks/useCardapioWebIntegracao.ts` | Criar | Hook para gerenciar integração |
-| `src/App.tsx` | Modificar | Adicionar rota |
-| `src/pages/Configuracoes.tsx` | Modificar | Adicionar card de acesso |
-| `src/lib/page-access-config.ts` | Modificar | Adicionar controle de acesso |
+A coluna `item_porcionado_id` atualmente é `NOT NULL`. Precisamos decidir:
+1. **Opção A**: Alterar para nullable, permitindo itens sem vínculo
+2. **Opção B**: Exigir que o usuário selecione um item porcionado na importação
 
-## Considerações de Segurança
-
-1. **Token único por loja**: Cada loja terá seu próprio token para identificação
-2. **Validação obrigatória**: Webhook rejeitado se token inválido
-3. **RLS nas tabelas**: Acesso restrito por organization_id
-4. **Logs de auditoria**: Todos os webhooks são registrados
-
-## Próximos Passos após Implementação
-
-1. Configurar webhook no painel do Cardápio Web com a URL gerada
-2. Cadastrar mapeamento de produtos → itens porcionados
-3. Testar no ambiente Sandbox
-4. Ativar para produção
-
-## Dúvida para o Usuário
-
-Antes de implementar, preciso confirmar:
-
-1. **Complementos**: Os complementos do pedido (borda recheada, adicionais) também devem consumir itens porcionados? Exemplo: Borda Recheada = 1 porção de catupiry?
-
-2. **Pedidos cancelados**: O Cardápio Web envia webhook quando um pedido é cancelado (`order.cancelled`)? Se sim, devemos reverter a baixa (adicionar de volta ao estoque)?
-
-3. **Quantidade negativa**: Se a contagem ficar negativa (mais pedidos que estoque), como devemos proceder?
-   - Permitir negativo (débito)
-   - Bloquear em zero
-   - Gerar alerta
+Recomendo a **Opção A** para maior flexibilidade - o usuário pode importar tudo e vincular depois.
