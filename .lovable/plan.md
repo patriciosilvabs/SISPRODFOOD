@@ -1,60 +1,136 @@
 
 
-# Plano: Corrigir Processamento de OPTIONS (não complements)
+# Plano: Estoque Dinâmico Just-in-Time (Baixa por Venda)
 
-## Problema Identificado
+## Contexto Atual vs. Modelo Desejado
 
-A API do CardápioWeb usa **`options`** em vez de **`complements`**:
+| Aspecto | Modelo Atual | Modelo Just-in-Time |
+|---------|-------------|---------------------|
+| **Gatilho** | Funcionário registra sobra manualmente | Cada venda do Cardápio Web |
+| **Campo Azul (Sobra)** | Valor positivo (ex: 50 un) | Acumulado negativo (ex: -101) |
+| **Cálculo A Produzir** | `ideal - sobra` manual | `ideal + |vendas_acumuladas|` automático |
+| **Atualização** | Apenas quando salva contagem | Em tempo real (webhook) |
+
+## Diagnóstico
+
+A integração já baixa o estoque corretamente! Os dados mostram:
 
 ```
-Estrutura Real:
-item.options = [
-  { option_id: 2001010, name: "# Massa Tradicional" },
-  { option_id: 1036576, name: "CALABRESA (G)" }   ← VINCULADO!
-]
+UNIDADE ALEIXO - MUSSARELA:
+├── final_sobra: -101 (negativo = vendas)
+├── cardapio_web_baixa_total: 101
+├── a_produzir: 101 ✅
+└── ideal_amanha: 0 ❌ (deveria ser 100)
 ```
 
-O código atual procura `item.complements` que sempre está vazio.
+**Problema:** O webhook não busca o `ideal_amanha` da configuração semanal ao criar/atualizar a contagem.
 
-## Solução
+## Solução Técnica
 
-Modificar a edge function para processar `item.options` usando `option_id`:
+### 1. Atualizar Edge Function `cardapio-web-webhook`
 
-### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
-
-**Mudança principal:**
+Modificar para:
+1. Buscar o `ideal` da tabela `estoques_ideais_semanais` baseado no dia da semana
+2. Calcular automaticamente: `a_produzir = ideal + |vendas_acumuladas|` (quando final_sobra é negativo)
+3. Atualizar o campo `a_produzir` junto com `final_sobra`
 
 ```typescript
-// ANTES (errado):
-if (item.complements && item.complements.length > 0) {
-  for (const c of item.complements) {
-    processItem(c.id || c.item_id, c.name, ...);
-  }
-}
+// Ao processar cada item:
 
-// DEPOIS (correto):
-if (item.options && item.options.length > 0) {
-  for (const opt of item.options) {
-    processItem(opt.option_id, opt.name, item.quantity * (opt.quantity || 1));
-  }
-}
+// 1. Buscar estoque ideal semanal para esta loja/item
+const { data: estoqueIdeal } = await supabase
+  .from('estoques_ideais_semanais')
+  .select('segunda, terca, quarta, quinta, sexta, sabado, domingo')
+  .eq('loja_id', loja_id)
+  .eq('item_porcionado_id', mapping.item_porcionado_id)
+  .single()
+
+// 2. Calcular ideal do dia
+const diaSemana = new Date().getDay()
+const diasMap = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado']
+const idealDia = estoqueIdeal?.[diasMap[diaSemana]] || 0
+
+// 3. Calcular a_produzir após baixa
+const novoFinalSobra = (contagem.final_sobra || 0) - quantidadeTotal
+const novoAProduzir = Math.max(0, idealDia - novoFinalSobra)
+
+// 4. Atualizar com ambos os campos
+await supabase
+  .from('contagem_porcionados')
+  .update({ 
+    final_sobra: novoFinalSobra,
+    ideal_amanha: idealDia,
+    a_produzir: novoAProduzir,
+    // ... outros campos
+  })
 ```
 
-## Resultado Esperado
+### 2. Criar Contagem com Ideal Configurado
 
-Após esta correção:
+Quando não existe contagem e o webhook precisa criar uma:
 
-| Item no Pedido | option_id | Mapeamento | Resultado |
-|---------------|-----------|------------|-----------|
-| CALABRESA (G) | 1036576 | ✅ Vinculado | **Baixa estoque** |
-| Massa Tradicional | 2001010 | ⚠️ Sem vínculo | Ignora (não baixa) |
+```typescript
+// Ao criar nova contagem:
+const novoFinalSobra = -quantidadeTotal // Negativo = vendido
+const novoAProduzir = idealDia + quantidadeTotal // 100 + 1 = 101
 
-A próxima venda de pizza com sabor CALABRESA vai baixar automaticamente o estoque do item porcionado vinculado.
+await supabase.from('contagem_porcionados').insert({
+  loja_id,
+  item_porcionado_id: mapping.item_porcionado_id,
+  final_sobra: novoFinalSobra,    // -1
+  ideal_amanha: idealDia,          // 100
+  a_produzir: novoAProduzir,       // 101
+  // ...
+})
+```
+
+### 3. Interface (Já Funciona!)
+
+A interface já:
+- Mostra o campo azul com valor (positivo ou negativo)
+- Permite ajustes manuais com + e -
+- Exibe o botão laranja "A PRODUZIR" com o valor calculado
+
+---
 
 ## Arquivos a Modificar
 
-1. `supabase/functions/cardapio-web-webhook/index.ts`
-   - Linha ~409: Alterar loop de `complements` para `options`
-   - Usar `opt.option_id` em vez de `c.id`
-   - Manter logs para diagnóstico
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/cardapio-web-webhook/index.ts` | Buscar `estoques_ideais_semanais` e calcular `a_produzir` automaticamente |
+
+---
+
+## Fluxo Após Implementação
+
+```text
+1. Cliente faz pedido no Cardápio Web
+         ↓
+2. Webhook recebe notificação
+         ↓
+3. Sistema busca ideal do dia (ex: 100)
+         ↓
+4. Sistema atualiza:
+   - final_sobra: -1 (era 0, vendeu 1)
+   - ideal_amanha: 100
+   - a_produzir: 101 (100 - (-1) = 101)
+         ↓
+5. Tela de Contagem mostra:
+   [Botão Azul: -1] [Botão Laranja: 101]
+         ↓
+6. Produção vê demanda em tempo real
+```
+
+---
+
+## Resultado Esperado
+
+A equipe da produção verá no botão laranja exatamente quantas unidades precisam ser produzidas para:
+1. Repor as vendas da noite anterior
+2. Atingir o estoque ideal de 100 unidades
+
+**Exemplo:**
+- Estoque ideal: 100
+- Vendas da noite: 15 pizzas
+- Tela mostrará: `[-15]` no azul e `[115]` no laranja
 
