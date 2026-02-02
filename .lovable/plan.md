@@ -1,111 +1,169 @@
 
-# Plano: Correção da Lógica de Decremento Real no Webhook Cardápio Web
+
+# Plano: Sincronização em Tempo Real do Frontend com Baixas do Cardápio Web
 
 ## Diagnóstico Confirmado
 
-Você identificou corretamente o problema na lógica do webhook. Após analisar o código (linhas 620-656), confirmo:
+O webhook `cardapio-web-webhook` **está funcionando corretamente** com a lógica de "Decremento Real". O problema está no **frontend** (`ContagemPorcionados.tsx`) que:
 
-### Problema Atual (Linha 628)
-```typescript
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
-```
+1. **Não atualiza em tempo real** quando baixas automáticas ocorrem
+2. **Sobrescreve o `final_sobra` do banco** com valores desatualizados do estado local
 
-**O que faz:** Recalcula o saldo como `Ideal - Total de Vendas Acumuladas`, ignorando qualquer ajuste manual feito pelo funcionário.
+### Cenário do Bug
 
-**Exemplo do problema:**
-1. Ideal = 140, Vendas = 50 → Sistema calcula saldo = 90
-2. Funcionário ajusta para 105 (clicou + porque viu mais massa)
-3. Nova venda de 5 → Sistema faz `140 - 55 = 85`, sobrescrevendo o 105
+1. Funcionário abre a página às 10:00 → vê `final_sobra = 140`
+2. Cardápio Web envia 50 vendas às 12:00 → banco atualiza para `final_sobra = 90`
+3. Funcionário (ainda com tela antiga) clica em "Salvar" às 14:00
+4. Frontend envia `final_sobra = 140` (valor antigo) → **reseta o estoque!**
+5. Nova venda às 15:00 → webhook lê 140 do banco e faz `140 - 5 = 135`
 
-### Solução Proposta (Decremento Real)
-```typescript
-const estoqueAtual = (contagem as any).final_sobra || 0
-const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
-```
-
-**O que fará:** Subtrai apenas a venda atual do valor que está no campo azul (respeitando ajustes manuais).
-
-**Exemplo corrigido:**
-1. Ideal = 140, Vendas = 50 → Sistema calcula saldo = 90
-2. Funcionário ajusta para 105
-3. Nova venda de 5 → Sistema faz `105 - 5 = 100` ✅
+O ciclo se repete: o frontend "reseta" e o webhook desconta do valor resetado.
 
 ---
 
-## Mudanças Necessárias
+## Solução Proposta: Sincronização com Realtime
 
-### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
+### Mudança 1: Adicionar Subscription Realtime
 
-#### 1. Cenário de Atualização (Linhas 626-630)
+Arquivo: `src/pages/ContagemPorcionados.tsx`
 
-**Antes:**
+Adicionar uma subscription para atualizar a tela automaticamente quando o Cardápio Web modificar dados:
+
 ```typescript
-const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
-const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
+useEffect(() => {
+  if (!organizationId) return;
+  
+  // Subscription para atualizações da contagem (via Cardápio Web ou outro usuário)
+  const channel = supabase
+    .channel('contagem-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'contagem_porcionados',
+        filter: `organization_id=eq.${organizationId}`,
+      },
+      (payload) => {
+        // Atualizar estado local apenas se não estiver editando este item
+        const updated = payload.new as Contagem;
+        const key = `${updated.loja_id}-${updated.item_porcionado_id}`;
+        
+        // Só atualizar se o usuário não estiver editando este campo
+        if (!editingValues[key]) {
+          setContagens(prev => {
+            const lojaContagens = [...(prev[updated.loja_id] || [])];
+            const index = lojaContagens.findIndex(
+              c => c.item_porcionado_id === updated.item_porcionado_id
+            );
+            
+            if (index >= 0) {
+              lojaContagens[index] = { ...lojaContagens[index], ...updated };
+            }
+            
+            return { ...prev, [updated.loja_id]: lojaContagens };
+          });
+        }
+      }
+    )
+    .subscribe();
+  
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [organizationId, editingValues]);
 ```
 
-**Depois:**
-```typescript
-const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
-const novoTotalBaixas = vendasAnteriores + quantidadeTotal
+### Mudança 2: Habilitar Realtime na Tabela
 
-// DECREMENTO REAL: Subtrai da sobra atual (respeitando ajustes manuais)
-const estoqueAtual = ((contagem as unknown as Record<string, number>).final_sobra || 0)
-const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+Arquivo: Nova migration SQL
+
+```sql
+-- Habilitar Realtime para contagem_porcionados
+ALTER PUBLICATION supabase_realtime ADD TABLE public.contagem_porcionados;
 ```
 
-#### 2. Atualizar Log de Debug (Linha 630)
+### Mudança 3: Preservar `cardapio_web_baixa_total` no Save Manual
 
-**Antes:**
+Arquivo: `src/pages/ContagemPorcionados.tsx` (função `executeSave`)
+
+Quando o funcionário salvar manualmente, precisamos **preservar** os campos do Cardápio Web:
+
 ```typescript
-console.log(`📦 Atualizando contagem (tanque cheio): ideal=${idealDoDia}, vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = vendas_total=${novoTotalBaixas} → saldo_restante=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+const dataToSave = {
+  loja_id: lojaId,
+  item_porcionado_id: itemId,
+  final_sobra: finalSobra,
+  peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
+  ideal_amanha: idealAmanha,
+  usuario_id: user.id,
+  usuario_nome: profile?.nome || user.email || 'Usuário',
+  organization_id: organizationId,
+  dia_operacional: diaOperacional,
+  // NÃO sobrescrever campos do Cardápio Web - eles são gerenciados pelo webhook
+  // cardapio_web_baixa_total: ← NÃO INCLUIR
+  // cardapio_web_ultima_baixa_at: ← NÃO INCLUIR  
+};
 ```
 
-**Depois:**
+### Mudança 4: Indicador Visual de Atualização Remota
+
+Adicionar feedback visual quando uma baixa automática ocorrer:
+
 ```typescript
-console.log(`📦 Atualizando contagem (decremento real): estoque_atual=${estoqueAtual} - vendas_novas=${quantidadeTotal} = saldo_novo=${novoFinalSobra} (vendas_acumuladas=${novoTotalBaixas}, ideal=${idealDoDia})`)
+// Dentro do callback do realtime
+toast.info(`📦 Venda registrada: ${updated.cardapio_web_ultima_baixa_qtd} unidades de ${itemNome}`, {
+  duration: 3000,
+  icon: '🍕'
+});
 ```
 
-#### 3. Cenário de Criação (Linhas 588-591) - Manter Igual
+---
 
-O cenário de criação (primeira venda do dia) continua correto:
-```typescript
-const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
-```
+## Arquivos a Modificar
 
-Isso está certo porque na primeira venda do dia, assumimos que o "tanque estava cheio" (Ideal).
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/ContagemPorcionados.tsx` | Adicionar subscription Realtime + toast de feedback |
+| Nova migration SQL | Habilitar Realtime na tabela `contagem_porcionados` |
 
 ---
 
 ## Comportamento Final Esperado
 
-| Hora | Ação | Estoque Anterior | Venda | Estoque Novo | a_produzir |
-|------|------|------------------|-------|--------------|------------|
-| 08:00 | Início do dia | - | - | 140 (ideal) | 0 |
-| 10:00 | Venda 10 pizzas | 140 | 10 | 130 | 10 |
-| 12:00 | Ajuste manual +15 | 130 | - | 145 | 0 |
-| 14:00 | Venda 5 pizzas | 145 | 5 | 140 | 0 |
-| 16:00 | Venda 50 pizzas | 140 | 50 | 90 | 50 |
+| Hora | Ação | Tela do Funcionário | Banco de Dados |
+|------|------|---------------------|----------------|
+| 10:00 | Abre página | Mostra 140 | `final_sobra = 140` |
+| 12:00 | Cardápio Web vende 50 | **Atualiza para 90** + Toast "📦 Venda: 50 un" | `final_sobra = 90` |
+| 14:00 | Funcionário clica + | Mostra 95 | (não salva ainda) |
+| 14:05 | Salva manualmente | Confirma 95 | `final_sobra = 95` |
+| 15:00 | Cardápio Web vende 5 | **Atualiza para 90** + Toast | `final_sobra = 90` |
 
-**Resultado:** O botão laranja sempre mostrará `Ideal - final_sobra`, que representa o que realmente falta para repor.
-
----
-
-## Detalhes Técnicos da Implementação
-
-1. **Modificar apenas 2-3 linhas** no cenário de atualização (linha 628)
-2. **Manter `cardapio_web_baixa_total`** como registro de auditoria (total de vendas do dia)
-3. **Manter o log atualizado** para facilitar debugging futuro
-4. **Deploy automático** da Edge Function após aprovação
+**Resultado:** O funcionário sempre vê o valor real e ajustes manuais são respeitados.
 
 ---
 
-## Nota sobre Dados Existentes
+## Detalhes Técnicos
 
-Os dados de hoje já estão "corrompidos" pelo cálculo antigo. Após a correção:
-- Novas vendas respeitarão o valor atual do campo azul
-- O funcionário pode fazer um ajuste manual para "resetar" se necessário
-- Amanhã o sistema iniciará com o Ideal correto (tanque cheio)
+### Por que Realtime resolve o problema?
 
-**Opção adicional:** Podemos criar uma query SQL para recalcular os saldos atuais baseado nas vendas reais de hoje, se necessário.
+1. **Evita estado desatualizado**: O frontend sempre mostra o valor atual do banco
+2. **Preserva ajustes manuais**: O webhook faz `final_sobra - vendas`, não reseta
+3. **Feedback imediato**: Funcionário sabe que vendas estão sendo registradas
+
+### Alternativa sem Realtime (mais simples)
+
+Se Realtime causar problemas de performance, podemos usar polling a cada 30 segundos:
+
+```typescript
+useEffect(() => {
+  const interval = setInterval(() => {
+    loadData(); // Recarrega dados do banco
+  }, 30000);
+  
+  return () => clearInterval(interval);
+}, []);
+```
+
+Porém, isso é menos eficiente e pode causar conflitos se o usuário estiver digitando.
+
