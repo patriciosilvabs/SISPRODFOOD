@@ -1837,6 +1837,7 @@ export type Database = {
           created_at: string
           id: string
           item_porcionado_id: string | null
+          loja_id: string | null
           organization_id: string
           quantidade_consumida: number
           tipo: string | null
@@ -1849,6 +1850,7 @@ export type Database = {
           created_at?: string
           id?: string
           item_porcionado_id?: string | null
+          loja_id?: string | null
           organization_id: string
           quantidade_consumida?: number
           tipo?: string | null
@@ -1861,6 +1863,7 @@ export type Database = {
           created_at?: string
           id?: string
           item_porcionado_id?: string | null
+          loja_id?: string | null
           organization_id?: string
           quantidade_consumida?: number
           tipo?: string | null
@@ -1871,6 +1874,13 @@ export type Database = {
             columns: ["item_porcionado_id"]
             isOneToOne: false
             referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapeamento_cardapio_itens_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
             referencedColumns: ["id"]
           },
           {
