@@ -484,7 +484,15 @@ export function useCardapioWebIntegracao() {
     mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
       if (!organizationId) throw new Error('Organização não encontrada');
       
-      // Step 1: Delete all unlinked mappings (item_porcionado_id IS NULL) for this store
+      // Step 1: Deduplicate items by codigo_interno (cardapio_item_id)
+      // If duplicates exist, keep only the last one (overwrites)
+      const itemsUnicos = new Map<number, ImportarMapeamentoItem>();
+      for (const item of items) {
+        itemsUnicos.set(item.codigo_interno, item);
+      }
+      const itemsDeduplicados = Array.from(itemsUnicos.values());
+      
+      // Step 2: Delete all unlinked mappings (item_porcionado_id IS NULL) for this store
       // This ensures re-importing won't create duplicates
       const { error: deleteError } = await supabase
         .from('mapeamento_cardapio_itens')
@@ -495,8 +503,8 @@ export function useCardapioWebIntegracao() {
       
       if (deleteError) throw deleteError;
       
-      // Step 2: Insert new mappings
-      const mappings = items.map(item => ({
+      // Step 3: Insert deduplicated mappings
+      const mappings = itemsDeduplicados.map(item => ({
         organization_id: organizationId,
         loja_id,
         cardapio_item_id: item.codigo_interno,
