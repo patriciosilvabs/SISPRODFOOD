@@ -1,130 +1,69 @@
 
+# Plano: Corrigir Query Keys de Invalidação
 
-# Plano: Remover Todos os Mapeamentos de Uma Só Vez
+## Problema Identificado
 
-## Objetivo
+As mutations do hook `useCardapioWebIntegracao` estão invalidando a query key **errada**, causando a falha no recarregamento da lista após criar/atualizar integrações.
 
-Adicionar um botão que permite ao usuário excluir **todos os mapeamentos** da tabela `mapeamento_cardapio_itens` de uma só vez, com confirmação de segurança.
+| Mutation | Query Key Invalidada | Query Key Correta |
+|----------|---------------------|-------------------|
+| `createIntegracao` | `cardapio-web-integracao` | `cardapio-web-integracoes` |
+| `updateIntegracaoStatus` | `cardapio-web-integracao` | `cardapio-web-integracoes` |
+| `regenerateToken` | `cardapio-web-integracao` | `cardapio-web-integracoes` |
 
-## Situação Atual
+## Por que isso acontece?
 
-| Funcionalidade | Estado |
-|----------------|--------|
-| Remover vínculo individual | ✅ Existe (botão lixeira em cada linha) |
-| Remover todos de uma vez | ❌ Não existe |
+1. Usuário clica em "Configurar Integração" em uma loja
+2. A mutation `createIntegracao` insere o registro no banco
+3. Toast "Integração configurada com sucesso!" aparece
+4. `invalidateQueries({ queryKey: ['cardapio-web-integracao'] })` é chamado (SINGULAR)
+5. A query real usa `['cardapio-web-integracoes']` (PLURAL)
+6. Como as keys não correspondem, os dados **NÃO são recarregados**
+7. O card da loja permanece no estado "Não configurada" mesmo após a criação
 
-## Mudança Visual Proposta
+## Solução
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Mapeamento de Produtos                                                     │
-│  Configure quais itens porcionados são consumidos para cada produto...      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────┐  ┌────────────────────┐  ┌───────────────┐            │
-│  │ 🗑️ Limpar Tudo  │  │ 📤 Importar Arquivo│  │ ➕ Adicionar  │            │
-│  └─────────────────┘  └────────────────────┘  └───────────────┘            │
-│         ↑                                                                   │
-│   NOVO BOTÃO (vermelho/destructive)                                         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Corrigir as 3 mutations para usar a query key correta `cardapio-web-integracoes`:
 
-## Fluxo de Confirmação
+### Arquivo: `src/hooks/useCardapioWebIntegracao.ts`
 
-1. Usuário clica em **"Limpar Tudo"**
-2. Modal de confirmação aparece:
-   - Título: "Remover todos os mapeamentos?"
-   - Mensagem: "Esta ação é PERMANENTE e IRREVERSÍVEL. Todos os X mapeamentos serão excluídos."
-   - Botões: [Cancelar] [Confirmar Exclusão]
-3. Após confirmação, todos os registros são deletados
-4. Toast de sucesso: "X mapeamentos removidos com sucesso"
-
-## Alterações Técnicas
-
-### 1. Hook: `src/hooks/useCardapioWebIntegracao.ts`
-
-Adicionar nova mutation `deleteAllMapeamentos`:
-
+**Linha 248** - createIntegracao:
 ```typescript
-// Mutation: Delete ALL mappings at once
-const deleteAllMapeamentos = useMutation({
-  mutationFn: async () => {
-    if (!organizationId) throw new Error('Organização não encontrada');
-    
-    const { error } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .delete()
-      .eq('organization_id', organizationId);
-    
-    if (error) throw error;
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-    toast.success('Todos os mapeamentos foram removidos');
-  },
-  onError: (error) => {
-    console.error('Erro ao remover mapeamentos:', error);
-    toast.error('Erro ao remover mapeamentos');
-  }
-});
+// ANTES
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+
+// DEPOIS
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
 ```
 
-Exportar no return do hook.
+**Linha 268** - updateIntegracaoStatus:
+```typescript
+// ANTES
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
 
-### 2. Página: `src/pages/ConfigurarCardapioWeb.tsx`
-
-Adicionar botão com AlertDialog de confirmação na seção de mapeamentos:
-
-```tsx
-{mapeamentosAgrupados.length > 0 && (
-  <AlertDialog>
-    <AlertDialogTrigger asChild>
-      <Button variant="destructive" size="sm">
-        <Trash2 className="h-4 w-4 mr-2" />
-        Limpar Tudo
-      </Button>
-    </AlertDialogTrigger>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>Remover todos os mapeamentos?</AlertDialogTitle>
-        <AlertDialogDescription>
-          Esta ação é <strong>PERMANENTE e IRREVERSÍVEL</strong>. 
-          Todos os <strong>{mapeamentosAgrupados.length}</strong> produtos mapeados 
-          e seus vínculos serão excluídos.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-        <AlertDialogAction 
-          onClick={(e) => {
-            e.preventDefault();
-            deleteAllMapeamentos.mutate();
-          }}
-          className="bg-destructive text-destructive-foreground"
-        >
-          {deleteAllMapeamentos.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : null}
-          Confirmar Exclusão
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-)}
+// DEPOIS
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
 ```
+
+**Linha 294** - regenerateToken:
+```typescript
+// ANTES
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+
+// DEPOIS
+queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
+```
+
+## Resultado Esperado
+
+Após a correção:
+1. Usuário configura integração para "UNIDADE ALEIXO"
+2. Card atualiza mostrando URL, Token e API Key
+3. Usuário configura integração para outra loja
+4. **Card também atualiza corretamente** mostrando todos os campos
 
 ## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/hooks/useCardapioWebIntegracao.ts` | Adicionar mutation `deleteAllMapeamentos` |
-| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar botão "Limpar Tudo" com confirmação |
-
-## Segurança
-
-- Confirmação obrigatória via AlertDialog
-- Mensagem explicita que a ação é "PERMANENTE e IRREVERSÍVEL" 
-- Uso de `preventDefault()` para aguardar conclusão da operação assíncrona
-- Botão só aparece quando existem mapeamentos para remover
-
+| `src/hooks/useCardapioWebIntegracao.ts` | Corrigir 3 query keys de `cardapio-web-integracao` para `cardapio-web-integracoes` |
