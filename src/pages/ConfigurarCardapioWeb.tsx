@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight, CheckSquare } from 'lucide-react';
 import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
@@ -21,6 +22,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
+import { VincularEmLoteModal } from '@/components/modals/VincularEmLoteModal';
 import { LojaIntegracaoCard } from '@/components/cardapio-web/LojaIntegracaoCard';
 
 // Row component for mapeamento table
@@ -42,6 +44,10 @@ interface MapeamentoTableRowProps {
   onAbrirModalVinculo: (produto: MapeamentoCardapioItemAgrupado) => void;
   showTipo: boolean;
   showCategoria: boolean;
+  // Selection props
+  modoSelecao: boolean;
+  isSelected: boolean;
+  onToggleSelection: (cardapioItemId: number) => void;
 }
 
 function MapeamentoTableRow({
@@ -54,9 +60,20 @@ function MapeamentoTableRow({
   onAbrirModalVinculo,
   showTipo,
   showCategoria,
+  modoSelecao,
+  isSelected,
+  onToggleSelection,
 }: MapeamentoTableRowProps) {
   return (
-    <TableRow>
+    <TableRow className={isSelected ? 'bg-muted/50' : ''}>
+      {modoSelecao && (
+        <TableCell className="w-10">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelection(produto.cardapio_item_id)}
+          />
+        </TableCell>
+      )}
       {showTipo && (
         <TableCell>
           {produto.tipo && (
@@ -191,6 +208,7 @@ export default function ConfigurarCardapioWeb() {
     deleteAllMapeamentos,
     importarMapeamentos,
     vincularItemPorcionado,
+    vincularEmLote,
     adicionarVinculo,
     testarConexao,
   } = useCardapioWebIntegracao();
@@ -201,6 +219,9 @@ export default function ConfigurarCardapioWeb() {
   const [produtoSelecionado, setProdutoSelecionado] = useState<MapeamentoCardapioItemAgrupado | null>(null);
   const [lojaIdMapeamento, setLojaIdMapeamento] = useState<string>('');
   const [modoVisualizacao, setModoVisualizacao] = useState<'produto' | 'tipo' | 'categoria'>('produto');
+  const [modoSelecao, setModoSelecao] = useState(false);
+  const [produtosSelecionados, setProdutosSelecionados] = useState<Set<number>>(new Set());
+  const [vinculoEmLoteModalOpen, setVinculoEmLoteModalOpen] = useState(false);
   const [gruposExpandidos, setGruposExpandidos] = useState<Set<string>>(new Set());
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
@@ -369,6 +390,67 @@ export default function ConfigurarCardapioWeb() {
     return await testarConexao.mutateAsync(token);
   };
 
+  // Toggle product selection
+  const toggleProdutoSelecionado = (cardapioItemId: number) => {
+    setProdutosSelecionados(prev => {
+      const novo = new Set(prev);
+      if (novo.has(cardapioItemId)) {
+        novo.delete(cardapioItemId);
+      } else {
+        novo.add(cardapioItemId);
+      }
+      return novo;
+    });
+  };
+
+  // Select/deselect all products
+  const toggleSelecionarTodos = (selecionar: boolean) => {
+    if (selecionar) {
+      setProdutosSelecionados(new Set(mapeamentosFiltrados.map(p => p.cardapio_item_id)));
+    } else {
+      setProdutosSelecionados(new Set());
+    }
+  };
+
+  // Select/deselect all products in a group
+  const toggleSelecionarGrupo = (produtos: MapeamentoCardapioItemAgrupado[], selecionar: boolean) => {
+    setProdutosSelecionados(prev => {
+      const novo = new Set(prev);
+      if (selecionar) {
+        produtos.forEach(p => novo.add(p.cardapio_item_id));
+      } else {
+        produtos.forEach(p => novo.delete(p.cardapio_item_id));
+      }
+      return novo;
+    });
+  };
+
+  // Handle bulk linking
+  const handleVincularEmLote = async (itemPorcionadoId: string, quantidade: number) => {
+    if (!lojaIdMapeamento || produtosSelecionados.size === 0) return;
+    
+    const produtosParaVincular = mapeamentosFiltrados.filter(p => 
+      produtosSelecionados.has(p.cardapio_item_id)
+    );
+    
+    await vincularEmLote.mutateAsync({
+      produtos: produtosParaVincular,
+      item_porcionado_id: itemPorcionadoId,
+      quantidade_consumida: quantidade,
+      loja_id: lojaIdMapeamento,
+    });
+    
+    // Clear selection after success
+    setProdutosSelecionados(new Set());
+    setModoSelecao(false);
+    setVinculoEmLoteModalOpen(false);
+  };
+
+  // Clear selection when changing loja or visualization mode
+  useEffect(() => {
+    setProdutosSelecionados(new Set());
+  }, [lojaIdMapeamento, modoVisualizacao]);
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -502,6 +584,20 @@ export default function ConfigurarCardapioWeb() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2 pt-2">
+                  {/* Botão Selecionar Múltiplos */}
+                  {mapeamentosFiltrados.length > 0 && (
+                    <Button
+                      variant={modoSelecao ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        setModoSelecao(!modoSelecao);
+                        setProdutosSelecionados(new Set());
+                      }}
+                    >
+                      <CheckSquare className="h-4 w-4 mr-2" />
+                      {modoSelecao ? "Cancelar Seleção" : "Selecionar Múltiplos"}
+                    </Button>
+                  )}
                   {mapeamentosFiltrados.length > 0 && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -662,6 +758,14 @@ export default function ConfigurarCardapioWeb() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {modoSelecao && (
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={produtosSelecionados.size === mapeamentosFiltrados.length && mapeamentosFiltrados.length > 0}
+                              onCheckedChange={(checked) => toggleSelecionarTodos(!!checked)}
+                            />
+                          </TableHead>
+                        )}
                         <TableHead className="w-20">Tipo</TableHead>
                         <TableHead>Categoria</TableHead>
                         <TableHead>Produto</TableHead>
@@ -683,6 +787,9 @@ export default function ConfigurarCardapioWeb() {
                           onAbrirModalVinculo={handleAbrirModalVinculo}
                           showTipo={true}
                           showCategoria={true}
+                          modoSelecao={modoSelecao}
+                          isSelected={produtosSelecionados.has(produto.cardapio_item_id)}
+                          onToggleSelection={toggleProdutoSelecionado}
                         />
                       ))}
                     </TableBody>
@@ -690,63 +797,94 @@ export default function ConfigurarCardapioWeb() {
                 ) : (
                   // Modo Por Tipo ou Por Categoria - Grupos colapsáveis
                   <div className="space-y-4">
-                    {mapeamentosVisualizacao.grupos?.map(([grupoNome, produtos]) => (
-                      <Collapsible
-                        key={grupoNome}
-                        open={gruposExpandidos.has(grupoNome)}
-                        onOpenChange={() => toggleGrupo(grupoNome)}
-                      >
-                        <CollapsibleTrigger asChild>
-                          <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted transition-colors">
-                            {gruposExpandidos.has(grupoNome) ? (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <span className="font-semibold">{grupoNome}</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}
-                            </Badge>
-                          </div>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <div className="mt-2 border rounded-lg overflow-hidden">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  {modoVisualizacao === 'categoria' && (
-                                    <TableHead className="w-20">Tipo</TableHead>
-                                  )}
-                                  {modoVisualizacao === 'tipo' && (
-                                    <TableHead>Categoria</TableHead>
-                                  )}
-                                  <TableHead>Produto</TableHead>
-                                  <TableHead className="w-24">Código</TableHead>
-                                  <TableHead>Itens Vinculados</TableHead>
-                                  <TableHead className="w-24"></TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {produtos.map((produto) => (
-                                  <MapeamentoTableRow
-                                    key={produto.cardapio_item_id}
-                                    produto={produto}
-                                    itensPorcionados={itensPorcionados || []}
-                                    lojaIdMapeamento={lojaIdMapeamento}
-                                    onVincularItem={handleVincularItem}
-                                    onAdicionarVinculo={(v) => adicionarVinculo.mutate(v)}
-                                    onDeleteMapeamento={(id) => deleteMapeamento.mutate(id)}
-                                    onAbrirModalVinculo={handleAbrirModalVinculo}
-                                    showTipo={modoVisualizacao === 'categoria'}
-                                    showCategoria={modoVisualizacao === 'tipo'}
-                                  />
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ))}
+                    {mapeamentosVisualizacao.grupos?.map(([grupoNome, produtos]) => {
+                      const todosGrupoSelecionados = produtos.every(p => produtosSelecionados.has(p.cardapio_item_id));
+                      const algunsGrupoSelecionados = produtos.some(p => produtosSelecionados.has(p.cardapio_item_id));
+                      
+                      return (
+                        <Collapsible
+                          key={grupoNome}
+                          open={gruposExpandidos.has(grupoNome)}
+                          onOpenChange={() => toggleGrupo(grupoNome)}
+                        >
+                          <CollapsibleTrigger asChild>
+                            <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted transition-colors">
+                              {modoSelecao && (
+                                <Checkbox
+                                  checked={todosGrupoSelecionados}
+                                  className={algunsGrupoSelecionados && !todosGrupoSelecionados ? 'data-[state=unchecked]:bg-muted-foreground/20' : ''}
+                                  onCheckedChange={(checked) => {
+                                    toggleSelecionarGrupo(produtos, !!checked);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              )}
+                              {gruposExpandidos.has(grupoNome) ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              )}
+                              <span className="font-semibold">{grupoNome}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}
+                              </Badge>
+                              {modoSelecao && algunsGrupoSelecionados && (
+                                <Badge variant="outline" className="text-xs">
+                                  {produtos.filter(p => produtosSelecionados.has(p.cardapio_item_id)).length} selecionado(s)
+                                </Badge>
+                              )}
+                            </div>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="mt-2 border rounded-lg overflow-hidden">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    {modoSelecao && (
+                                      <TableHead className="w-10">
+                                        <Checkbox
+                                          checked={todosGrupoSelecionados}
+                                          onCheckedChange={(checked) => toggleSelecionarGrupo(produtos, !!checked)}
+                                        />
+                                      </TableHead>
+                                    )}
+                                    {modoVisualizacao === 'categoria' && (
+                                      <TableHead className="w-20">Tipo</TableHead>
+                                    )}
+                                    {modoVisualizacao === 'tipo' && (
+                                      <TableHead>Categoria</TableHead>
+                                    )}
+                                    <TableHead>Produto</TableHead>
+                                    <TableHead className="w-24">Código</TableHead>
+                                    <TableHead>Itens Vinculados</TableHead>
+                                    <TableHead className="w-24"></TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {produtos.map((produto) => (
+                                    <MapeamentoTableRow
+                                      key={produto.cardapio_item_id}
+                                      produto={produto}
+                                      itensPorcionados={itensPorcionados || []}
+                                      lojaIdMapeamento={lojaIdMapeamento}
+                                      onVincularItem={handleVincularItem}
+                                      onAdicionarVinculo={(v) => adicionarVinculo.mutate(v)}
+                                      onDeleteMapeamento={(id) => deleteMapeamento.mutate(id)}
+                                      onAbrirModalVinculo={handleAbrirModalVinculo}
+                                      showTipo={modoVisualizacao === 'categoria'}
+                                      showCategoria={modoVisualizacao === 'tipo'}
+                                      modoSelecao={modoSelecao}
+                                      isSelected={produtosSelecionados.has(produto.cardapio_item_id)}
+                                      onToggleSelection={toggleProdutoSelecionado}
+                                    />
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -838,6 +976,32 @@ export default function ConfigurarCardapioWeb() {
           onConfirm={handleAdicionarVinculo}
           isLoading={adicionarVinculo.isPending}
         />
+
+        {/* Modal de vincular em lote */}
+        <VincularEmLoteModal
+          open={vinculoEmLoteModalOpen}
+          onOpenChange={setVinculoEmLoteModalOpen}
+          quantidadeSelecionados={produtosSelecionados.size}
+          itensPorcionados={itensPorcionados || []}
+          onConfirm={handleVincularEmLote}
+          isLoading={vincularEmLote.isPending}
+        />
+
+        {/* Barra de ações fixa quando há itens selecionados */}
+        {modoSelecao && produtosSelecionados.size > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-4 flex items-center justify-center gap-4 z-50 shadow-lg">
+            <span className="text-sm">
+              <strong>{produtosSelecionados.size}</strong> produto(s) selecionado(s)
+            </span>
+            <Button onClick={() => setVinculoEmLoteModalOpen(true)}>
+              <Link2 className="h-4 w-4 mr-2" />
+              Vincular Selecionados
+            </Button>
+            <Button variant="ghost" onClick={() => setProdutosSelecionados(new Set())}>
+              Limpar Seleção
+            </Button>
+          </div>
+        )}
       </div>
     </Layout>
   );
