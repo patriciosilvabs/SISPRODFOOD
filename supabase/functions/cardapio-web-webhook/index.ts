@@ -269,7 +269,36 @@ Deno.serve(async (req) => {
     
     console.log(`Evento: ${evento}, Status: ${orderStatus}, Order ID: ${orderId}`)
 
-    // 4. Verificar se devemos processar este evento
+    // 4. VERIFICAÇÃO DE IDEMPOTÊNCIA - Evitar processamento duplicado de webhooks
+    if (orderId > 0) {
+      const { data: existingLog, error: logCheckError } = await supabase
+        .from('cardapio_web_pedidos_log')
+        .select('id')
+        .eq('order_id', orderId)
+        .eq('organization_id', organization_id)
+        .eq('sucesso', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingLog) {
+        console.log(`⏭️ Pedido ${orderId} já foi processado anteriormente. Ignorando webhook duplicado.`)
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'Pedido já processado anteriormente (idempotente)',
+            order_id: orderId 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        )
+      }
+      
+      if (logCheckError) {
+        console.warn(`⚠️ Erro ao verificar duplicidade do pedido ${orderId}:`, logCheckError.message)
+        // Continua o processamento mesmo com erro na verificação
+      }
+    }
+
+    // 5. Verificar se devemos processar este evento
     // ORDER_STATUS_UPDATED com status canceled - apenas logar
     if (evento === 'ORDER_STATUS_UPDATED' && orderStatus === 'canceled') {
       await supabase.from('cardapio_web_pedidos_log').insert({
