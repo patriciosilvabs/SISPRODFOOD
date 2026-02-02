@@ -1,103 +1,97 @@
 
-# Plano: Unificar Ajustes Manuais e Automáticos no Cálculo de "A Produzir"
 
-## Entendimento do Problema
+# Plano: Substituir Sobra pelo Estoque Virtual (Ideal - Vendas Acumuladas)
 
-A fórmula atual `a_produzir = MIN(ideal, vendas_web)` só considera vendas do Cardápio Web. Mas o usuário precisa que ajustes manuais nos botões de sobra (+ e -) também alterem a coluna "A Produzir".
+## Entendimento do Requisito
 
-### Exemplo do Problema
-
-| Ação | `final_sobra` | `cardapio_web_baixa_total` | Fórmula Atual | Esperado |
-|------|---------------|---------------------------|---------------|----------|
-| Ideal = 140 | 140 | 0 | 0 | 0 |
-| Usuário clica "-" 50x manualmente | 90 | 0 | 0 | **50** |
-| Venda automática de 40 | 50 | 40 | 40 | **90** |
-
-## Nova Lógica Proposta
-
-A fórmula correta que considera **ambos os fluxos** (manual e automático) é:
+Quando o Cardápio Web envia uma venda, em vez de decrementar o `final_sobra` atual, o sistema deve **substituir** o valor pela fórmula:
 
 ```
-a_produzir = MAX(0, ideal_amanha - final_sobra)
+final_sobra = ideal_do_dia - vendas_acumuladas
 ```
 
-### Por que funciona?
+Isso significa que o `final_sobra` sempre reflete o "Estoque Virtual" calculado.
 
-1. **Vendas automáticas**: Decrementam `final_sobra` → aumenta `a_produzir`
-2. **Ajustes manuais (-)**: Decrementam `final_sobra` → aumenta `a_produzir`
-3. **Ajustes manuais (+)**: Incrementam `final_sobra` → diminui `a_produzir`
+### Comparação dos Modelos
 
-O campo `final_sobra` é o **"Estoque Virtual"** que reflete todas as movimentações. Usando-o diretamente na fórmula, ambos os fluxos são contemplados.
+| Modelo | Fórmula | Problema |
+|--------|---------|----------|
+| **Atual (decremento)** | `final_sobra = sobra_atual - venda` | Se usuário ajustou manualmente, pode ficar inconsistente |
+| **Novo (substituição)** | `final_sobra = ideal - total_vendas` | Sempre sincronizado com as vendas acumuladas |
 
-### Exemplo Corrigido
+### Exemplo Prático
 
-| Ação | `final_sobra` | `ideal` | `a_produzir` |
-|------|---------------|---------|--------------|
-| Início do dia | 140 | 140 | 0 |
-| Usuário clica "-" 50x | 90 | 140 | **50** ✓ |
-| Venda Web de 40 | 50 | 140 | **90** ✓ |
-| Usuário clica "+" 10x | 60 | 140 | **80** ✓ |
+| Ação | `ideal` | `vendas_total` | `final_sobra` (novo) |
+|------|---------|----------------|----------------------|
+| Início do dia | 140 | 0 | **140** |
+| Venda de 10 pizzas | 140 | 10 | **130** |
+| Venda de 5 pizzas | 140 | 15 | **125** |
+| Usuário ajustou manualmente (-5) | 140 | 15 | *muda para 120* |
+| Nova venda de 20 pizzas | 140 | 35 | **105** ← substitui! |
+
+**Observação importante**: Com este modelo, quando uma venda chega pelo Cardápio Web, ela **sobrescreve** qualquer ajuste manual anterior. O `final_sobra` será sempre `ideal - vendas_acumuladas`.
 
 ## Alterações Necessárias
 
-### 1. Migração de Banco de Dados
+### 1. Edge Function: `supabase/functions/cardapio-web-webhook/index.ts`
 
-Alterar a coluna gerada `a_produzir`:
+**Linhas 561-592** - Atualização de contagem existente:
 
-```sql
-ALTER TABLE contagem_porcionados DROP COLUMN a_produzir;
-
-ALTER TABLE contagem_porcionados
-ADD COLUMN a_produzir integer GENERATED ALWAYS AS (
-  GREATEST(0, COALESCE(ideal_amanha, 0) - COALESCE(final_sobra, 0))
-) STORED;
-```
-
-### 2. Frontend: `src/pages/ContagemPorcionados.tsx`
-
-**Linha ~1117-1120** - Exibição na UI:
 ```typescript
-// DE:
-const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
-const aProduzir = Math.min(idealFromConfig, cardapioWebBaixaTotal);
+// DE (modelo atual - decremento):
+const estoqueAtual = contagem.final_sobra ?? 0;
+const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal);
 
-// PARA:
-const aProduzir = Math.max(0, idealFromConfig - finalSobra);
+// PARA (modelo substituição - baseado em vendas acumuladas):
+const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas);
 ```
 
-**Linha ~604-605** - Toast de confirmação:
+**Linhas 523-560** - Criação de nova contagem:
+
 ```typescript
-// DE:
-const aProduzir = Math.min(idealAmanha, cardapioWebBaixaTotal);
+// DE (modelo atual):
+const estoqueInicial = idealDoDia;
+const novoFinalSobra = Math.max(0, estoqueInicial - quantidadeTotal);
+const novoTotalBaixas = quantidadeTotal;
 
-// PARA:
-const aProduzir = Math.max(0, idealAmanha - finalSobra);
+// PARA (modelo substituição):
+const novoTotalBaixas = quantidadeTotal;
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas);
+// (mesma lógica, apenas mais claro semanticamente)
 ```
 
-## Fluxo Completo Corrigido
+## Fluxo Corrigido
 
 ```text
 DIA INICIA:
-├── final_sobra = ideal_amanha (ex: 140)
-└── a_produzir = MAX(0, 140 - 140) = 0
+├── ideal_amanha = 140
+├── cardapio_web_baixa_total = 0
+└── final_sobra = 140 (ideal - 0)
 
-USUÁRIO AJUSTA MANUALMENTE (-50):
-├── final_sobra = 90
-└── a_produzir = MAX(0, 140 - 90) = 50 ✓
+VENDA WEB DE 10 PIZZAS:
+├── cardapio_web_baixa_total = 10
+└── final_sobra = 130 (140 - 10) ← SUBSTITUÍDO!
 
-VENDA WEB DE 40 PIZZAS:
-├── final_sobra decrementado para 50
-├── cardapio_web_baixa_total = 40 (auditoria)
-└── a_produzir = MAX(0, 140 - 50) = 90 ✓
+USUÁRIO AJUSTA MANUALMENTE (-5):
+├── final_sobra = 125 (usuário ajustou para 125)
+├── cardapio_web_baixa_total = 10 (não muda)
+└── a_produzir = 15
 
-USUÁRIO AJUSTA MANUALMENTE (+20):
-├── final_sobra = 70
-└── a_produzir = MAX(0, 140 - 70) = 70 ✓
+NOVA VENDA WEB DE 20 PIZZAS:
+├── cardapio_web_baixa_total = 30 (10 + 20)
+└── final_sobra = 110 (140 - 30) ← SUBSTITUÍDO!
+    (o ajuste manual é ignorado, sobra agora é baseada em vendas)
 ```
 
-## Benefícios
+## Impacto
 
-1. **Fluxo unificado**: Tanto ajustes manuais quanto vendas automáticas afetam "A Produzir"
-2. **Feedback imediato**: A UI já usa `finalSobra` local, então a atualização é instantânea
-3. **Simples e intuitivo**: Operador vê que diminuir sobra aumenta produção
-4. **Auditoria preservada**: `cardapio_web_baixa_total` continua sendo registrado para rastreabilidade
+1. **Consistência**: O `final_sobra` sempre reflete `ideal - vendas_acumuladas` quando há vendas do Cardápio Web
+2. **Ajustes manuais**: São preservados até a próxima venda automática (quando serão sobrescritos)
+3. **Rastreabilidade**: `cardapio_web_baixa_total` continua rastreando vendas para auditoria
+4. **A Produzir**: Continua funcionando com a fórmula `MAX(0, ideal - final_sobra)`
+
+## Consideração Técnica
+
+Este modelo assume que o `cardapio_web_baixa_total` é a **fonte da verdade** para vendas automáticas. Qualquer ajuste manual no `final_sobra` será sobrescrito quando uma nova venda chegar do Cardápio Web.
+
