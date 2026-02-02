@@ -269,48 +269,81 @@ Deno.serve(async (req) => {
     
     console.log(`Evento: ${evento}, Status: ${orderStatus}, Order ID: ${orderId}`)
 
-    // 4. VERIFICAÇÃO DE IDEMPOTÊNCIA - Evitar processamento duplicado de webhooks
+    // 4. VERIFICAÇÃO DE IDEMPOTÊNCIA ATÔMICA - INSERT antes de processar
+    // Usa constraint UNIQUE (organization_id, order_id, evento) para evitar race conditions
     if (orderId > 0) {
-      const { data: existingLog, error: logCheckError } = await supabase
+      // Tentar inserir registro "em processamento" - se já existe, retorna conflito 23505
+      const { error: lockErr } = await supabase
         .from('cardapio_web_pedidos_log')
-        .select('id')
-        .eq('order_id', orderId)
-        .eq('organization_id', organization_id)
-        .eq('sucesso', true)
-        .limit(1)
-        .maybeSingle()
-
-      if (existingLog) {
-        console.log(`⏭️ Pedido ${orderId} já foi processado anteriormente. Ignorando webhook duplicado.`)
+        .insert({
+          organization_id,
+          loja_id,
+          order_id: orderId,
+          evento,
+          payload,
+          sucesso: false, // Marcado como false até processar com sucesso
+          itens_processados: null,
+          erro: 'Em processamento...'
+        })
+      
+      // Se der conflito UNIQUE, significa que já existe registro para este pedido+evento
+      if (lockErr?.code === '23505') {
+        console.log(`⏭️ Pedido ${orderId} já em processamento ou processado (UNIQUE constraint). Ignorando duplicado.`)
         return new Response(
           JSON.stringify({ 
             success: true, 
-            message: 'Pedido já processado anteriormente (idempotente)',
+            message: 'Pedido já processado anteriormente (idempotente via UNIQUE)',
             order_id: orderId 
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
       }
       
-      if (logCheckError) {
-        console.warn(`⚠️ Erro ao verificar duplicidade do pedido ${orderId}:`, logCheckError.message)
-        // Continua o processamento mesmo com erro na verificação
+      if (lockErr) {
+        console.warn(`⚠️ Erro ao reservar slot para pedido ${orderId}:`, lockErr.message)
+        // Continua o processamento mesmo com erro (fallback)
       }
     }
 
     // 5. Verificar se devemos processar este evento
+    // ORDER_STATUS_UPDATED - apenas logar, NÃO baixar estoque novamente
+    if (evento === 'ORDER_STATUS_UPDATED') {
+      // Atualizar o log existente com status de sucesso (não processa estoque)
+      await supabase
+        .from('cardapio_web_pedidos_log')
+        .update({
+          sucesso: true,
+          itens_processados: null,
+          erro: `Status update (${orderStatus}) - estoque não processado novamente`
+        })
+        .eq('organization_id', organization_id)
+        .eq('order_id', orderId)
+        .eq('evento', evento)
+      
+      console.log(`📝 Pedido ${orderId} status update (${orderStatus}) - registrado sem baixa de estoque`)
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Status update logged (no stock change)',
+          order_id: orderId,
+          status: orderStatus
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     // ORDER_STATUS_UPDATED com status canceled - apenas logar
-    if (evento === 'ORDER_STATUS_UPDATED' && orderStatus === 'canceled') {
-      await supabase.from('cardapio_web_pedidos_log').insert({
-        organization_id,
-        loja_id,
-        order_id: orderId,
-        evento,
-        payload,
-        sucesso: true,
-        itens_processados: null,
-        erro: 'Pedido cancelado - não processa estoque'
-      })
+    if (orderStatus === 'canceled') {
+      await supabase
+        .from('cardapio_web_pedidos_log')
+        .update({
+          sucesso: true,
+          itens_processados: null,
+          erro: 'Pedido cancelado - não processa estoque'
+        })
+        .eq('organization_id', organization_id)
+        .eq('order_id', orderId)
+        .eq('evento', evento)
       
       console.log(`Pedido ${orderId} cancelado - registrado mas não processado`)
       return new Response(
@@ -323,25 +356,24 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Se não é um status relevante e não é ORDER_CREATED, ignorar
-    if (evento !== 'ORDER_CREATED' && evento !== 'order.created' && 
-        !RELEVANT_STATUSES.includes(orderStatus)) {
-      await supabase.from('cardapio_web_pedidos_log').insert({
-        organization_id,
-        loja_id,
-        order_id: orderId,
-        evento,
-        payload,
-        sucesso: true,
-        itens_processados: null,
-        erro: `Status ${orderStatus} ignorado - apenas ${RELEVANT_STATUSES.join(', ')} são processados`
-      })
+    // Se não é ORDER_CREATED, ignorar (outros eventos não baixam estoque)
+    if (evento !== 'ORDER_CREATED' && evento !== 'order.created') {
+      await supabase
+        .from('cardapio_web_pedidos_log')
+        .update({
+          sucesso: true,
+          itens_processados: null,
+          erro: `Evento ${evento} ignorado - apenas ORDER_CREATED baixa estoque`
+        })
+        .eq('organization_id', organization_id)
+        .eq('order_id', orderId)
+        .eq('evento', evento)
       
-      console.log(`Evento ${evento} com status ${orderStatus} ignorado`)
+      console.log(`Evento ${evento} ignorado - não é ORDER_CREATED`)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Event ${evento} with status ${orderStatus} received but not processed`,
+          message: `Event ${evento} received but only ORDER_CREATED processes stock`,
           order_id: orderId 
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -667,18 +699,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 9. Log the webhook
+    // 9. Atualizar o log do webhook (já foi inserido no passo 4 como "em processamento")
     const sucesso = erros.length === 0
-    await supabase.from('cardapio_web_pedidos_log').insert({
-      organization_id,
-      loja_id,
-      order_id: orderId,
-      evento,
-      payload,
-      itens_processados: itensProcessados,
-      sucesso,
-      erro: erros.length > 0 ? erros.join('; ') : null
-    })
+    await supabase
+      .from('cardapio_web_pedidos_log')
+      .update({
+        itens_processados: itensProcessados,
+        sucesso,
+        erro: erros.length > 0 ? erros.join('; ') : null
+      })
+      .eq('organization_id', organization_id)
+      .eq('order_id', orderId)
+      .eq('evento', evento)
 
     console.log(`Pedido ${orderId} processado: ${itensProcessados.length} itens baixados`)
 
