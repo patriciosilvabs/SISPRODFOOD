@@ -606,6 +606,64 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Bulk link multiple products to the same item porcionado
+  const vincularEmLote = useMutation({
+    mutationFn: async ({
+      produtos,
+      item_porcionado_id,
+      quantidade_consumida,
+      loja_id
+    }: {
+      produtos: MapeamentoCardapioItemAgrupado[];
+      item_porcionado_id: string;
+      quantidade_consumida: number;
+      loja_id: string;
+    }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      // Para cada produto, criar ou atualizar o vínculo
+      const operations = produtos.map(async (produto) => {
+        // Se já tem um registro sem vínculo (item_porcionado_id = null), atualiza ele
+        const vinculoSemItem = produto.vinculos.find(v => !v.item_porcionado_id);
+        if (vinculoSemItem?.id) {
+          return supabase
+            .from('mapeamento_cardapio_itens')
+            .update({ item_porcionado_id, quantidade_consumida })
+            .eq('id', vinculoSemItem.id);
+        }
+        // Senão, cria um novo vínculo
+        return supabase
+          .from('mapeamento_cardapio_itens')
+          .insert({
+            organization_id: organizationId,
+            loja_id,
+            cardapio_item_id: produto.cardapio_item_id,
+            cardapio_item_nome: produto.cardapio_item_nome,
+            tipo: produto.tipo,
+            categoria: produto.categoria,
+            item_porcionado_id,
+            quantidade_consumida,
+            ativo: true
+          });
+      });
+      
+      const results = await Promise.all(operations);
+      
+      // Verifica se houve algum erro
+      for (const result of results) {
+        if (result.error) throw result.error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success(`${variables.produtos.length} produto(s) vinculado(s) com sucesso!`);
+    },
+    onError: (error) => {
+      console.error('Erro ao vincular em lote:', error);
+      toast.error('Erro ao vincular produtos');
+    }
+  });
+
   // Mutation: Delete ALL mappings for a specific loja
   const deleteAllMapeamentos = useMutation({
     mutationFn: async (lojaId: string) => {
@@ -661,6 +719,7 @@ export function useCardapioWebIntegracao() {
     deleteAllMapeamentos,
     importarMapeamentos,
     vincularItemPorcionado,
+    vincularEmLote,
     adicionarVinculo,
     
     // Utils
