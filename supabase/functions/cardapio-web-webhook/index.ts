@@ -550,13 +550,13 @@ Deno.serve(async (req) => {
         const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
-          // MODELO ACUMULATIVO: final_sobra = vendas acumuladas
-          // Vendas são SOMADAS em final_sobra (representam o consumo)
-          // a_produzir = MAX(0, ideal - final_sobra) - calculado automaticamente pelo banco
+          // MODELO TANQUE CHEIO: final_sobra = estoque_ideal - vendas_acumuladas
+          // Estoque inicia "cheio" (ideal) e vendas consomem do saldo
+          // a_produzir = MAX(0, ideal - final_sobra) = vendas (o que foi consumido)
           const novoTotalBaixas = quantidadeTotal
-          const novoFinalSobra = quantidadeTotal // Vendas vão direto para final_sobra
+          const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal) // TANQUE CHEIO: sobra = ideal - vendas
           
-          console.log(`📦 Criando contagem (modelo acumulativo): vendas=${quantidadeTotal} → final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+          console.log(`📦 Criando contagem (tanque cheio): ideal=${idealDoDia}, vendas=${quantidadeTotal} → saldo_restante=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -587,14 +587,15 @@ Deno.serve(async (req) => {
             console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: vendas=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra} (ideal=${idealDoDia})`)
           }
         } else {
-          // MODELO CORRETO: final_sobra = total de vendas web (cardapio_web_baixa_total)
-          // a_produzir = ideal - final_sobra (calculado pelo banco)
-          // Exemplo: ideal=140, vendas=50 → final_sobra=50 → a_produzir=90
+          // MODELO TANQUE CHEIO: final_sobra = estoque_ideal - vendas_totais
+          // Estoque inicia "cheio" (ideal) e vendas consomem do saldo
+          // a_produzir = MAX(0, ideal - final_sobra) = vendas_totais (o que foi consumido)
+          // Exemplo: ideal=140, vendas=50 → saldo=90 → a_produzir=50 ✓
           const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
           const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-          const novoFinalSobra = novoTotalBaixas // CORREÇÃO: usar total de baixas, não final_sobra anterior
+          const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas) // TANQUE CHEIO: sobra = ideal - vendas_totais
           
-          console.log(`📦 Atualizando contagem: vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+          console.log(`📦 Atualizando contagem (tanque cheio): ideal=${idealDoDia}, vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = vendas_total=${novoTotalBaixas} → saldo_restante=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
