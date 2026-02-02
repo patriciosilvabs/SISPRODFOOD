@@ -1,12 +1,13 @@
 
 
-# Plano: Somar Vendas à Coluna Sobra (Não Subtrair)
+
+# Plano: Somar Vendas à Coluna Sobra ✅ IMPLEMENTADO
 
 ## Entendimento do Requisito
 
-A lógica atual está **invertida**. Você quer que cada venda do Cardápio Web seja **SOMADA** ao valor atual da coluna sobra.
+Cada venda do Cardápio Web deve ser **SOMADA** ao valor atual da coluna sobra.
 
-### Exemplo do Comportamento Esperado
+### Comportamento Implementado
 
 | Ação | `final_sobra` |
 |------|---------------|
@@ -14,36 +15,28 @@ A lógica atual está **invertida**. Você quer que cada venda do Cardápio Web 
 | Cardápio Web envia 1 venda | **4** (3 + 1) |
 | Cardápio Web envia mais 2 vendas | **6** (4 + 2) |
 
-## Alteração Necessária
+## Alteração Realizada
 
 ### Edge Function: `supabase/functions/cardapio-web-webhook/index.ts`
 
-**Linhas 560-591** - Atualização de contagem existente:
+**Atualização de contagem existente:**
 
 ```typescript
-// DE (modelo substituição - subtrai):
-const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas);
-
-// PARA (modelo soma - adiciona vendas à sobra):
+// MODELO SOMA: final_sobra = sobra_atual + vendas
 const estoqueAtual = contagem.final_sobra ?? 0;
 const novoFinalSobra = estoqueAtual + quantidadeTotal;
 const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
 ```
 
-**Linhas 523-559** - Criação de nova contagem:
+**Criação de nova contagem:**
 
 ```typescript
-// DE (modelo substituição):
+// MODELO SOMA: final_sobra = vendas (começa com a quantidade)
 const novoTotalBaixas = quantidadeTotal;
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas);
-
-// PARA (modelo soma):
-const novoTotalBaixas = quantidadeTotal;
-const novoFinalSobra = quantidadeTotal; // Começa com a quantidade da venda
+const novoFinalSobra = quantidadeTotal;
 ```
 
-## Fluxo Corrigido
+## Fluxo Implementado
 
 ```text
 ITEM "MASSA" JÁ EXISTE COM final_sobra = 3:
@@ -60,18 +53,3 @@ VENDA WEB DE 2 PIZZAS:
 ├── novoFinalSobra = 4 + 2 = 6 ✓
 └── cardapio_web_baixa_total = 3 (auditoria)
 ```
-
-## Impacto na Coluna "A Produzir"
-
-Com a fórmula atual do banco (`a_produzir = MAX(0, ideal - final_sobra)`):
-- Se `ideal = 10` e `final_sobra = 6`, então `a_produzir = 4`
-
-**Atenção**: Isso significa que quanto mais vendas, MAIOR o `final_sobra` e MENOR o `a_produzir`. Isso está correto para você?
-
-## Resumo da Mudança
-
-| Modelo | Fórmula | Resultado |
-|--------|---------|-----------|
-| ~~Atual (substituição)~~ | `sobra = ideal - vendas` | Vendas diminuem sobra |
-| **Novo (soma)** | `sobra = sobra_atual + vendas` | Vendas aumentam sobra |
-
