@@ -521,13 +521,13 @@ Deno.serve(async (req) => {
         const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
-          // MODELO SOMA: final_sobra = vendas (quando não existe contagem)
-          // Cada venda é SOMADA ao final_sobra
+          // MODELO DECREMENTO: final_sobra = ideal - vendas (quando não existe contagem)
+          // Cada venda é DESCONTADA do ideal
           // a_produzir = MAX(0, ideal - final_sobra) - calculado automaticamente pelo banco
           const novoTotalBaixas = quantidadeTotal
-          const novoFinalSobra = quantidadeTotal // Começa com a quantidade da venda
+          const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal) // Inicia no ideal e desconta a venda
           
-          console.log(`📦 Criando contagem (modelo soma): vendas=${quantidadeTotal}, final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Criando contagem (modelo decremento): ideal=${idealDoDia} - vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -536,7 +536,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               organization_id,
               dia_operacional: diaOperacional,
-              final_sobra: novoFinalSobra, // SOMA: começa com a quantidade da venda
+              final_sobra: novoFinalSobra, // DECREMENTO: ideal - vendas
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               usuario_id: '00000000-0000-0000-0000-000000000000',
@@ -555,21 +555,21 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (vendas somadas: ${novoTotalBaixas})`)
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal=${idealDoDia} - vendas=${novoTotalBaixas})`)
           }
         } else {
-          // MODELO SOMA: final_sobra = sobra_atual + vendas
-          // Cada venda é ADICIONADA ao valor atual de final_sobra
+          // MODELO DECREMENTO: final_sobra = sobra_atual - vendas
+          // Cada venda é DESCONTADA do valor atual de final_sobra
           const estoqueAtual = (contagem as unknown as Record<string, number>).final_sobra ?? 0
-          const novoFinalSobra = estoqueAtual + quantidadeTotal
+          const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
           
-          console.log(`📦 Atualizando contagem (modelo soma): sobra_atual=${estoqueAtual} + vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Atualizando contagem (modelo decremento): sobra_atual=${estoqueAtual} - vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
-              final_sobra: novoFinalSobra, // SOMA: sobra_atual + vendas
+              final_sobra: novoFinalSobra, // DECREMENTO: sobra_atual - vendas
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               updated_at: agora,
@@ -588,7 +588,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (somou ${quantidadeTotal} à sobra anterior)`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (descontou ${quantidadeTotal} da sobra anterior=${estoqueAtual})`)
           }
         }
       }
