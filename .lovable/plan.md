@@ -1,133 +1,185 @@
 
-# Plano: Correção da Lógica do Modelo Tanque Cheio
+# Plano: Correção de Webhooks Duplicados e Lógica do Modelo Tanque Cheio
 
-## Problema Identificado
+## Problemas Identificados
 
-O sistema está com dois erros críticos:
+### Problema 1: Webhooks Duplicados Dobrando Vendas
+Descobri que os pedidos estão sendo processados **múltiplas vezes**, causando inflação artificial das vendas:
 
-### Erro 1: Vendas Acumuladas Muito Altas
-O campo `cardapio_web_baixa_total` tem **556 vendas** enquanto o ideal é apenas **140**. Isso significa que as vendas acumuladas já ultrapassaram o teto. O cálculo atual faz:
+| Order ID | Vezes Processado | Intervalo | Tipo |
+|----------|------------------|-----------|------|
+| 179919610 | 2x | 6h51min | ORDER_CREATED + ORDER_STATUS_UPDATED |
+| 179964837 | 2x | 21 seg | 2x ORDER_CREATED (duplicado) |
+| 179971611 | 2x | 2.6 seg | 2x ORDER_CREATED (race condition) |
+
+**Impacto:** 606 vendas registradas quando deveriam ser aproximadamente 303 (metade).
+
+### Problema 2: Race Condition na Verificação de Idempotência
+A verificação atual faz:
+1. SELECT para verificar se existe log com `sucesso = true`
+2. Se não existe, processa o webhook
+3. INSERT do log após processar
+
+**Falha:** Quando 2 webhooks chegam simultaneamente, ambos passam pelo passo 1 antes de qualquer um chegar ao passo 3.
+
+### Problema 3: Vendas Ultrapassando o Ideal
+Com vendas = 606 e ideal = 140:
+- `final_sobra = MAX(0, 140 - 606) = 0`
+- `a_produzir = 140 - 0 = 140`
+
+Isso está **correto** segundo a regra aprovada (Opção B - limitado ao teto). O problema é que as vendas estão **infladas** por causa dos duplicados.
+
+---
+
+## Soluções Propostas
+
+### Solução 1: Constraint UNIQUE no Banco de Dados
+Adicionar uma constraint UNIQUE na tabela `cardapio_web_pedidos_log` para impedir duplicatas:
+
+```sql
+ALTER TABLE cardapio_web_pedidos_log 
+ADD CONSTRAINT unique_order_per_org_event UNIQUE (organization_id, order_id, evento);
 ```
-final_sobra = MAX(0, 140 - 556) = 0
-a_produzir = 140 - 0 = 140  ❌ (deveria mostrar 556 ou limitar ao ideal)
-```
 
-### Erro 2: O Modelo Tanque Cheio Está Invertido
-**Lógica ATUAL (errada):**
+### Solução 2: Usar INSERT ... ON CONFLICT na Edge Function
+Modificar a Edge Function para usar INSERT com ON CONFLICT:
+
 ```typescript
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
-// Se ideal=140 e vendas=50 → sobra=90 → a_produzir=50
-// Se ideal=140 e vendas=556 → sobra=0 → a_produzir=140 ❌
+// Antes de processar, tentar inserir registro pendente
+const { data: inserted, error: insertErr } = await supabase
+  .from('cardapio_web_pedidos_log')
+  .insert({
+    organization_id,
+    loja_id,
+    order_id: orderId,
+    evento,
+    payload,
+    sucesso: false, // Ainda não processado
+    itens_processados: null,
+    erro: 'processando'
+  })
+  .select('id')
+  .single()
+
+// Se der conflito (UNIQUE violation), significa que já existe
+if (insertErr?.code === '23505') {
+  console.log(`⏭️ Pedido ${orderId} já em processamento ou processado.`)
+  return // Sair sem processar
+}
 ```
 
-**Lógica que você quer:**
-- `A PRODUZIR` deve SEMPRE mostrar as VENDAS (o que foi consumido)
-- O teto máximo de `A PRODUZIR` é o `IDEAL`
+### Solução 3: Adicionar Verificação de Evento no Webhook
+O código atual processa `ORDER_STATUS_UPDATED` e baixa estoque novamente. Devemos evitar isso:
 
----
-
-## Solução Proposta
-
-### Nova Lógica do Cálculo
-Para o modelo "Tanque Cheio" funcionar corretamente, precisamos garantir que:
-
-```
-final_sobra = MAX(0, ideal_do_dia - vendas_totais)
-a_produzir = MIN(vendas_totais, ideal_do_dia)
-```
-
-**Mas o banco calcula** `a_produzir = GREATEST(0, ideal - final_sobra)`, então precisamos ajustar o `final_sobra` para que a fórmula produza o resultado correto.
-
-### Tabela de Cenários
-
-| Cenário | Ideal | Vendas | final_sobra (calc) | a_produzir (banco) |
-|---------|-------|--------|-------------------|-------------------|
-| Vendas < Ideal | 140 | 50 | 140 - 50 = 90 | 140 - 90 = **50** |
-| Vendas = Ideal | 140 | 140 | 140 - 140 = 0 | 140 - 0 = **140** |
-| Vendas > Ideal | 140 | 556 | 140 - 556 = -416 → 0 | 140 - 0 = **140** |
-
-**Problema:** Quando vendas > ideal, o sistema mostra `a_produzir = 140` (o ideal inteiro), mas deveria limitar as vendas ao ideal ou mostrar as vendas reais.
-
----
-
-## Duas Opções de Correção
-
-### Opção A: A Produzir = Vendas (sem limite)
-Se você quer que `A PRODUZIR` mostre EXATAMENTE o que foi vendido, mesmo acima do ideal:
-- Mudar a coluna gerada no banco para: `a_produzir = cardapio_web_baixa_total`
-- Ou usar `final_sobra` para armazenar o NEGATIVO do consumo
-
-### Opção B: A Produzir = MIN(Vendas, Ideal) - Limitado ao teto
-Se você quer que `A PRODUZIR` mostre as vendas, mas limitado ao ideal máximo:
-- Manter a lógica atual do banco
-- O sistema já está funcionando para esse cenário quando vendas < ideal
-
----
-
-## Alterações Necessárias
-
-### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
-
-**Cenário de Criação (linhas 556-557):**
 ```typescript
-// ATUAL:
-const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
-
-// PROPOSTA (fazer final_sobra = ideal - vendas, permitindo negativo internamente):
-// Mas como usamos Math.max, precisa de ajuste na lógica
+// Adicionar verificação ANTES de processar itens
+if (evento === 'ORDER_STATUS_UPDATED') {
+  // Apenas registrar, não baixar estoque
+  await supabase.from('cardapio_web_pedidos_log').insert({
+    organization_id,
+    loja_id,
+    order_id: orderId,
+    evento,
+    payload,
+    sucesso: true,
+    itens_processados: null,
+    erro: 'Status update - estoque não processado'
+  })
+  return new Response(JSON.stringify({ success: true, message: 'Status logged' }))
+}
 ```
 
-**Cenário de Atualização (linhas 594-596):**
-```typescript
-// ATUAL:
-const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
+### Solução 4: Corrigir Dados Existentes
+Após implementar as correções, recalcular os dados corretos:
 
-// PROPOSTA: Se queremos que a_produzir = vendas (limitado ao ideal)
-// Quando vendas > ideal, a_produzir será o ideal (teto)
-// Isso já está acontecendo - é o comportamento esperado?
+```sql
+-- Recalcular vendas reais (sem duplicados)
+WITH vendas_reais AS (
+  SELECT DISTINCT ON (order_id) 
+    order_id,
+    (itens_processados::jsonb->0->'itens_baixados'->0->>'quantidade_baixada')::integer as massa
+  FROM cardapio_web_pedidos_log
+  WHERE loja_id = 'a6dfb4f5-23db-4a36-b104-6db03e5917ea'
+  AND sucesso = true
+  AND created_at >= CURRENT_DATE
+  AND itens_processados IS NOT NULL
+),
+total AS (
+  SELECT SUM(massa) as total_vendas FROM vendas_reais
+)
+-- Atualizar contagem com valor correto
+UPDATE contagem_porcionados cp
+SET 
+  cardapio_web_baixa_total = t.total_vendas,
+  final_sobra = GREATEST(0, cp.ideal_amanha - t.total_vendas)
+FROM total t
+WHERE cp.id = '69621904-cadc-4530-89bc-536be8b766c5';
 ```
-
----
-
-## Esclarecimento Necessário
-
-Preciso confirmar qual comportamento você espera:
-
-| Ideal | Vendas | O que deve aparecer em "A PRODUZIR"? |
-|-------|--------|--------------------------------------|
-| 140 | 50 | **50** (as vendas) |
-| 140 | 140 | **140** (as vendas = ideal) |
-| 140 | 556 | **140** (limitado ao ideal) ou **556** (vendas reais)? |
-
-Se o funcionário vendeu 556 unidades mas o ideal é 140, ele deve:
-- **Opção A:** Produzir 556 (tudo que vendeu, mesmo acima do ideal)
-- **Opção B:** Produzir 140 (o máximo configurado)
-
----
-
-## Problema Adicional: Lojas Sem Ideal Configurado
-
-Para CACHOEIRINHA e ALEIXO, o `ideal_amanha = 0` indica que a função `getIdealDoDia` não encontrou configuração de estoque ideal. Isso precisa ser verificado:
-
-1. Confirmar se há registro em `estoques_ideais_semanais` para essas lojas
-2. Verificar se o `loja_id` do webhook corresponde ao `loja_id` da tabela de estoques
 
 ---
 
 ## Detalhes Técnicos
 
-**Arquivos a modificar:**
-- `supabase/functions/cardapio-web-webhook/index.ts` - Linhas 550-625
+### Arquivos a Modificar
 
-**Mudanças específicas** (dependem da opção escolhida):
+1. **`supabase/functions/cardapio-web-webhook/index.ts`** (linhas 272-299 e 300-350)
+   - Melhorar verificação de idempotência com INSERT ON CONFLICT
+   - Adicionar tratamento específico para ORDER_STATUS_UPDATED
 
-Para **Opção B** (A Produzir limitado ao Ideal):
-1. Manter a lógica atual - ela já está correta para esse cenário
-2. Quando vendas > ideal, `a_produzir = ideal` (teto)
+2. **Migração SQL**
+   - Adicionar UNIQUE constraint na tabela `cardapio_web_pedidos_log`
 
-Para **Opção A** (A Produzir = Vendas sem limite):
-1. Mudar a coluna gerada no banco para usar `cardapio_web_baixa_total`
-2. Ou armazenar `final_sobra` como o valor negativo (ideal - vendas)
+### Mudanças Específicas no Edge Function
 
-**Recomendação:** Opção B é mais segura para controle de produção, evitando superprodução.
+**Antes (atual):**
+```typescript
+// Verificação via SELECT
+const { data: existingLog } = await supabase
+  .from('cardapio_web_pedidos_log')
+  .select('id')
+  .eq('order_id', orderId)
+  .eq('organization_id', organization_id)
+  .eq('sucesso', true)
+  .maybeSingle()
+```
+
+**Depois (proposto):**
+```typescript
+// Verificação via INSERT atômico
+const { error: lockErr } = await supabase
+  .from('cardapio_web_pedidos_log')
+  .insert({
+    organization_id,
+    loja_id,
+    order_id: orderId,
+    evento,
+    payload,
+    sucesso: false, // Reserva o slot
+  })
+
+if (lockErr?.code === '23505') {
+  return { message: 'Já processado' } // UNIQUE violation
+}
+```
+
+---
+
+## Ordem de Implementação
+
+1. Criar migração SQL com UNIQUE constraint
+2. Atualizar Edge Function com nova lógica de idempotência
+3. Adicionar filtro para ORDER_STATUS_UPDATED
+4. Corrigir dados duplicados existentes no banco
+5. Testar com webhook simulado
+
+---
+
+## Resultado Esperado
+
+Após as correções:
+- Para JAPIIM com ideal=140 e apenas 50 vendas (sem duplicatas):
+  - `final_sobra = 140 - 50 = 90`
+  - `a_produzir = 140 - 90 = 50` ✅
+
+- Webhooks duplicados serão rejeitados automaticamente
+- Race conditions serão evitadas com INSERT atômico
