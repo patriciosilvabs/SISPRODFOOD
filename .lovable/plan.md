@@ -1,136 +1,211 @@
 
-# Plano: Dropdown de Visualização do Mapeamento (Por Tipo, Categoria ou Produto)
+# Plano: Vinculação em Lote com Checkboxes
 
 ## Contexto
 
-A tabela de mapeamentos na aba "Mapeamento" mostra atualmente uma lista plana de todos os produtos. O usuário deseja um dropdown para escolher como visualizar os dados:
+Atualmente, para vincular produtos do cardápio a itens porcionados, é necessário fazer um por um através do dropdown. Quando você tem dezenas de produtos (ex: 10 sabores de refrigerante que consomem o mesmo item "Copo"), isso é muito trabalhoso.
 
-- **Por Produto** (atual) - Lista plana de todos os produtos
-- **Por Tipo** - Agrupado por tipo (OPÇÃO, PRODUTO, etc.)
-- **Por Categoria** - Agrupado por categoria (Refrigerantes, Recheios Suprema, etc.)
+A ideia é adicionar checkboxes para selecionar múltiplos produtos e vinculá-los todos de uma vez ao mesmo item porcionado.
 
-## Mudanças Propostas
+---
 
-### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
+## Interface Proposta
 
-#### 1. Adicionar Estado para Modo de Visualização
+### Estado Normal (sem seleção)
+A tabela mostra os produtos normalmente, sem checkboxes visíveis.
 
-```typescript
-const [modoVisualizacao, setModoVisualizacao] = useState<'produto' | 'tipo' | 'categoria'>('produto');
-```
-
-#### 2. Adicionar Dropdown de Visualização
-
-Ao lado do seletor de loja, adicionar um segundo dropdown:
-
-```typescript
-<div className="flex items-center gap-2">
-  <LayoutGrid className="h-4 w-4 text-muted-foreground" />
-  <Select value={modoVisualizacao} onValueChange={setModoVisualizacao}>
-    <SelectTrigger className="w-[180px]">
-      <SelectValue placeholder="Visualizar por..." />
-    </SelectTrigger>
-    <SelectContent>
-      <SelectItem value="produto">Por Produto</SelectItem>
-      <SelectItem value="tipo">Por Tipo</SelectItem>
-      <SelectItem value="categoria">Por Categoria</SelectItem>
-    </SelectContent>
-  </Select>
-</div>
-```
-
-#### 3. Criar Lógica de Agrupamento
-
-```typescript
-// Agrupar mapeamentos por tipo ou categoria
-const mapeamentosVisualizacao = useMemo(() => {
-  if (modoVisualizacao === 'produto') {
-    return { grupos: null, items: mapeamentosFiltrados };
-  }
-  
-  const grupos = new Map<string, MapeamentoCardapioItemAgrupado[]>();
-  
-  for (const item of mapeamentosFiltrados) {
-    const chave = modoVisualizacao === 'tipo' 
-      ? (item.tipo || 'Sem tipo')
-      : (item.categoria || 'Sem categoria');
-    
-    if (!grupos.has(chave)) {
-      grupos.set(chave, []);
-    }
-    grupos.get(chave)!.push(item);
-  }
-  
-  // Ordenar grupos alfabeticamente
-  return { 
-    grupos: Array.from(grupos.entries()).sort((a, b) => a[0].localeCompare(b[0])),
-    items: null 
-  };
-}, [mapeamentosFiltrados, modoVisualizacao]);
-```
-
-#### 4. Renderização Condicional da Tabela
-
-**Modo "Por Produto"** - Tabela simples (atual)
-
-**Modo "Por Tipo" ou "Por Categoria"** - Tabela com seções colapsáveis:
+### Modo de Seleção (com botão "Selecionar")
+Quando ativado:
+1. Aparece uma coluna de checkboxes à esquerda
+2. Usuário marca os produtos que deseja vincular
+3. Uma barra fixa aparece no rodapé mostrando quantos itens estão selecionados
+4. Botão "Vincular Selecionados" abre um modal para escolher o item porcionado
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│ ▼ OPÇÃO (7 produtos)                                            │
+│  [✓] Selecionar Múltiplos                                       │
 ├─────────────────────────────────────────────────────────────────┤
-│   Refrigerantes | # 2 Refrigerantes... | 3543571 | Vincular...  │
-│   Recheios...   | # Base da Massa...   | 3543827 | Vincular...  │
+│  [ ] │ OPÇÃO │ Refrigerantes │ 2 Refrigerantes...  │ 3543571   │
+│  [✓] │ OPÇÃO │ Refrigerantes │ Coca-Cola 350ml     │ 3543572   │
+│  [✓] │ OPÇÃO │ Refrigerantes │ Guaraná 350ml       │ 3543573   │
+│  [✓] │ OPÇÃO │ Refrigerantes │ Fanta 350ml         │ 3543574   │
+│  [ ] │ PROD  │ Pizzas        │ Pizza Margherita    │ 3543111   │
 └─────────────────────────────────────────────────────────────────┘
-│ ▼ PRODUTO (3 produtos)                                          │
-├─────────────────────────────────────────────────────────────────┤
-│   Pizzas        | # Pizza Margherita   | 3543111 | Vincular...  │
+
+┌─────────────────────────────────────────────────────────────────┐
+│  3 produtos selecionados    [Vincular Selecionados] [Cancelar]  │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
-Cada grupo terá:
-- Header com nome do grupo e contagem de itens
-- Opção de expandir/colapsar (usando Collapsible do Radix)
-- Tabela interna com os produtos daquele grupo
 
 ---
 
 ## Fluxo do Usuário
 
-1. Usuário seleciona a loja "Japiim"
-2. Usuário muda o dropdown de "Por Produto" para "Por Tipo"
-3. A tabela reorganiza mostrando grupos "OPÇÃO" e "PRODUTO" colapsáveis
-4. Usuário pode clicar em cada grupo para expandir/colapsar
+1. Usuário clica em "Selecionar Múltiplos" (toggle)
+2. Checkboxes aparecem em cada linha da tabela
+3. Usuário marca os produtos desejados (ex: todos os refrigerantes)
+4. Clica em "Vincular Selecionados"
+5. Modal abre pedindo:
+   - Item Porcionado (dropdown)
+   - Quantidade Consumida (número)
+6. Confirma e todos os produtos selecionados são vinculados ao mesmo item
 
 ---
 
-## Detalhes Técnicos
+## Mudanças no Código
 
-### Componentes Utilizados
-- `Select` (Radix) - Dropdown de seleção
-- `Collapsible` (Radix) - Seções colapsáveis por grupo
-- `ChevronDown`/`ChevronRight` (Lucide) - Indicadores de expansão
+### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
 
-### Estados Adicionais
+#### 1. Novos Estados
+
 ```typescript
-const [gruposExpandidos, setGruposExpandidos] = useState<Set<string>>(new Set());
-
-const toggleGrupo = (grupo: string) => {
-  setGruposExpandidos(prev => {
-    const novo = new Set(prev);
-    if (novo.has(grupo)) {
-      novo.delete(grupo);
-    } else {
-      novo.add(grupo);
-    }
-    return novo;
-  });
-};
+const [modoSelecao, setModoSelecao] = useState(false);
+const [produtosSelecionados, setProdutosSelecionados] = useState<Set<number>>(new Set());
+const [vinculoEmLoteModalOpen, setVinculoEmLoteModalOpen] = useState(false);
 ```
 
-### Inicialização
-- Todos os grupos iniciam expandidos por padrão
-- Estado é resetado quando troca de loja
+#### 2. Toggle de Modo Seleção
+
+```typescript
+<Button
+  variant={modoSelecao ? "secondary" : "outline"}
+  onClick={() => {
+    setModoSelecao(!modoSelecao);
+    setProdutosSelecionados(new Set());
+  }}
+>
+  <CheckSquare className="h-4 w-4 mr-2" />
+  {modoSelecao ? "Cancelar Seleção" : "Selecionar Múltiplos"}
+</Button>
+```
+
+#### 3. Checkbox na Tabela
+
+Adicionar coluna de checkbox quando `modoSelecao` está ativo:
+
+```typescript
+{modoSelecao && (
+  <TableHead className="w-10">
+    <Checkbox
+      checked={produtosSelecionados.size === mapeamentosFiltrados.length}
+      onCheckedChange={(checked) => {
+        if (checked) {
+          setProdutosSelecionados(new Set(mapeamentosFiltrados.map(p => p.cardapio_item_id)));
+        } else {
+          setProdutosSelecionados(new Set());
+        }
+      }}
+    />
+  </TableHead>
+)}
+```
+
+#### 4. Barra de Ações Fixa
+
+Quando há itens selecionados, mostrar barra fixa no rodapé:
+
+```typescript
+{modoSelecao && produtosSelecionados.size > 0 && (
+  <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-4 flex items-center justify-center gap-4 z-50">
+    <span className="text-sm">
+      <strong>{produtosSelecionados.size}</strong> produto(s) selecionado(s)
+    </span>
+    <Button onClick={() => setVinculoEmLoteModalOpen(true)}>
+      <Link2 className="h-4 w-4 mr-2" />
+      Vincular Selecionados
+    </Button>
+    <Button variant="ghost" onClick={() => setProdutosSelecionados(new Set())}>
+      Limpar Seleção
+    </Button>
+  </div>
+)}
+```
+
+### Arquivo: `src/components/modals/VincularEmLoteModal.tsx` (Novo)
+
+Modal para escolher o item porcionado e quantidade:
+
+```typescript
+interface VincularEmLoteModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  quantidadeSelecionados: number;
+  itensPorcionados: { id: string; nome: string }[];
+  onConfirm: (itemPorcionadoId: string, quantidade: number) => Promise<void>;
+  isLoading?: boolean;
+}
+```
+
+O modal mostrará:
+- Quantidade de produtos que serão vinculados
+- Dropdown para selecionar o item porcionado
+- Campo de quantidade consumida
+- Botões Cancelar/Confirmar
+
+### Arquivo: `src/hooks/useCardapioWebIntegracao.ts`
+
+#### Nova Mutation: `vincularEmLote`
+
+```typescript
+const vincularEmLote = useMutation({
+  mutationFn: async ({
+    produtos,
+    item_porcionado_id,
+    quantidade_consumida,
+    loja_id
+  }: {
+    produtos: MapeamentoCardapioItemAgrupado[];
+    item_porcionado_id: string;
+    quantidade_consumida: number;
+    loja_id: string;
+  }) => {
+    // Para cada produto, criar ou atualizar o vínculo
+    const operations = produtos.map(async (produto) => {
+      // Se já tem um registro sem vínculo, atualiza
+      if (produto.vinculos[0]?.id && !produto.vinculos[0].item_porcionado_id) {
+        return supabase
+          .from('mapeamento_cardapio_itens')
+          .update({ item_porcionado_id, quantidade_consumida })
+          .eq('id', produto.vinculos[0].id);
+      }
+      // Senão, cria um novo vínculo
+      return supabase
+        .from('mapeamento_cardapio_itens')
+        .insert({
+          organization_id: organizationId,
+          loja_id,
+          cardapio_item_id: produto.cardapio_item_id,
+          cardapio_item_nome: produto.cardapio_item_nome,
+          tipo: produto.tipo,
+          categoria: produto.categoria,
+          item_porcionado_id,
+          quantidade_consumida,
+          ativo: true
+        });
+    });
+    
+    await Promise.all(operations);
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    toast.success('Vínculos criados com sucesso!');
+  }
+});
+```
+
+---
+
+## Funcionalidades Extras
+
+### Checkbox "Selecionar Todos" no Header
+- Marca/desmarca todos os produtos visíveis na tabela atual
+
+### Filtro Inteligente
+- Quando agrupado por Tipo/Categoria, mostrar checkbox no header do grupo para selecionar todos daquele grupo
+
+### Reset Automático
+- Limpar seleção quando trocar de loja
+- Limpar seleção quando trocar modo de visualização
 
 ---
 
@@ -138,5 +213,15 @@ const toggleGrupo = (grupo: string) => {
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar dropdown de visualização e lógica de agrupamento |
+| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar estados, toggle de seleção, checkboxes e barra de ações |
+| `src/components/modals/VincularEmLoteModal.tsx` | Novo modal para vinculação em lote |
+| `src/hooks/useCardapioWebIntegracao.ts` | Nova mutation `vincularEmLote` |
 
+---
+
+## Benefícios
+
+1. **Eficiência**: Vincular 20 refrigerantes ao mesmo item em 3 cliques
+2. **UX Familiar**: Padrão de seleção com checkbox usado em toda web
+3. **Flexível**: Funciona com visualização por Produto, Tipo ou Categoria
+4. **Seguro**: Confirmação antes de aplicar vínculos em lote
