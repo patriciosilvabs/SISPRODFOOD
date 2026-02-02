@@ -521,14 +521,13 @@ Deno.serve(async (req) => {
         const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
-          // MODELO SIMPLIFICADO: final_sobra INICIA com idealDoDia
-          // Cada venda DECREMENTA final_sobra diretamente
+          // MODELO SUBSTITUIÇÃO: final_sobra = ideal - vendas_acumuladas
+          // Cada venda SUBSTITUI final_sobra pela fórmula (não decrementa)
           // a_produzir = MAX(0, ideal - final_sobra) - calculado automaticamente pelo banco
-          const estoqueInicial = idealDoDia // Começa cheio com o ideal do dia
-          const novoFinalSobra = Math.max(0, estoqueInicial - quantidadeTotal)
           const novoTotalBaixas = quantidadeTotal
+          const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
           
-          console.log(`📦 Criando contagem (modelo simplificado): estoque_inicial=${estoqueInicial}, venda=${quantidadeTotal}, final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Criando contagem (modelo substituição): ideal=${idealDoDia}, vendas_acumuladas=${novoTotalBaixas}, final_sobra=${novoFinalSobra}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -537,7 +536,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               organization_id,
               dia_operacional: diaOperacional,
-              final_sobra: novoFinalSobra, // DECREMENTA do ideal!
+              final_sobra: novoFinalSobra, // SUBSTITUÍDO: ideal - vendas_acumuladas
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               usuario_id: '00000000-0000-0000-0000-000000000000',
@@ -556,20 +555,20 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal ${idealDoDia} - venda ${quantidadeTotal})`)
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal ${idealDoDia} - vendas ${novoTotalBaixas})`)
           }
         } else {
-          // MODELO SIMPLIFICADO: DECREMENTA final_sobra diretamente
-          const estoqueAtual = contagem.final_sobra ?? 0
-          const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+          // MODELO SUBSTITUIÇÃO: final_sobra = ideal - vendas_acumuladas
+          // Ignora o valor atual de final_sobra (ajustes manuais são sobrescritos)
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
+          const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
           
-          console.log(`📦 Atualizando contagem (modelo simplificado): estoque_atual=${estoqueAtual}, venda=${quantidadeTotal}, novo_final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Atualizando contagem (modelo substituição): ideal=${idealDoDia}, vendas_acumuladas=${novoTotalBaixas}, final_sobra=${novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
             .update({ 
-              final_sobra: novoFinalSobra, // DECREMENTA DIRETO!
+              final_sobra: novoFinalSobra, // SUBSTITUÍDO: ideal - vendas_acumuladas
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               updated_at: agora,
@@ -588,7 +587,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (${estoqueAtual} - ${quantidadeTotal})`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal ${idealDoDia} - vendas ${novoTotalBaixas})`)
           }
         }
       }
