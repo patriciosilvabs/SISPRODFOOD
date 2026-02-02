@@ -587,13 +587,14 @@ Deno.serve(async (req) => {
             console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: vendas=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra} (ideal=${idealDoDia})`)
           }
         } else {
-          // MODELO ACUMULATIVO: final_sobra = vendas acumuladas
-          // Novas vendas são SOMADAS ao valor atual de final_sobra
-          const vendasAcumuladas = (contagem as unknown as Record<string, number>).final_sobra ?? 0
-          const novoFinalSobra = vendasAcumuladas + quantidadeTotal // Acumula as vendas
-          const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
+          // MODELO CORRETO: final_sobra = total de vendas web (cardapio_web_baixa_total)
+          // a_produzir = ideal - final_sobra (calculado pelo banco)
+          // Exemplo: ideal=140, vendas=50 → final_sobra=50 → a_produzir=90
+          const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
+          const novoTotalBaixas = vendasAnteriores + quantidadeTotal
+          const novoFinalSobra = novoTotalBaixas // CORREÇÃO: usar total de baixas, não final_sobra anterior
           
-          console.log(`📦 Atualizando contagem (modelo acumulativo): vendas_anteriores=${vendasAcumuladas} + novas_vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+          console.log(`📦 Atualizando contagem: vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
