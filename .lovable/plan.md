@@ -1,59 +1,95 @@
 
 
-# Plano: Corrigir Lógica de Cálculo - Vendas Direto na Sobra
+# Plano: Corrigir Lógica do Webhook - Decremento de Estoque
 
-## Entendimento do Requisito
+## Diagnóstico do Problema
 
-A lógica que você precisa é simples:
+### Dados Atuais no Banco
+| Item | Ideal | Final Sobra | A Produzir | Vendas Web |
+|------|-------|-------------|------------|------------|
+| MASSA | 140 | 240 | 0 | 506 |
+| MUSSARELA | 140 | 240 | 0 | 506 |
 
-| Valor | Descrição |
-|-------|-----------|
-| **Ideal** | 140 |
-| **Vendas Cardápio Web** | 50 |
-| **Sobra (campo azul)** | 50 (= as vendas que entraram) |
-| **A Produzir (laranja)** | 90 (= 140 - 50 = o que falta produzir) |
-
-## Problema Atual
-
-O webhook está fazendo:
-```
-final_sobra = ideal - vendas = 140 - 50 = 90
-a_produzir = ideal - final_sobra = 140 - 90 = 50  ❌
+### Fórmula no Banco (coluna `a_produzir`)
+```sql
+a_produzir = GREATEST(0, ideal_amanha - final_sobra)
 ```
 
-O correto deveria ser:
+### O Que Está Acontecendo
+O webhook está **SOMANDO** vendas ao `final_sobra`:
+- Venda 1 (50): `final_sobra = 0 + 50 = 50`
+- Venda 2 (50): `final_sobra = 50 + 50 = 100`
+- ... (acumulando infinitamente)
+
+Resultado: `final_sobra = 240` > `ideal = 140` → `a_produzir = 0` ❌
+
+## O Que o Usuário Precisa
+
+| Campo | Significado | Exemplo |
+|-------|-------------|---------|
+| **Ideal** | Produção total planejada | 140 |
+| **Vendas Cardápio Web** | O que foi vendido/consumido | 50 |
+| **A Produzir** | Ideal - Vendas = o que falta produzir | **90** |
+
+## Solução Correta
+
+O campo `final_sobra` deve representar o **estoque disponível** (o que resta após as vendas), NÃO as vendas acumuladas.
+
+### Nova Lógica do Webhook
+
+**Cenário 1: Criar nova contagem (não existe registro)**
+```typescript
+// Se não existe contagem, iniciar com ideal e decrementar a venda
+const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
+// Exemplo: ideal=140, vendas=50 → final_sobra = 90
+// a_produzir = 140 - 90 = 50... AINDA ERRADO!
 ```
-final_sobra = vendas = 50
-a_produzir = ideal - final_sobra = 140 - 50 = 90  ✓
+
+**ESPERA!** A fórmula do banco `a_produzir = ideal - final_sobra` está projetada para:
+- `final_sobra` = estoque físico restante na loja
+- `a_produzir` = quanto precisa produzir para completar
+
+Mas o usuário quer que **A Produzir = o que resta após descontar as vendas** (o oposto!).
+
+### Entendimento Final
+
+O usuário quer:
+```
+A Produzir = Ideal - Vendas = 140 - 50 = 90
 ```
 
-## Solução
+Isso significa que `final_sobra` deve armazenar as **vendas** (não o estoque), e a fórmula precisa ser ajustada.
 
-### Alteração no Edge Function
+**OU** manter a fórmula atual e fazer:
+- `final_sobra = vendas = 50`
+- `a_produzir = ideal - final_sobra = 140 - 50 = 90` ✓
 
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
+## Alterações Necessárias
+
+### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
 
 **Cenário 1: Criar nova contagem (linhas 556-557)**
-
 ```typescript
-// DE (atual - errado):
-const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
+// ATUAL (errado - acumula):
+const novoFinalSobra = quantidadeTotal
 
-// PARA (correto):
-const novoFinalSobra = quantidadeTotal  // Vendas vão direto para final_sobra
+// CORRETO - Vendas viram final_sobra (para que ideal - final_sobra = a_produzir):
+const novoFinalSobra = quantidadeTotal // MANTER ASSIM
 ```
 
 **Cenário 2: Atualizar contagem existente (linhas 592-593)**
-
 ```typescript
-// DE (atual - errado):
-const estoqueAtual = contagem.final_sobra ?? 0
-const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+// ATUAL (errado - soma infinitamente):
+const vendasAcumuladas = contagem.final_sobra ?? 0
+const novoFinalSobra = vendasAcumuladas + quantidadeTotal // SOMA ERRADA!
 
-// PARA (correto - ACUMULA vendas):
-const estoqueAtual = contagem.final_sobra ?? 0
-const novoFinalSobra = estoqueAtual + quantidadeTotal  // Soma as novas vendas
+// CORRETO - Substituir, não acumular:
+const cardapioWebTotal = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
+const novoFinalSobra = cardapioWebTotal // Total de vendas web = final_sobra
 ```
+
+### Problema Identificado
+O código está somando `final_sobra + quantidadeTotal` quando deveria usar apenas o `cardapio_web_baixa_total` atualizado.
 
 ## Fluxo Corrigido
 
@@ -63,40 +99,39 @@ DIA OPERACIONAL INICIA:
 └── final_sobra = 0 (sem vendas ainda)
 
 PRIMEIRA VENDA (50 pizzas):
-├── final_sobra = 0 + 50 = 50 (acumula vendas)
+├── cardapio_web_baixa_total = 0 + 50 = 50
+├── final_sobra = 50 (= total vendas web)
 ├── a_produzir = 140 - 50 = 90 ✓
-└── cardapio_web_baixa_total = 50
+└── Tela mostra: Sobra=50, A Produzir=90
 
 SEGUNDA VENDA (10 pizzas):
-├── final_sobra = 50 + 10 = 60 (acumula vendas)
+├── cardapio_web_baixa_total = 50 + 10 = 60
+├── final_sobra = 60 (= total vendas web)
 ├── a_produzir = 140 - 60 = 80 ✓
-└── cardapio_web_baixa_total = 60
+└── Tela mostra: Sobra=60, A Produzir=80
 ```
 
-## Significado dos Campos (Novo Modelo)
+## Resultado Esperado
 
-| Campo | Significado | Exemplo |
-|-------|-------------|---------|
-| `ideal_amanha` | Produção total planejada | 140 |
-| `final_sobra` | Total de vendas acumuladas (consumo) | 50 |
-| `a_produzir` | O que falta produzir (ideal - vendas) | 90 |
-
-## Resultado Visual Esperado
-
-| Coluna | Valor | Cor |
-|--------|-------|-----|
-| Sobra | **50** | Azul |
+| Campo | Valor | Cor |
+|-------|-------|-----|
+| Ideal | 140 | - |
+| Sobra (vendas web) | **50** | Azul |
 | A Produzir | **90** | Laranja |
 
 ## Detalhes Técnicos
 
-Arquivos a modificar:
+**Arquivo a modificar:**
 - `supabase/functions/cardapio-web-webhook/index.ts`
 
-Linhas específicas:
-1. **Linha 557**: Trocar `Math.max(0, idealDoDia - quantidadeTotal)` por `quantidadeTotal`
-2. **Linha 593**: Trocar `Math.max(0, estoqueAtual - quantidadeTotal)` por `estoqueAtual + quantidadeTotal`
-3. Atualizar logs para refletir "vendas acumuladas"
+**Mudança principal (linha 593):**
+```typescript
+// DE:
+const novoFinalSobra = vendasAcumuladas + quantidadeTotal
 
-A fórmula do banco `a_produzir = ideal - final_sobra` permanece inalterada pois já está correta - só precisamos alimentar `final_sobra` com o valor correto (vendas, não resto).
+// PARA:
+const novoFinalSobra = novoTotalBaixas // Usar o total atualizado de baixas web
+```
+
+A variável `novoTotalBaixas` já calcula corretamente o acumulado. O erro estava em usar `final_sobra` anterior + nova venda, quando deveria usar apenas `cardapio_web_baixa_total` atualizado.
 
