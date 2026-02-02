@@ -1,167 +1,142 @@
 
-# Plano: Correção do Loop Infinito de Cards "Estoque CPD Suficiente"
+# Plano: Dropdown de Visualização do Mapeamento (Por Tipo, Categoria ou Produto)
 
-## Diagnóstico do Problema
+## Contexto
 
-Quando a produção é finalizada:
+A tabela de mapeamentos na aba "Mapeamento" mostra atualmente uma lista plana de todos os produtos. O usuário deseja um dropdown para escolher como visualizar os dados:
 
-1. O sistema credita o estoque no CPD via INSERT/UPDATE em `contagem_porcionados`
-2. O trigger `trg_criar_producao_apos_contagem` dispara em **INSERT**
-3. O trigger chama `criar_ou_atualizar_producao_registro`
-4. A função RPC detecta que o CPD agora tem estoque suficiente para cobrir a demanda
-5. **Cria cards `estoque_disponivel`** imediatamente - ERRO!
+- **Por Produto** (atual) - Lista plana de todos os produtos
+- **Por Tipo** - Agrupado por tipo (OPÇÃO, PRODUTO, etc.)
+- **Por Categoria** - Agrupado por categoria (Refrigerantes, Recheios Suprema, etc.)
 
-### Por que está errado?
+## Mudanças Propostas
 
-Os cards "Estoque CPD Suficiente" só devem aparecer quando:
-- **A loja informa uma nova demanda** (atualiza `ideal_amanha`)
-- **E** o CPD já possui estoque para atender essa demanda
+### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
 
-Não devem aparecer quando:
-- A produção é finalizada (que credita o CPD)
-- Porque isso cria um loop visual e confusão operacional
+#### 1. Adicionar Estado para Modo de Visualização
 
-### Dados Atuais (Comprovando o Loop)
-
-| Item | CPD Estoque | Japiim Demanda | Saldo Líquido | Card Criado |
-|------|-------------|----------------|---------------|-------------|
-| MASSA | 50 | 50 | 0 | ✅ estoque_disponivel |
-| MUSSARELA | 50 | 50 | 0 | ✅ estoque_disponivel |
-
-Os cards verdes aparecem imediatamente após finalização, quando deveriam só aparecer se a loja Japiim atualizasse sua contagem **depois** que o CPD já tivesse estoque.
-
----
-
-## Solução Proposta
-
-### Opção 1: Ignorar INSERTs do CPD no Trigger (Recomendada)
-
-Modificar o trigger para **não disparar** quando o INSERT/UPDATE for da loja CPD:
-
-```sql
-CREATE OR REPLACE FUNCTION trigger_criar_producao_apos_contagem()
-RETURNS TRIGGER AS $$
-DECLARE
-  v_loja_tipo TEXT;
-BEGIN
-    -- Buscar o tipo da loja
-    SELECT tipo INTO v_loja_tipo FROM lojas WHERE id = NEW.loja_id;
-    
-    -- NUNCA recalcular para INSERT/UPDATE de loja CPD
-    -- Isso evita loops quando produção finaliza e credita o estoque
-    IF v_loja_tipo = 'cpd' THEN
-        RETURN NEW;
-    END IF;
-
-    -- Para INSERTs (de lojas normais), sempre recalcular
-    IF TG_OP = 'INSERT' THEN
-        PERFORM criar_ou_atualizar_producao_registro(
-            NEW.item_porcionado_id,
-            NEW.organization_id,
-            NEW.usuario_id,
-            NEW.usuario_nome
-        );
-        RETURN NEW;
-    END IF;
-    
-    -- Para UPDATEs (de lojas normais), verificar se ideal_amanha mudou
-    IF TG_OP = 'UPDATE' THEN
-        IF OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha THEN
-            PERFORM criar_ou_atualizar_producao_registro(
-                NEW.item_porcionado_id,
-                NEW.organization_id,
-                NEW.usuario_id,
-                NEW.usuario_nome
-            );
-        END IF;
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+```typescript
+const [modoVisualizacao, setModoVisualizacao] = useState<'produto' | 'tipo' | 'categoria'>('produto');
 ```
 
-### Benefícios
+#### 2. Adicionar Dropdown de Visualização
 
-1. **Produção finaliza → CPD creditado → Nenhum trigger dispara**
-2. **Loja informa demanda → Trigger dispara → Se CPD tem estoque, cria card verde**
-3. **Fluxo lógico correto**: Primeiro a loja pede, depois o sistema verifica se CPD tem
+Ao lado do seletor de loja, adicionar um segundo dropdown:
 
-### Fluxo Correto Após Correção
+```typescript
+<div className="flex items-center gap-2">
+  <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+  <Select value={modoVisualizacao} onValueChange={setModoVisualizacao}>
+    <SelectTrigger className="w-[180px]">
+      <SelectValue placeholder="Visualizar por..." />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="produto">Por Produto</SelectItem>
+      <SelectItem value="tipo">Por Tipo</SelectItem>
+      <SelectItem value="categoria">Por Categoria</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+```
+
+#### 3. Criar Lógica de Agrupamento
+
+```typescript
+// Agrupar mapeamentos por tipo ou categoria
+const mapeamentosVisualizacao = useMemo(() => {
+  if (modoVisualizacao === 'produto') {
+    return { grupos: null, items: mapeamentosFiltrados };
+  }
+  
+  const grupos = new Map<string, MapeamentoCardapioItemAgrupado[]>();
+  
+  for (const item of mapeamentosFiltrados) {
+    const chave = modoVisualizacao === 'tipo' 
+      ? (item.tipo || 'Sem tipo')
+      : (item.categoria || 'Sem categoria');
+    
+    if (!grupos.has(chave)) {
+      grupos.set(chave, []);
+    }
+    grupos.get(chave)!.push(item);
+  }
+  
+  // Ordenar grupos alfabeticamente
+  return { 
+    grupos: Array.from(grupos.entries()).sort((a, b) => a[0].localeCompare(b[0])),
+    items: null 
+  };
+}, [mapeamentosFiltrados, modoVisualizacao]);
+```
+
+#### 4. Renderização Condicional da Tabela
+
+**Modo "Por Produto"** - Tabela simples (atual)
+
+**Modo "Por Tipo" ou "Por Categoria"** - Tabela com seções colapsáveis:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                    FLUXO ATUAL (ERRADO)                         │
+│ ▼ OPÇÃO (7 produtos)                                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  Produção Finaliza                                              │
-│         ↓                                                       │
-│  INSERT contagem CPD (final_sobra = 50)                         │
-│         ↓                                                       │
-│  Trigger dispara → RPC recalcula → Card verde aparece ❌        │
+│   Refrigerantes | # 2 Refrigerantes... | 3543571 | Vincular...  │
+│   Recheios...   | # Base da Massa...   | 3543827 | Vincular...  │
 └─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                    FLUXO CORRIGIDO                              │
+│ ▼ PRODUTO (3 produtos)                                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  Produção Finaliza                                              │
-│         ↓                                                       │
-│  INSERT contagem CPD (final_sobra = 50)                         │
-│         ↓                                                       │
-│  Trigger detecta loja_tipo='cpd' → IGNORA ✅                    │
-│                                                                 │
-│  Mais tarde: Loja Japiim atualiza ideal_amanha = 140            │
-│         ↓                                                       │
-│  Trigger dispara → RPC verifica:                                │
-│    - Demanda total = 50                                         │
-│    - CPD estoque = 50                                           │
-│    - Saldo = 0 → Cria card "Estoque Disponível" ✅              │
+│   Pizzas        | # Pizza Margherita   | 3543111 | Vincular...  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## Limpeza dos Cards Incorretos
-
-Além da correção do trigger, precisamos deletar os cards `estoque_disponivel` criados incorretamente hoje:
-
-```sql
--- Deletar cards de estoque_disponivel criados hoje (loop corrigido)
-DELETE FROM producao_registros
-WHERE status = 'estoque_disponivel'
-  AND data_referencia = CURRENT_DATE;
-```
+Cada grupo terá:
+- Header com nome do grupo e contagem de itens
+- Opção de expandir/colapsar (usando Collapsible do Radix)
+- Tabela interna com os produtos daquele grupo
 
 ---
 
-## Arquivos a Modificar
+## Fluxo do Usuário
 
-| Arquivo | Mudança |
-|---------|---------|
-| Nova migration SQL | Atualizar função `trigger_criar_producao_apos_contagem` para ignorar loja CPD |
-| (Opcional) Query única | Limpar cards `estoque_disponivel` existentes de hoje |
-
----
-
-## Comportamento Final Esperado
-
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Produção finaliza e credita CPD | Card verde aparece (loop) | Nenhum card criado |
-| Loja atualiza ideal_amanha com CPD vazio | Card laranja normal | Card laranja normal |
-| Loja atualiza ideal_amanha com CPD cheio | Card verde correto | Card verde correto |
+1. Usuário seleciona a loja "Japiim"
+2. Usuário muda o dropdown de "Por Produto" para "Por Tipo"
+3. A tabela reorganiza mostrando grupos "OPÇÃO" e "PRODUTO" colapsáveis
+4. Usuário pode clicar em cada grupo para expandir/colapsar
 
 ---
 
 ## Detalhes Técnicos
 
-### Por que verificar `loja_tipo` no trigger?
+### Componentes Utilizados
+- `Select` (Radix) - Dropdown de seleção
+- `Collapsible` (Radix) - Seções colapsáveis por grupo
+- `ChevronDown`/`ChevronRight` (Lucide) - Indicadores de expansão
 
-- O CPD **nunca informa demanda** (ideal_amanha = 0 sempre)
-- INSERTs/UPDATEs no CPD são **operacionais** (finalização de produção, ajustes)
-- Não faz sentido recalcular produção baseado em mudanças do próprio CPD
+### Estados Adicionais
+```typescript
+const [gruposExpandidos, setGruposExpandidos] = useState<Set<string>>(new Set());
 
-### Impacto na Performance
+const toggleGrupo = (grupo: string) => {
+  setGruposExpandidos(prev => {
+    const novo = new Set(prev);
+    if (novo.has(grupo)) {
+      novo.delete(grupo);
+    } else {
+      novo.add(grupo);
+    }
+    return novo;
+  });
+};
+```
 
-- Adiciona 1 SELECT simples no trigger (buscar tipo da loja)
-- Evita execuções desnecessárias da RPC pesada
-- Performance geral **melhora** porque menos recálculos
+### Inicialização
+- Todos os grupos iniciam expandidos por padrão
+- Estado é resetado quando troca de loja
+
+---
+
+## Resumo das Alterações
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar dropdown de visualização e lógica de agrupamento |
+
