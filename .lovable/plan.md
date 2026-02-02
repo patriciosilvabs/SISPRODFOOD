@@ -1,129 +1,55 @@
 
-# Plano: Vinculação em Lote com Checkboxes
+# Plano: Multi-seleção de Itens Porcionados no Modal de Vinculação em Lote
 
-## Contexto
+## Problema Atual
 
-Atualmente, para vincular produtos do cardápio a itens porcionados, é necessário fazer um por um através do dropdown. Quando você tem dezenas de produtos (ex: 10 sabores de refrigerante que consomem o mesmo item "Copo"), isso é muito trabalhoso.
+O modal de "Vincular em Lote" permite selecionar apenas **um** item porcionado por vez. Para vincular uma pizza a MASSA + BACON + MUSSARELA, você precisaria fazer 3 operações separadas.
 
-A ideia é adicionar checkboxes para selecionar múltiplos produtos e vinculá-los todos de uma vez ao mesmo item porcionado.
+## Solução Proposta
+
+Transformar o dropdown de seleção única em uma lista de checkboxes onde você pode marcar **múltiplos itens porcionados** simultaneamente, cada um com sua quantidade individual.
 
 ---
 
-## Interface Proposta
-
-### Estado Normal (sem seleção)
-A tabela mostra os produtos normalmente, sem checkboxes visíveis.
-
-### Modo de Seleção (com botão "Selecionar")
-Quando ativado:
-1. Aparece uma coluna de checkboxes à esquerda
-2. Usuário marca os produtos que deseja vincular
-3. Uma barra fixa aparece no rodapé mostrando quantos itens estão selecionados
-4. Botão "Vincular Selecionados" abre um modal para escolher o item porcionado
+## Nova Interface do Modal
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  [✓] Selecionar Múltiplos                                       │
+│  ⇆  Vincular em Lote                                        X  │
+│  Vincule 5 produto(s) selecionado(s) aos itens porcionados.     │
 ├─────────────────────────────────────────────────────────────────┤
-│  [ ] │ OPÇÃO │ Refrigerantes │ 2 Refrigerantes...  │ 3543571   │
-│  [✓] │ OPÇÃO │ Refrigerantes │ Coca-Cola 350ml     │ 3543572   │
-│  [✓] │ OPÇÃO │ Refrigerantes │ Guaraná 350ml       │ 3543573   │
-│  [✓] │ OPÇÃO │ Refrigerantes │ Fanta 350ml         │ 3543574   │
-│  [ ] │ PROD  │ Pizzas        │ Pizza Margherita    │ 3543111   │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  3 produtos selecionados    [Vincular Selecionados] [Cancelar]  │
+│                                                                 │
+│  Itens Porcionados                                              │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ [✓] BACON - PORCIONADO              Qtd: [1]            │    │
+│  │ [ ] CALABRESA - PORCIONADO          Qtd: [1]            │    │
+│  │ [ ] CARNE - PORCIONADO              Qtd: [1]            │    │
+│  │ [ ] FRANGO - PORCIONADO             Qtd: [1]            │    │
+│  │ [✓] MASSA - PORCIONADO              Qtd: [1]            │    │
+│  │ [✓] MUSSARELA - PORCIONADO          Qtd: [2]            │    │
+│  │ [ ] PEPPERONI - PORCIONADO          Qtd: [1]            │    │
+│  │ [ ] PRESUNTO - PORCIONADO           Qtd: [1]            │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ Resumo:                                                 │    │
+│  │ 5 produto(s) serão vinculados a:                        │    │
+│  │  • BACON - PORCIONADO (1x)                              │    │
+│  │  • MASSA - PORCIONADO (1x)                              │    │
+│  │  • MUSSARELA - PORCIONADO (2x)                          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                 │
+│                            [Cancelar]  [Vincular 5 Produtos]    │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Fluxo do Usuário
-
-1. Usuário clica em "Selecionar Múltiplos" (toggle)
-2. Checkboxes aparecem em cada linha da tabela
-3. Usuário marca os produtos desejados (ex: todos os refrigerantes)
-4. Clica em "Vincular Selecionados"
-5. Modal abre pedindo:
-   - Item Porcionado (dropdown)
-   - Quantidade Consumida (número)
-6. Confirma e todos os produtos selecionados são vinculados ao mesmo item
 
 ---
 
 ## Mudanças no Código
 
-### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
+### Arquivo: `src/components/modals/VincularEmLoteModal.tsx`
 
-#### 1. Novos Estados
-
-```typescript
-const [modoSelecao, setModoSelecao] = useState(false);
-const [produtosSelecionados, setProdutosSelecionados] = useState<Set<number>>(new Set());
-const [vinculoEmLoteModalOpen, setVinculoEmLoteModalOpen] = useState(false);
-```
-
-#### 2. Toggle de Modo Seleção
-
-```typescript
-<Button
-  variant={modoSelecao ? "secondary" : "outline"}
-  onClick={() => {
-    setModoSelecao(!modoSelecao);
-    setProdutosSelecionados(new Set());
-  }}
->
-  <CheckSquare className="h-4 w-4 mr-2" />
-  {modoSelecao ? "Cancelar Seleção" : "Selecionar Múltiplos"}
-</Button>
-```
-
-#### 3. Checkbox na Tabela
-
-Adicionar coluna de checkbox quando `modoSelecao` está ativo:
-
-```typescript
-{modoSelecao && (
-  <TableHead className="w-10">
-    <Checkbox
-      checked={produtosSelecionados.size === mapeamentosFiltrados.length}
-      onCheckedChange={(checked) => {
-        if (checked) {
-          setProdutosSelecionados(new Set(mapeamentosFiltrados.map(p => p.cardapio_item_id)));
-        } else {
-          setProdutosSelecionados(new Set());
-        }
-      }}
-    />
-  </TableHead>
-)}
-```
-
-#### 4. Barra de Ações Fixa
-
-Quando há itens selecionados, mostrar barra fixa no rodapé:
-
-```typescript
-{modoSelecao && produtosSelecionados.size > 0 && (
-  <div className="fixed bottom-0 left-0 right-0 bg-background border-t p-4 flex items-center justify-center gap-4 z-50">
-    <span className="text-sm">
-      <strong>{produtosSelecionados.size}</strong> produto(s) selecionado(s)
-    </span>
-    <Button onClick={() => setVinculoEmLoteModalOpen(true)}>
-      <Link2 className="h-4 w-4 mr-2" />
-      Vincular Selecionados
-    </Button>
-    <Button variant="ghost" onClick={() => setProdutosSelecionados(new Set())}>
-      Limpar Seleção
-    </Button>
-  </div>
-)}
-```
-
-### Arquivo: `src/components/modals/VincularEmLoteModal.tsx` (Novo)
-
-Modal para escolher o item porcionado e quantidade:
+#### 1. Alterar Interface de Props
 
 ```typescript
 interface VincularEmLoteModalProps {
@@ -131,81 +57,192 @@ interface VincularEmLoteModalProps {
   onOpenChange: (open: boolean) => void;
   quantidadeSelecionados: number;
   itensPorcionados: { id: string; nome: string }[];
-  onConfirm: (itemPorcionadoId: string, quantidade: number) => Promise<void>;
+  // MUDANÇA: Agora recebe array de vínculos
+  onConfirm: (vinculos: { itemPorcionadoId: string; quantidade: number }[]) => Promise<void>;
   isLoading?: boolean;
 }
 ```
 
-O modal mostrará:
-- Quantidade de produtos que serão vinculados
-- Dropdown para selecionar o item porcionado
-- Campo de quantidade consumida
-- Botões Cancelar/Confirmar
+#### 2. Alterar Estado Interno
+
+```typescript
+// ANTES: Estado único
+const [itemPorcionadoId, setItemPorcionadoId] = useState('');
+const [quantidade, setQuantidade] = useState('1');
+
+// DEPOIS: Map de seleções com quantidades
+const [selecoes, setSelecoes] = useState<Map<string, number>>(new Map());
+```
+
+#### 3. Substituir Select por Lista de Checkboxes
+
+Remover o `<Select>` e adicionar uma lista com scroll:
+
+```typescript
+<ScrollArea className="h-[300px] border rounded-md p-2">
+  <div className="space-y-2">
+    {itensPorcionados.map(item => {
+      const isSelected = selecoes.has(item.id);
+      const quantidade = selecoes.get(item.id) || 1;
+      
+      return (
+        <div key={item.id} className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={(checked) => toggleItem(item.id, checked)}
+          />
+          <span className="flex-1 text-sm">{item.nome}</span>
+          {isSelected && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">Qtd:</span>
+              <Input
+                type="number"
+                min="1"
+                className="w-16 h-8"
+                value={quantidade}
+                onChange={(e) => updateQuantidade(item.id, parseInt(e.target.value) || 1)}
+              />
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+</ScrollArea>
+```
+
+#### 4. Funções de Manipulação
+
+```typescript
+const toggleItem = (id: string, checked: boolean) => {
+  setSelecoes(prev => {
+    const novo = new Map(prev);
+    if (checked) {
+      novo.set(id, 1); // Default quantidade = 1
+    } else {
+      novo.delete(id);
+    }
+    return novo;
+  });
+};
+
+const updateQuantidade = (id: string, quantidade: number) => {
+  setSelecoes(prev => {
+    const novo = new Map(prev);
+    novo.set(id, quantidade);
+    return novo;
+  });
+};
+```
+
+#### 5. Atualizar handleConfirm
+
+```typescript
+const handleConfirm = async () => {
+  if (selecoes.size === 0) return;
+  
+  const vinculos = Array.from(selecoes.entries()).map(([id, qtd]) => ({
+    itemPorcionadoId: id,
+    quantidade: qtd
+  }));
+  
+  await onConfirm(vinculos);
+  setSelecoes(new Map());
+};
+```
+
+---
 
 ### Arquivo: `src/hooks/useCardapioWebIntegracao.ts`
 
-#### Nova Mutation: `vincularEmLote`
+#### Atualizar Mutation `vincularEmLote`
 
 ```typescript
 const vincularEmLote = useMutation({
   mutationFn: async ({
     produtos,
-    item_porcionado_id,
-    quantidade_consumida,
+    vinculos, // NOVO: Array de { item_porcionado_id, quantidade_consumida }
     loja_id
   }: {
     produtos: MapeamentoCardapioItemAgrupado[];
-    item_porcionado_id: string;
-    quantidade_consumida: number;
+    vinculos: { item_porcionado_id: string; quantidade_consumida: number }[];
     loja_id: string;
   }) => {
-    // Para cada produto, criar ou atualizar o vínculo
-    const operations = produtos.map(async (produto) => {
-      // Se já tem um registro sem vínculo, atualiza
-      if (produto.vinculos[0]?.id && !produto.vinculos[0].item_porcionado_id) {
-        return supabase
-          .from('mapeamento_cardapio_itens')
-          .update({ item_porcionado_id, quantidade_consumida })
-          .eq('id', produto.vinculos[0].id);
-      }
-      // Senão, cria um novo vínculo
-      return supabase
-        .from('mapeamento_cardapio_itens')
-        .insert({
-          organization_id: organizationId,
-          loja_id,
-          cardapio_item_id: produto.cardapio_item_id,
-          cardapio_item_nome: produto.cardapio_item_nome,
-          tipo: produto.tipo,
-          categoria: produto.categoria,
-          item_porcionado_id,
-          quantidade_consumida,
-          ativo: true
-        });
-    });
+    if (!organizationId) throw new Error('Organização não encontrada');
     
-    await Promise.all(operations);
+    const operations: Promise<any>[] = [];
+    
+    for (const produto of produtos) {
+      // Para cada item porcionado selecionado
+      for (const vinculo of vinculos) {
+        // Se produto já tem vínculo vazio, atualiza com o primeiro item
+        const vinculoSemItem = produto.vinculos.find(v => !v.item_porcionado_id);
+        if (vinculoSemItem?.id && vinculos.indexOf(vinculo) === 0) {
+          operations.push(
+            supabase
+              .from('mapeamento_cardapio_itens')
+              .update({ 
+                item_porcionado_id: vinculo.item_porcionado_id, 
+                quantidade_consumida: vinculo.quantidade_consumida 
+              })
+              .eq('id', vinculoSemItem.id)
+          );
+        } else {
+          // Cria novo vínculo
+          operations.push(
+            supabase
+              .from('mapeamento_cardapio_itens')
+              .insert({
+                organization_id: organizationId,
+                loja_id,
+                cardapio_item_id: produto.cardapio_item_id,
+                cardapio_item_nome: produto.cardapio_item_nome,
+                tipo: produto.tipo,
+                categoria: produto.categoria,
+                item_porcionado_id: vinculo.item_porcionado_id,
+                quantidade_consumida: vinculo.quantidade_consumida,
+                ativo: true
+              })
+          );
+        }
+      }
+    }
+    
+    const results = await Promise.all(operations);
+    // Verifica erros...
   },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-    toast.success('Vínculos criados com sucesso!');
-  }
+  // ...
 });
 ```
 
 ---
 
-## Funcionalidades Extras
+### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
 
-### Checkbox "Selecionar Todos" no Header
-- Marca/desmarca todos os produtos visíveis na tabela atual
+#### Atualizar Chamada ao Modal
 
-### Filtro Inteligente
-- Quando agrupado por Tipo/Categoria, mostrar checkbox no header do grupo para selecionar todos daquele grupo
-
-### Reset Automático
-- Limpar seleção quando trocar de loja
-- Limpar seleção quando trocar modo de visualização
+```typescript
+const handleVincularEmLote = async (vinculos: { itemPorcionadoId: string; quantidade: number }[]) => {
+  if (!lojaIdMapeamento) return;
+  
+  const produtosSelecionadosArray = mapeamentosFiltrados.filter(
+    m => produtosSelecionados.has(m.cardapio_item_id)
+  );
+  
+  await vincularEmLote.mutateAsync({
+    produtos: produtosSelecionadosArray,
+    vinculos: vinculos.map(v => ({
+      item_porcionado_id: v.itemPorcionadoId,
+      quantidade_consumida: v.quantidade
+    })),
+    loja_id: lojaIdMapeamento
+  });
+  
+  setVinculoEmLoteModalOpen(false);
+  setModoSelecao(false);
+  setProdutosSelecionados(new Set());
+};
+```
 
 ---
 
@@ -213,15 +250,29 @@ const vincularEmLote = useMutation({
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar estados, toggle de seleção, checkboxes e barra de ações |
-| `src/components/modals/VincularEmLoteModal.tsx` | Novo modal para vinculação em lote |
-| `src/hooks/useCardapioWebIntegracao.ts` | Nova mutation `vincularEmLote` |
+| `src/components/modals/VincularEmLoteModal.tsx` | Trocar Select por lista de checkboxes com quantidades individuais |
+| `src/hooks/useCardapioWebIntegracao.ts` | Atualizar mutation para criar múltiplos vínculos por produto |
+| `src/pages/ConfigurarCardapioWeb.tsx` | Ajustar chamada ao modal e handler |
+
+---
+
+## Fluxo do Usuário
+
+1. Ativa modo de seleção
+2. Marca várias pizzas (5 produtos)
+3. Clica em "Vincular Selecionados"
+4. No modal, marca:
+   - MASSA - PORCIONADO (Qtd: 1)
+   - MUSSARELA - PORCIONADO (Qtd: 2)
+   - BACON - PORCIONADO (Qtd: 1)
+5. Clica em "Vincular 5 Produtos"
+6. Sistema cria 15 registros (5 pizzas × 3 itens porcionados)
 
 ---
 
 ## Benefícios
 
-1. **Eficiência**: Vincular 20 refrigerantes ao mesmo item em 3 cliques
-2. **UX Familiar**: Padrão de seleção com checkbox usado em toda web
-3. **Flexível**: Funciona com visualização por Produto, Tipo ou Categoria
-4. **Seguro**: Confirmação antes de aplicar vínculos em lote
+1. **Eficiência máxima**: Vincular 5 pizzas a 3 ingredientes em uma única operação
+2. **Quantidades individuais**: Cada item pode ter sua própria quantidade (ex: 2x mussarela)
+3. **Visual claro**: Lista com checkboxes mostra exatamente o que será vinculado
+4. **Resumo antes de confirmar**: Usuário vê exatamente o que vai acontecer
