@@ -478,11 +478,24 @@ export function useCardapioWebIntegracao() {
   });
 
   // Mutation: Import mappings in batch (creates base records without item_porcionado_id)
-  // Using insert with conflict handling - if product already exists, we skip it
+  // Strategy: Delete all unlinked mappings for this store, then insert new ones
+  // This prevents duplicates caused by NULL item_porcionado_id not matching in UNIQUE constraint
   const importarMapeamentos = useMutation({
     mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
       if (!organizationId) throw new Error('Organização não encontrada');
       
+      // Step 1: Delete all unlinked mappings (item_porcionado_id IS NULL) for this store
+      // This ensures re-importing won't create duplicates
+      const { error: deleteError } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('loja_id', loja_id)
+        .is('item_porcionado_id', null);
+      
+      if (deleteError) throw deleteError;
+      
+      // Step 2: Insert new mappings
       const mappings = items.map(item => ({
         organization_id: organizationId,
         loja_id,
@@ -495,14 +508,9 @@ export function useCardapioWebIntegracao() {
         ativo: true,
       }));
 
-      // Use upsert with new constraint (org + loja + item_cardapio + item_porc)
-      // Since item_porcionado_id is null, this will create new base records
       const { data, error } = await supabase
         .from('mapeamento_cardapio_itens')
-        .upsert(mappings, {
-          onConflict: 'organization_id,loja_id,cardapio_item_id,item_porcionado_id',
-          ignoreDuplicates: false
-        })
+        .insert(mappings)
         .select();
       
       if (error) throw error;
@@ -510,7 +518,7 @@ export function useCardapioWebIntegracao() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-      toast.success(`${data.length} itens importados/atualizados com sucesso!`);
+      toast.success(`${data.length} itens importados com sucesso!`);
     },
     onError: (error) => {
       console.error('Erro ao importar mapeamentos:', error);
