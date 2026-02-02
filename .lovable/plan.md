@@ -1,122 +1,133 @@
 
+# Plano: Correção da Lógica do Modelo Tanque Cheio
 
-# Plano: Implementar Modelo "Tanque Cheio" - Lógica de Reposição
+## Problema Identificado
 
-## Modelo Atual (ERRADO)
+O sistema está com dois erros críticos:
 
+### Erro 1: Vendas Acumuladas Muito Altas
+O campo `cardapio_web_baixa_total` tem **556 vendas** enquanto o ideal é apenas **140**. Isso significa que as vendas acumuladas já ultrapassaram o teto. O cálculo atual faz:
 ```
-final_sobra = vendas_acumuladas = 50
-a_produzir = ideal - final_sobra = 140 - 50 = 90  ❌
-```
-
-O funcionário vê "A Produzir = 90" quando deveria ver "50".
-
-## Modelo Correto (Tanque Cheio)
-
-```
-final_sobra = ideal - vendas = 140 - 50 = 90  (saldo no tanque)
-a_produzir = ideal - final_sobra = 140 - 90 = 50  ✅
+final_sobra = MAX(0, 140 - 556) = 0
+a_produzir = 140 - 0 = 140  ❌ (deveria mostrar 556 ou limitar ao ideal)
 ```
 
-O funcionário vê "A Produzir = 50" (exatamente o que foi vendido).
-
-## Analogia Visual
-
-```text
-TANQUE CHEIO (início do dia):
-┌────────────┐
-│████████████│ ← Ideal: 140 (tanque cheio)
-│████████████│
-│████████████│
-└────────────┘
-
-APÓS 50 VENDAS:
-┌────────────┐
-│            │ ← Espaço vazio: 50 (A Produzir)
-│████████████│
-│████████████│ ← Saldo restante: 90 (final_sobra)
-└────────────┘
-```
-
-## Alterações no Edge Function
-
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
-
-### Cenário 1: Criar nova contagem (linha 557)
-
+### Erro 2: O Modelo Tanque Cheio Está Invertido
+**Lógica ATUAL (errada):**
 ```typescript
-// DE (atual - vendas vão para sobra):
-const novoFinalSobra = quantidadeTotal
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
+// Se ideal=140 e vendas=50 → sobra=90 → a_produzir=50
+// Se ideal=140 e vendas=556 → sobra=0 → a_produzir=140 ❌
+```
 
-// PARA (modelo tanque cheio - sobra = ideal - vendas):
+**Lógica que você quer:**
+- `A PRODUZIR` deve SEMPRE mostrar as VENDAS (o que foi consumido)
+- O teto máximo de `A PRODUZIR` é o `IDEAL`
+
+---
+
+## Solução Proposta
+
+### Nova Lógica do Cálculo
+Para o modelo "Tanque Cheio" funcionar corretamente, precisamos garantir que:
+
+```
+final_sobra = MAX(0, ideal_do_dia - vendas_totais)
+a_produzir = MIN(vendas_totais, ideal_do_dia)
+```
+
+**Mas o banco calcula** `a_produzir = GREATEST(0, ideal - final_sobra)`, então precisamos ajustar o `final_sobra` para que a fórmula produza o resultado correto.
+
+### Tabela de Cenários
+
+| Cenário | Ideal | Vendas | final_sobra (calc) | a_produzir (banco) |
+|---------|-------|--------|-------------------|-------------------|
+| Vendas < Ideal | 140 | 50 | 140 - 50 = 90 | 140 - 90 = **50** |
+| Vendas = Ideal | 140 | 140 | 140 - 140 = 0 | 140 - 0 = **140** |
+| Vendas > Ideal | 140 | 556 | 140 - 556 = -416 → 0 | 140 - 0 = **140** |
+
+**Problema:** Quando vendas > ideal, o sistema mostra `a_produzir = 140` (o ideal inteiro), mas deveria limitar as vendas ao ideal ou mostrar as vendas reais.
+
+---
+
+## Duas Opções de Correção
+
+### Opção A: A Produzir = Vendas (sem limite)
+Se você quer que `A PRODUZIR` mostre EXATAMENTE o que foi vendido, mesmo acima do ideal:
+- Mudar a coluna gerada no banco para: `a_produzir = cardapio_web_baixa_total`
+- Ou usar `final_sobra` para armazenar o NEGATIVO do consumo
+
+### Opção B: A Produzir = MIN(Vendas, Ideal) - Limitado ao teto
+Se você quer que `A PRODUZIR` mostre as vendas, mas limitado ao ideal máximo:
+- Manter a lógica atual do banco
+- O sistema já está funcionando para esse cenário quando vendas < ideal
+
+---
+
+## Alterações Necessárias
+
+### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
+
+**Cenário de Criação (linhas 556-557):**
+```typescript
+// ATUAL:
 const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
+
+// PROPOSTA (fazer final_sobra = ideal - vendas, permitindo negativo internamente):
+// Mas como usamos Math.max, precisa de ajuste na lógica
 ```
 
-### Cenário 2: Atualizar contagem existente (linha 595)
-
+**Cenário de Atualização (linhas 594-596):**
 ```typescript
-// DE (atual - vendas acumuladas vão para sobra):
-const vendasAnteriores = contagem.cardapio_web_baixa_total || 0
+// ATUAL:
 const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-const novoFinalSobra = novoTotalBaixas  // ERRADO!
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
 
-// PARA (modelo tanque cheio - sobra = ideal - vendas_totais):
-const vendasAnteriores = contagem.cardapio_web_baixa_total || 0
-const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)  // CORRETO!
+// PROPOSTA: Se queremos que a_produzir = vendas (limitado ao ideal)
+// Quando vendas > ideal, a_produzir será o ideal (teto)
+// Isso já está acontecendo - é o comportamento esperado?
 ```
 
-## Fluxo Corrigido
+---
 
-```text
-INÍCIO DO DIA OPERACIONAL:
-├── ideal_amanha = 140
-├── final_sobra = 140 (tanque cheio)
-└── a_produzir = 0
+## Esclarecimento Necessário
 
-PRIMEIRA VENDA (50 pizzas):
-├── cardapio_web_baixa_total = 0 + 50 = 50
-├── final_sobra = 140 - 50 = 90 (saldo restante)
-├── a_produzir = 140 - 90 = 50 ✓ (o que foi vendido)
-└── Tela: Azul=90, Laranja=50
+Preciso confirmar qual comportamento você espera:
 
-SEGUNDA VENDA (10 pizzas):
-├── cardapio_web_baixa_total = 50 + 10 = 60
-├── final_sobra = 140 - 60 = 80 (saldo restante)
-├── a_produzir = 140 - 80 = 60 ✓ (total vendido)
-└── Tela: Azul=80, Laranja=60
-```
+| Ideal | Vendas | O que deve aparecer em "A PRODUZIR"? |
+|-------|--------|--------------------------------------|
+| 140 | 50 | **50** (as vendas) |
+| 140 | 140 | **140** (as vendas = ideal) |
+| 140 | 556 | **140** (limitado ao ideal) ou **556** (vendas reais)? |
 
-## Resultado Esperado na Tela
+Se o funcionário vendeu 556 unidades mas o ideal é 140, ele deve:
+- **Opção A:** Produzir 556 (tudo que vendeu, mesmo acima do ideal)
+- **Opção B:** Produzir 140 (o máximo configurado)
 
-| Campo | Valor | Significado |
-|-------|-------|-------------|
-| Ideal | 140 | Capacidade total do tanque |
-| Sobra (azul) | **90** | Saldo restante no tanque |
-| A Produzir (laranja) | **50** | O que foi consumido/vendido |
+---
+
+## Problema Adicional: Lojas Sem Ideal Configurado
+
+Para CACHOEIRINHA e ALEIXO, o `ideal_amanha = 0` indica que a função `getIdealDoDia` não encontrou configuração de estoque ideal. Isso precisa ser verificado:
+
+1. Confirmar se há registro em `estoques_ideais_semanais` para essas lojas
+2. Verificar se o `loja_id` do webhook corresponde ao `loja_id` da tabela de estoques
+
+---
 
 ## Detalhes Técnicos
 
-**Arquivo a modificar:**
-- `supabase/functions/cardapio-web-webhook/index.ts`
+**Arquivos a modificar:**
+- `supabase/functions/cardapio-web-webhook/index.ts` - Linhas 550-625
 
-**Mudanças específicas:**
+**Mudanças específicas** (dependem da opção escolhida):
 
-1. **Linha 557** (nova contagem):
-   - DE: `const novoFinalSobra = quantidadeTotal`
-   - PARA: `const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)`
+Para **Opção B** (A Produzir limitado ao Ideal):
+1. Manter a lógica atual - ela já está correta para esse cenário
+2. Quando vendas > ideal, `a_produzir = ideal` (teto)
 
-2. **Linha 595** (atualização):
-   - DE: `const novoFinalSobra = novoTotalBaixas`
-   - PARA: `const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)`
+Para **Opção A** (A Produzir = Vendas sem limite):
+1. Mudar a coluna gerada no banco para usar `cardapio_web_baixa_total`
+2. Ou armazenar `final_sobra` como o valor negativo (ideal - vendas)
 
-3. **Atualizar logs** para refletir o novo modelo:
-   - "saldo_restante" em vez de "vendas_acumuladas"
-
-## Benefício para o Funcionário
-
-- **Segunda-feira** (Ideal 100): Se vendeu 1, Azul=99, Laranja=**1** → Produz 1
-- **Sexta-feira** (Ideal 180): Se vendeu 1, Azul=179, Laranja=**1** → Produz 1
-
-O laranja sempre mostra exatamente o que foi vendido = o que precisa produzir.
-
+**Recomendação:** Opção B é mais segura para controle de produção, evitando superprodução.
