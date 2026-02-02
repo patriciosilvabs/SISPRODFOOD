@@ -619,15 +619,17 @@ Deno.serve(async (req) => {
             console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: vendas=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra} (ideal=${idealDoDia})`)
           }
         } else {
-          // MODELO TANQUE CHEIO: final_sobra = estoque_ideal - vendas_totais
-          // Estoque inicia "cheio" (ideal) e vendas consomem do saldo
-          // a_produzir = MAX(0, ideal - final_sobra) = vendas_totais (o que foi consumido)
-          // Exemplo: ideal=140, vendas=50 → saldo=90 → a_produzir=50 ✓
+          // DECREMENTO REAL: Subtrai da sobra atual (respeitando ajustes manuais)
+          // Em vez de recalcular "Ideal - Total Vendas", desconta apenas a venda atual
+          // Isso preserva ajustes manuais feitos pelo funcionário no campo azul
           const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
           const novoTotalBaixas = vendasAnteriores + quantidadeTotal
-          const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas) // TANQUE CHEIO: sobra = ideal - vendas_totais
           
-          console.log(`📦 Atualizando contagem (tanque cheio): ideal=${idealDoDia}, vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = vendas_total=${novoTotalBaixas} → saldo_restante=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+          // DECREMENTO REAL: Subtrai da sobra atual (respeitando ajustes manuais)
+          const estoqueAtual = ((contagem as unknown as Record<string, number>).final_sobra || 0)
+          const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+          
+          console.log(`📦 Atualizando contagem (decremento real): estoque_atual=${estoqueAtual} - vendas_novas=${quantidadeTotal} = saldo_novo=${novoFinalSobra} (vendas_acumuladas=${novoTotalBaixas}, ideal=${idealDoDia})`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
