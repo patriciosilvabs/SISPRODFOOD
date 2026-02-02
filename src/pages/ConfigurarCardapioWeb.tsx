@@ -425,8 +425,8 @@ export default function ConfigurarCardapioWeb() {
     });
   };
 
-  // Handle bulk linking
-  const handleVincularEmLote = async (itemPorcionadoId: string, quantidade: number) => {
+  // Handle bulk linking with multiple portioned items
+  const handleVincularEmLote = async (vinculos: { itemPorcionadoId: string; quantidade: number }[]) => {
     if (!lojaIdMapeamento || produtosSelecionados.size === 0) return;
     
     const produtosParaVincular = mapeamentosFiltrados.filter(p => 
@@ -435,8 +435,10 @@ export default function ConfigurarCardapioWeb() {
     
     await vincularEmLote.mutateAsync({
       produtos: produtosParaVincular,
-      item_porcionado_id: itemPorcionadoId,
-      quantidade_consumida: quantidade,
+      vinculos: vinculos.map(v => ({
+        item_porcionado_id: v.itemPorcionadoId,
+        quantidade_consumida: v.quantidade
+      })),
       loja_id: lojaIdMapeamento,
     });
     
