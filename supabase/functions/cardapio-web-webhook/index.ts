@@ -550,13 +550,13 @@ Deno.serve(async (req) => {
         const agora = new Date().toISOString()
 
         if (contagemError || !contagem) {
-          // MODELO DECREMENTO: final_sobra = ideal - vendas (quando não existe contagem)
-          // Cada venda é DESCONTADA do ideal
+          // MODELO ACUMULATIVO: final_sobra = vendas acumuladas
+          // Vendas são SOMADAS em final_sobra (representam o consumo)
           // a_produzir = MAX(0, ideal - final_sobra) - calculado automaticamente pelo banco
           const novoTotalBaixas = quantidadeTotal
-          const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal) // Inicia no ideal e desconta a venda
+          const novoFinalSobra = quantidadeTotal // Vendas vão direto para final_sobra
           
-          console.log(`📦 Criando contagem (modelo decremento): ideal=${idealDoDia} - vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Criando contagem (modelo acumulativo): vendas=${quantidadeTotal} → final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
           
           const { error: insertError } = await supabase
             .from('contagem_porcionados')
@@ -584,16 +584,16 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: final_sobra=${novoFinalSobra} (ideal=${idealDoDia} - vendas=${novoTotalBaixas})`)
+            console.log(`[${sourceType}] ✅ Criou contagem para ${itemName}: vendas=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra} (ideal=${idealDoDia})`)
           }
         } else {
-          // MODELO DECREMENTO: final_sobra = sobra_atual - vendas
-          // Cada venda é DESCONTADA do valor atual de final_sobra
-          const estoqueAtual = (contagem as unknown as Record<string, number>).final_sobra ?? 0
-          const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+          // MODELO ACUMULATIVO: final_sobra = vendas acumuladas
+          // Novas vendas são SOMADAS ao valor atual de final_sobra
+          const vendasAcumuladas = (contagem as unknown as Record<string, number>).final_sobra ?? 0
+          const novoFinalSobra = vendasAcumuladas + quantidadeTotal // Acumula as vendas
           const novoTotalBaixas = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0) + quantidadeTotal
           
-          console.log(`📦 Atualizando contagem (modelo decremento): sobra_atual=${estoqueAtual} - vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}`)
+          console.log(`📦 Atualizando contagem (modelo acumulativo): vendas_anteriores=${vendasAcumuladas} + novas_vendas=${quantidadeTotal} = final_sobra=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
 
           const { error: updateError } = await supabase
             .from('contagem_porcionados')
@@ -617,7 +617,7 @@ Deno.serve(async (req) => {
               item_porcionado_id: mapping.item_porcionado_id,
               quantidade_baixada: quantidadeTotal
             })
-            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: final_sobra=${novoFinalSobra} (descontou ${quantidadeTotal} da sobra anterior=${estoqueAtual})`)
+            console.log(`[${sourceType}] ✅ Atualizou contagem para ${itemName}: vendas_acumuladas=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra} (adicionou ${quantidadeTotal})`)
           }
         }
       }
