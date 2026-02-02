@@ -157,6 +157,85 @@ const ContagemPorcionados = () => {
     }
   }, [user]);
 
+  // Realtime subscription para atualizações do Cardápio Web
+  useEffect(() => {
+    if (!organizationId) return;
+
+    const channel = supabase
+      .channel('contagem-cardapio-web-sync')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'contagem_porcionados',
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (payload) => {
+          const updated = payload.new as Contagem;
+          const key = `${updated.loja_id}-${updated.item_porcionado_id}`;
+          
+          // Só atualizar se o usuário NÃO estiver editando este item
+          // Isso evita sobrescrever valores que o usuário está digitando
+          if (editingValues[key]) {
+            console.log(`🔒 Realtime: Item ${key} sendo editado, ignorando atualização remota`);
+            return;
+          }
+
+          // Verificar se é uma baixa do Cardápio Web (tem cardapio_web_ultima_baixa_qtd)
+          const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd && 
+                                      updated.cardapio_web_ultima_baixa_qtd > 0;
+
+          // Atualizar estado local
+          setContagens(prev => {
+            const lojaContagens = [...(prev[updated.loja_id] || [])];
+            const index = lojaContagens.findIndex(
+              c => c.item_porcionado_id === updated.item_porcionado_id
+            );
+            
+            if (index >= 0) {
+              // Preservar item_nome do estado atual
+              const itemNome = lojaContagens[index].item_nome;
+              lojaContagens[index] = { 
+                ...lojaContagens[index], 
+                ...updated,
+                item_nome: itemNome 
+              };
+            }
+            
+            return { ...prev, [updated.loja_id]: lojaContagens };
+          });
+
+          // Atualizar originalValues para evitar "dirty state" falso
+          setOriginalValues(prev => ({
+            ...prev,
+            [key]: {
+              final_sobra: String(updated.final_sobra ?? ''),
+              peso_total_g: String(updated.peso_total_g ?? ''),
+              ideal_amanha: updated.ideal_amanha,
+            }
+          }));
+
+          // Mostrar toast se for baixa do Cardápio Web
+          if (isCardapioWebBaixa) {
+            const itemNome = itens.find(i => i.id === updated.item_porcionado_id)?.nome || 'Item';
+            toast.info(
+              `📦 Venda Cardápio Web: -${updated.cardapio_web_ultima_baixa_qtd} un de ${itemNome}`,
+              { duration: 4000 }
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    console.log('🔴 Realtime: Subscription ativa para contagem_porcionados');
+
+    return () => {
+      supabase.removeChannel(channel);
+      console.log('⚪ Realtime: Subscription removida');
+    };
+  }, [organizationId, itens]);
+
   const loadData = async () => {
     try {
       // Carregar lojas baseado no role do usuário
