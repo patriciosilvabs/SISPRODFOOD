@@ -1,136 +1,130 @@
 
-# Plano: Atualizar Estoque da Loja ao Receber Romaneio
 
-## Problema Identificado
+# Plano: Remover Todos os Mapeamentos de Uma Só Vez
 
-Quando o **usuário da loja recebe o romaneio**, o sistema **NÃO ATUALIZA** o campo `final_sobra` (Sobra) da loja de destino. Isso significa que:
+## Objetivo
 
-| O que acontece hoje | O que deveria acontecer |
-|---------------------|-------------------------|
-| Loja recebe 100 unidades | final_sobra da loja aumenta em 100 |
-| a_produzir continua alto | a_produzir recalcula e pode zerar |
-| Sistema "esquece" que loja foi abastecida | Sistema entende que demanda foi atendida |
+Adicionar um botão que permite ao usuário excluir **todos os mapeamentos** da tabela `mapeamento_cardapio_itens` de uma só vez, com confirmação de segurança.
 
-### Fluxo Atual (Incompleto)
+## Situação Atual
 
-```text
-┌─────────────┐    ENVIA      ┌─────────────┐    RECEBE    ┌─────────────┐
-│     CPD     │──────────────►│   ROMANEIO  │─────────────►│    LOJA     │
-└─────────────┘               └─────────────┘              └─────────────┘
-       │                                                          │
-       ▼                                                          ▼
-  final_sobra -= X                                      ❌ NADA ACONTECE
-  (debita estoque CPD)                                  (estoque loja não muda)
-```
+| Funcionalidade | Estado |
+|----------------|--------|
+| Remover vínculo individual | ✅ Existe (botão lixeira em cada linha) |
+| Remover todos de uma vez | ❌ Não existe |
 
-### Fluxo Correto (A Implementar)
+## Mudança Visual Proposta
 
 ```text
-┌─────────────┐    ENVIA      ┌─────────────┐    RECEBE    ┌─────────────┐
-│     CPD     │──────────────►│   ROMANEIO  │─────────────►│    LOJA     │
-└─────────────┘               └─────────────┘              └─────────────┘
-       │                                                          │
-       ▼                                                          ▼
-  final_sobra -= X                                      ✅ final_sobra += X
-  (debita estoque CPD)                                  (credita estoque loja)
-                                                              │
-                                                              ▼
-                                                        a_produzir recalcula
-                                                        (ideal - novo_sobra)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Mapeamento de Produtos                                                     │
+│  Configure quais itens porcionados são consumidos para cada produto...      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐  ┌────────────────────┐  ┌───────────────┐            │
+│  │ 🗑️ Limpar Tudo  │  │ 📤 Importar Arquivo│  │ ➕ Adicionar  │            │
+│  └─────────────────┘  └────────────────────┘  └───────────────┘            │
+│         ↑                                                                   │
+│   NOVO BOTÃO (vermelho/destructive)                                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Solução Técnica
+## Fluxo de Confirmação
 
-### Alteração no Arquivo: `src/pages/Romaneio.tsx`
+1. Usuário clica em **"Limpar Tudo"**
+2. Modal de confirmação aparece:
+   - Título: "Remover todos os mapeamentos?"
+   - Mensagem: "Esta ação é PERMANENTE e IRREVERSÍVEL. Todos os X mapeamentos serão excluídos."
+   - Botões: [Cancelar] [Confirmar Exclusão]
+3. Após confirmação, todos os registros são deletados
+4. Toast de sucesso: "X mapeamentos removidos com sucesso"
 
-Na função `handleConfirmarRecebimento` (linhas 1731-1845), após registrar o recebimento do romaneio, adicionar lógica para:
+## Alterações Técnicas
 
-1. Para cada item recebido, buscar/criar a contagem na loja de destino
-2. Incrementar o `final_sobra` da loja com a quantidade recebida
-3. Como `a_produzir` é coluna gerada no banco (`ideal - final_sobra`), será recalculado automaticamente
+### 1. Hook: `src/hooks/useCardapioWebIntegracao.ts`
 
-### Código a Adicionar
+Adicionar nova mutation `deleteAllMapeamentos`:
 
 ```typescript
-// NOVO: Após confirmar recebimento, creditar estoque na loja de destino
-for (const item of romaneio.romaneio_itens) {
-  const itemId = item.id || `${romaneio.id}-${romaneio.romaneio_itens.indexOf(item)}`;
-  const recItem = recebimentosPorItem[itemId];
-  const qtdRecebida = recItem?.quantidade_recebida ?? item.quantidade;
-  
-  // Buscar item_porcionado_id a partir do item
-  const { data: romaneioItem } = await supabase
-    .from('romaneio_itens')
-    .select('item_porcionado_id')
-    .eq('id', item.id)
-    .single();
-  
-  if (!romaneioItem?.item_porcionado_id) continue;
-  
-  // Buscar contagem atual da loja para este item
-  const currentDate = new Date().toISOString().split('T')[0];
-  const { data: contagemLoja } = await supabase
-    .from('contagem_porcionados')
-    .select('id, final_sobra')
-    .eq('loja_id', romaneio.loja_id)
-    .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
-    .eq('dia_operacional', currentDate)
-    .maybeSingle();
-  
-  if (contagemLoja?.id) {
-    // Atualizar: incrementar final_sobra com quantidade recebida
-    const novoSobra = (contagemLoja.final_sobra || 0) + qtdRecebida;
-    await supabase
-      .from('contagem_porcionados')
-      .update({ 
-        final_sobra: novoSobra,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', contagemLoja.id);
-  } else {
-    // Criar contagem nova para a loja com o estoque recebido
-    // Buscar ideal do dia da configuração
-    const { data: estoqueIdeal } = await supabase
-      .from('estoques_ideais_semanais')
-      .select('*')
-      .eq('loja_id', romaneio.loja_id)
-      .eq('item_porcionado_id', romaneioItem.item_porcionado_id)
-      .single();
+// Mutation: Delete ALL mappings at once
+const deleteAllMapeamentos = useMutation({
+  mutationFn: async () => {
+    if (!organizationId) throw new Error('Organização não encontrada');
     
-    const diaAtual = ['domingo','segunda','terca','quarta','quinta','sexta','sabado'][new Date().getDay()];
-    const idealDoDia = estoqueIdeal?.[diaAtual] ?? 0;
+    const { error } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .delete()
+      .eq('organization_id', organizationId);
     
-    await supabase.from('contagem_porcionados').insert({
-      loja_id: romaneio.loja_id,
-      item_porcionado_id: romaneioItem.item_porcionado_id,
-      final_sobra: qtdRecebida,
-      ideal_amanha: idealDoDia,
-      dia_operacional: currentDate,
-      usuario_id: user.id,
-      usuario_nome: userProfile?.nome || 'Usuário',
-      organization_id: organizationId
-    });
+    if (error) throw error;
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    toast.success('Todos os mapeamentos foram removidos');
+  },
+  onError: (error) => {
+    console.error('Erro ao remover mapeamentos:', error);
+    toast.error('Erro ao remover mapeamentos');
   }
-}
+});
 ```
 
-## Resultado Esperado
+Exportar no return do hook.
 
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Loja com sobra=0, ideal=100, recebe 100 un | a_produzir = 100 | a_produzir = 0 ✅ |
-| Loja com sobra=50, ideal=100, recebe 50 un | a_produzir = 50 | a_produzir = 0 ✅ |
-| Loja com sobra=80, ideal=100, recebe 30 un | a_produzir = 20 | a_produzir = 0 (sobra=110) ✅ |
+### 2. Página: `src/pages/ConfigurarCardapioWeb.tsx`
+
+Adicionar botão com AlertDialog de confirmação na seção de mapeamentos:
+
+```tsx
+{mapeamentosAgrupados.length > 0 && (
+  <AlertDialog>
+    <AlertDialogTrigger asChild>
+      <Button variant="destructive" size="sm">
+        <Trash2 className="h-4 w-4 mr-2" />
+        Limpar Tudo
+      </Button>
+    </AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Remover todos os mapeamentos?</AlertDialogTitle>
+        <AlertDialogDescription>
+          Esta ação é <strong>PERMANENTE e IRREVERSÍVEL</strong>. 
+          Todos os <strong>{mapeamentosAgrupados.length}</strong> produtos mapeados 
+          e seus vínculos serão excluídos.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+        <AlertDialogAction 
+          onClick={(e) => {
+            e.preventDefault();
+            deleteAllMapeamentos.mutate();
+          }}
+          className="bg-destructive text-destructive-foreground"
+        >
+          {deleteAllMapeamentos.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : null}
+          Confirmar Exclusão
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+)}
+```
 
 ## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/pages/Romaneio.tsx` | Adicionar lógica para creditar `final_sobra` da loja ao confirmar recebimento |
+| `src/hooks/useCardapioWebIntegracao.ts` | Adicionar mutation `deleteAllMapeamentos` |
+| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar botão "Limpar Tudo" com confirmação |
 
-## Benefícios
+## Segurança
 
-1. **Ciclo completo**: CPD produz → Envia → Loja recebe → Demanda zerada
-2. **Automatização**: Sistema entende que loja foi abastecida
-3. **Visibilidade correta**: "A Produzir" reflete a realidade do estoque
-4. **Sem produção duplicada**: Evita produzir para lojas já atendidas
+- Confirmação obrigatória via AlertDialog
+- Mensagem explicita que a ação é "PERMANENTE e IRREVERSÍVEL" 
+- Uso de `preventDefault()` para aguardar conclusão da operação assíncrona
+- Botão só aparece quando existem mapeamentos para remover
+
