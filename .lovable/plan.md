@@ -1,121 +1,134 @@
 
+# Plano: Correção do Loop Infinito de Cards "Estoque CPD Suficiente"
 
-# Plano: Sincronização em Tempo Real do Frontend com Baixas do Cardápio Web
+## Diagnóstico do Problema
 
-## Diagnóstico Confirmado
+Quando a produção é finalizada:
 
-O webhook `cardapio-web-webhook` **está funcionando corretamente** com a lógica de "Decremento Real". O problema está no **frontend** (`ContagemPorcionados.tsx`) que:
+1. O sistema credita o estoque no CPD via INSERT/UPDATE em `contagem_porcionados`
+2. O trigger `trg_criar_producao_apos_contagem` dispara em **INSERT**
+3. O trigger chama `criar_ou_atualizar_producao_registro`
+4. A função RPC detecta que o CPD agora tem estoque suficiente para cobrir a demanda
+5. **Cria cards `estoque_disponivel`** imediatamente - ERRO!
 
-1. **Não atualiza em tempo real** quando baixas automáticas ocorrem
-2. **Sobrescreve o `final_sobra` do banco** com valores desatualizados do estado local
+### Por que está errado?
 
-### Cenário do Bug
+Os cards "Estoque CPD Suficiente" só devem aparecer quando:
+- **A loja informa uma nova demanda** (atualiza `ideal_amanha`)
+- **E** o CPD já possui estoque para atender essa demanda
 
-1. Funcionário abre a página às 10:00 → vê `final_sobra = 140`
-2. Cardápio Web envia 50 vendas às 12:00 → banco atualiza para `final_sobra = 90`
-3. Funcionário (ainda com tela antiga) clica em "Salvar" às 14:00
-4. Frontend envia `final_sobra = 140` (valor antigo) → **reseta o estoque!**
-5. Nova venda às 15:00 → webhook lê 140 do banco e faz `140 - 5 = 135`
+Não devem aparecer quando:
+- A produção é finalizada (que credita o CPD)
+- Porque isso cria um loop visual e confusão operacional
 
-O ciclo se repete: o frontend "reseta" e o webhook desconta do valor resetado.
+### Dados Atuais (Comprovando o Loop)
+
+| Item | CPD Estoque | Japiim Demanda | Saldo Líquido | Card Criado |
+|------|-------------|----------------|---------------|-------------|
+| MASSA | 50 | 50 | 0 | ✅ estoque_disponivel |
+| MUSSARELA | 50 | 50 | 0 | ✅ estoque_disponivel |
+
+Os cards verdes aparecem imediatamente após finalização, quando deveriam só aparecer se a loja Japiim atualizasse sua contagem **depois** que o CPD já tivesse estoque.
 
 ---
 
-## Solução Proposta: Sincronização com Realtime
+## Solução Proposta
 
-### Mudança 1: Adicionar Subscription Realtime
+### Opção 1: Ignorar INSERTs do CPD no Trigger (Recomendada)
 
-Arquivo: `src/pages/ContagemPorcionados.tsx`
-
-Adicionar uma subscription para atualizar a tela automaticamente quando o Cardápio Web modificar dados:
-
-```typescript
-useEffect(() => {
-  if (!organizationId) return;
-  
-  // Subscription para atualizações da contagem (via Cardápio Web ou outro usuário)
-  const channel = supabase
-    .channel('contagem-realtime')
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'contagem_porcionados',
-        filter: `organization_id=eq.${organizationId}`,
-      },
-      (payload) => {
-        // Atualizar estado local apenas se não estiver editando este item
-        const updated = payload.new as Contagem;
-        const key = `${updated.loja_id}-${updated.item_porcionado_id}`;
-        
-        // Só atualizar se o usuário não estiver editando este campo
-        if (!editingValues[key]) {
-          setContagens(prev => {
-            const lojaContagens = [...(prev[updated.loja_id] || [])];
-            const index = lojaContagens.findIndex(
-              c => c.item_porcionado_id === updated.item_porcionado_id
-            );
-            
-            if (index >= 0) {
-              lojaContagens[index] = { ...lojaContagens[index], ...updated };
-            }
-            
-            return { ...prev, [updated.loja_id]: lojaContagens };
-          });
-        }
-      }
-    )
-    .subscribe();
-  
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [organizationId, editingValues]);
-```
-
-### Mudança 2: Habilitar Realtime na Tabela
-
-Arquivo: Nova migration SQL
+Modificar o trigger para **não disparar** quando o INSERT/UPDATE for da loja CPD:
 
 ```sql
--- Habilitar Realtime para contagem_porcionados
-ALTER PUBLICATION supabase_realtime ADD TABLE public.contagem_porcionados;
+CREATE OR REPLACE FUNCTION trigger_criar_producao_apos_contagem()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_loja_tipo TEXT;
+BEGIN
+    -- Buscar o tipo da loja
+    SELECT tipo INTO v_loja_tipo FROM lojas WHERE id = NEW.loja_id;
+    
+    -- NUNCA recalcular para INSERT/UPDATE de loja CPD
+    -- Isso evita loops quando produção finaliza e credita o estoque
+    IF v_loja_tipo = 'cpd' THEN
+        RETURN NEW;
+    END IF;
+
+    -- Para INSERTs (de lojas normais), sempre recalcular
+    IF TG_OP = 'INSERT' THEN
+        PERFORM criar_ou_atualizar_producao_registro(
+            NEW.item_porcionado_id,
+            NEW.organization_id,
+            NEW.usuario_id,
+            NEW.usuario_nome
+        );
+        RETURN NEW;
+    END IF;
+    
+    -- Para UPDATEs (de lojas normais), verificar se ideal_amanha mudou
+    IF TG_OP = 'UPDATE' THEN
+        IF OLD.ideal_amanha IS DISTINCT FROM NEW.ideal_amanha THEN
+            PERFORM criar_ou_atualizar_producao_registro(
+                NEW.item_porcionado_id,
+                NEW.organization_id,
+                NEW.usuario_id,
+                NEW.usuario_nome
+            );
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 
-### Mudança 3: Preservar `cardapio_web_baixa_total` no Save Manual
+### Benefícios
 
-Arquivo: `src/pages/ContagemPorcionados.tsx` (função `executeSave`)
+1. **Produção finaliza → CPD creditado → Nenhum trigger dispara**
+2. **Loja informa demanda → Trigger dispara → Se CPD tem estoque, cria card verde**
+3. **Fluxo lógico correto**: Primeiro a loja pede, depois o sistema verifica se CPD tem
 
-Quando o funcionário salvar manualmente, precisamos **preservar** os campos do Cardápio Web:
+### Fluxo Correto Após Correção
 
-```typescript
-const dataToSave = {
-  loja_id: lojaId,
-  item_porcionado_id: itemId,
-  final_sobra: finalSobra,
-  peso_total_g: values?.peso_total_g ? parseFloat(values.peso_total_g) : null,
-  ideal_amanha: idealAmanha,
-  usuario_id: user.id,
-  usuario_nome: profile?.nome || user.email || 'Usuário',
-  organization_id: organizationId,
-  dia_operacional: diaOperacional,
-  // NÃO sobrescrever campos do Cardápio Web - eles são gerenciados pelo webhook
-  // cardapio_web_baixa_total: ← NÃO INCLUIR
-  // cardapio_web_ultima_baixa_at: ← NÃO INCLUIR  
-};
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    FLUXO ATUAL (ERRADO)                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Produção Finaliza                                              │
+│         ↓                                                       │
+│  INSERT contagem CPD (final_sobra = 50)                         │
+│         ↓                                                       │
+│  Trigger dispara → RPC recalcula → Card verde aparece ❌        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    FLUXO CORRIGIDO                              │
+├─────────────────────────────────────────────────────────────────┤
+│  Produção Finaliza                                              │
+│         ↓                                                       │
+│  INSERT contagem CPD (final_sobra = 50)                         │
+│         ↓                                                       │
+│  Trigger detecta loja_tipo='cpd' → IGNORA ✅                    │
+│                                                                 │
+│  Mais tarde: Loja Japiim atualiza ideal_amanha = 140            │
+│         ↓                                                       │
+│  Trigger dispara → RPC verifica:                                │
+│    - Demanda total = 50                                         │
+│    - CPD estoque = 50                                           │
+│    - Saldo = 0 → Cria card "Estoque Disponível" ✅              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Mudança 4: Indicador Visual de Atualização Remota
+---
 
-Adicionar feedback visual quando uma baixa automática ocorrer:
+## Limpeza dos Cards Incorretos
 
-```typescript
-// Dentro do callback do realtime
-toast.info(`📦 Venda registrada: ${updated.cardapio_web_ultima_baixa_qtd} unidades de ${itemNome}`, {
-  duration: 3000,
-  icon: '🍕'
-});
+Além da correção do trigger, precisamos deletar os cards `estoque_disponivel` criados incorretamente hoje:
+
+```sql
+-- Deletar cards de estoque_disponivel criados hoje (loop corrigido)
+DELETE FROM producao_registros
+WHERE status = 'estoque_disponivel'
+  AND data_referencia = CURRENT_DATE;
 ```
 
 ---
@@ -124,46 +137,31 @@ toast.info(`📦 Venda registrada: ${updated.cardapio_web_ultima_baixa_qtd} unid
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/ContagemPorcionados.tsx` | Adicionar subscription Realtime + toast de feedback |
-| Nova migration SQL | Habilitar Realtime na tabela `contagem_porcionados` |
+| Nova migration SQL | Atualizar função `trigger_criar_producao_apos_contagem` para ignorar loja CPD |
+| (Opcional) Query única | Limpar cards `estoque_disponivel` existentes de hoje |
 
 ---
 
 ## Comportamento Final Esperado
 
-| Hora | Ação | Tela do Funcionário | Banco de Dados |
-|------|------|---------------------|----------------|
-| 10:00 | Abre página | Mostra 140 | `final_sobra = 140` |
-| 12:00 | Cardápio Web vende 50 | **Atualiza para 90** + Toast "📦 Venda: 50 un" | `final_sobra = 90` |
-| 14:00 | Funcionário clica + | Mostra 95 | (não salva ainda) |
-| 14:05 | Salva manualmente | Confirma 95 | `final_sobra = 95` |
-| 15:00 | Cardápio Web vende 5 | **Atualiza para 90** + Toast | `final_sobra = 90` |
-
-**Resultado:** O funcionário sempre vê o valor real e ajustes manuais são respeitados.
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| Produção finaliza e credita CPD | Card verde aparece (loop) | Nenhum card criado |
+| Loja atualiza ideal_amanha com CPD vazio | Card laranja normal | Card laranja normal |
+| Loja atualiza ideal_amanha com CPD cheio | Card verde correto | Card verde correto |
 
 ---
 
 ## Detalhes Técnicos
 
-### Por que Realtime resolve o problema?
+### Por que verificar `loja_tipo` no trigger?
 
-1. **Evita estado desatualizado**: O frontend sempre mostra o valor atual do banco
-2. **Preserva ajustes manuais**: O webhook faz `final_sobra - vendas`, não reseta
-3. **Feedback imediato**: Funcionário sabe que vendas estão sendo registradas
+- O CPD **nunca informa demanda** (ideal_amanha = 0 sempre)
+- INSERTs/UPDATEs no CPD são **operacionais** (finalização de produção, ajustes)
+- Não faz sentido recalcular produção baseado em mudanças do próprio CPD
 
-### Alternativa sem Realtime (mais simples)
+### Impacto na Performance
 
-Se Realtime causar problemas de performance, podemos usar polling a cada 30 segundos:
-
-```typescript
-useEffect(() => {
-  const interval = setInterval(() => {
-    loadData(); // Recarrega dados do banco
-  }, 30000);
-  
-  return () => clearInterval(interval);
-}, []);
-```
-
-Porém, isso é menos eficiente e pode causar conflitos se o usuário estiver digitando.
-
+- Adiciona 1 SELECT simples no trigger (buscar tipo da loja)
+- Evita execuções desnecessárias da RPC pesada
+- Performance geral **melhora** porque menos recálculos
