@@ -29,6 +29,7 @@ export interface IntegracaoCardapioWebComLoja extends IntegracaoCardapioWeb {
 interface MapeamentoCardapioItem {
   id: string;
   organization_id: string;
+  loja_id: string | null;
   cardapio_item_id: number;
   cardapio_item_nome: string;
   item_porcionado_id: string | null;
@@ -57,6 +58,7 @@ export interface MapeamentoCardapioItemAgrupado {
   cardapio_item_nome: string;
   tipo: string | null;
   categoria: string | null;
+  loja_id: string | null;
   vinculos: VinculoItem[];
 }
 
@@ -132,7 +134,29 @@ export function useCardapioWebIntegracao() {
     enabled: !!organizationId,
   });
 
-  // Query: Get mappings
+  // Function to get mappings by loja
+  const getMapeamentosByLoja = async (lojaId: string | null) => {
+    if (!organizationId) return [];
+    
+    let query = supabase
+      .from('mapeamento_cardapio_itens')
+      .select(`
+        *,
+        item_porcionado:itens_porcionados(id, nome)
+      `)
+      .eq('organization_id', organizationId)
+      .order('cardapio_item_nome', { ascending: true });
+    
+    if (lojaId) {
+      query = query.eq('loja_id', lojaId);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as MapeamentoCardapioItem[];
+  };
+
+  // Query: Get all mappings (for backward compatibility)
   const {
     data: mapeamentos,
     isLoading: loadingMapeamentos,
@@ -157,24 +181,27 @@ export function useCardapioWebIntegracao() {
     enabled: !!organizationId,
   });
 
-  // Group mappings by cardapio_item_id for UI display (one product can have multiple linked items)
-  const mapeamentosAgrupados = useMemo(() => {
-    if (!mapeamentos || mapeamentos.length === 0) return [];
+  // Group mappings by cardapio_item_id + loja_id for UI display (one product can have multiple linked items)
+  const groupMapeamentosByLoja = (items: MapeamentoCardapioItem[]): MapeamentoCardapioItemAgrupado[] => {
+    if (!items || items.length === 0) return [];
     
-    const grouped = new Map<number, MapeamentoCardapioItemAgrupado>();
+    // Key is loja_id + cardapio_item_id combined
+    const grouped = new Map<string, MapeamentoCardapioItemAgrupado>();
     
-    for (const m of mapeamentos) {
-      if (!grouped.has(m.cardapio_item_id)) {
-        grouped.set(m.cardapio_item_id, {
+    for (const m of items) {
+      const key = `${m.loja_id || 'null'}-${m.cardapio_item_id}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
           cardapio_item_id: m.cardapio_item_id,
           cardapio_item_nome: m.cardapio_item_nome,
           tipo: m.tipo || null,
           categoria: m.categoria || null,
+          loja_id: m.loja_id,
           vinculos: []
         });
       }
       
-      grouped.get(m.cardapio_item_id)!.vinculos.push({
+      grouped.get(key)!.vinculos.push({
         id: m.id,
         item_porcionado_id: m.item_porcionado_id,
         item_porcionado_nome: m.item_porcionado?.nome || null,
@@ -183,6 +210,11 @@ export function useCardapioWebIntegracao() {
     }
     
     return Array.from(grouped.values());
+  };
+
+  // Group all mappings (for backward compatibility)
+  const mapeamentosAgrupados = useMemo(() => {
+    return groupMapeamentosByLoja(mapeamentos || []);
   }, [mapeamentos]);
 
   // Query: Get logs (last 50)
@@ -348,11 +380,13 @@ export function useCardapioWebIntegracao() {
   // Mutation: Add mapping
   const addMapeamento = useMutation({
     mutationFn: async ({
+      loja_id,
       cardapio_item_id,
       cardapio_item_nome,
       item_porcionado_id,
       quantidade_consumida = 1
     }: {
+      loja_id: string;
       cardapio_item_id: number;
       cardapio_item_nome: string;
       item_porcionado_id: string;
@@ -364,6 +398,7 @@ export function useCardapioWebIntegracao() {
         .from('mapeamento_cardapio_itens')
         .insert({
           organization_id: organizationId,
+          loja_id,
           cardapio_item_id,
           cardapio_item_nome,
           item_porcionado_id,
@@ -445,11 +480,12 @@ export function useCardapioWebIntegracao() {
   // Mutation: Import mappings in batch (creates base records without item_porcionado_id)
   // Using insert with conflict handling - if product already exists, we skip it
   const importarMapeamentos = useMutation({
-    mutationFn: async (items: ImportarMapeamentoItem[]) => {
+    mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
       if (!organizationId) throw new Error('Organização não encontrada');
       
       const mappings = items.map(item => ({
         organization_id: organizationId,
+        loja_id,
         cardapio_item_id: item.codigo_interno,
         cardapio_item_nome: item.nome,
         tipo: item.tipo,
@@ -459,12 +495,12 @@ export function useCardapioWebIntegracao() {
         ativo: true,
       }));
 
-      // Use upsert with new constraint (org + item_cardapio + item_porc)
+      // Use upsert with new constraint (org + loja + item_cardapio + item_porc)
       // Since item_porcionado_id is null, this will create new base records
       const { data, error } = await supabase
         .from('mapeamento_cardapio_itens')
         .upsert(mappings, {
-          onConflict: 'organization_id,cardapio_item_id,item_porcionado_id',
+          onConflict: 'organization_id,loja_id,cardapio_item_id,item_porcionado_id',
           ignoreDuplicates: false
         })
         .select();
@@ -485,6 +521,7 @@ export function useCardapioWebIntegracao() {
   // Mutation: Add additional item link to existing product (for multiple items per product)
   const adicionarVinculo = useMutation({
     mutationFn: async ({
+      loja_id,
       cardapio_item_id,
       cardapio_item_nome,
       tipo,
@@ -492,6 +529,7 @@ export function useCardapioWebIntegracao() {
       item_porcionado_id,
       quantidade_consumida = 1
     }: {
+      loja_id: string;
       cardapio_item_id: number;
       cardapio_item_nome: string;
       tipo: string | null;
@@ -505,6 +543,7 @@ export function useCardapioWebIntegracao() {
         .from('mapeamento_cardapio_itens')
         .insert({
           organization_id: organizationId,
+          loja_id,
           cardapio_item_id,
           cardapio_item_nome,
           tipo,
@@ -559,21 +598,22 @@ export function useCardapioWebIntegracao() {
     }
   });
 
-  // Mutation: Delete ALL mappings at once
+  // Mutation: Delete ALL mappings for a specific loja
   const deleteAllMapeamentos = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (lojaId: string) => {
       if (!organizationId) throw new Error('Organização não encontrada');
       
       const { error } = await supabase
         .from('mapeamento_cardapio_itens')
         .delete()
-        .eq('organization_id', organizationId);
+        .eq('organization_id', organizationId)
+        .eq('loja_id', lojaId);
       
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-      toast.success('Todos os mapeamentos foram removidos');
+      toast.success('Todos os mapeamentos da loja foram removidos');
     },
     onError: (error) => {
       console.error('Erro ao remover mapeamentos:', error);

@@ -50,6 +50,7 @@ export default function ConfigurarCardapioWeb() {
   const [importarModalOpen, setImportarModalOpen] = useState(false);
   const [adicionarVinculoModalOpen, setAdicionarVinculoModalOpen] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState<MapeamentoCardapioItemAgrupado | null>(null);
+  const [lojaIdMapeamento, setLojaIdMapeamento] = useState<string>('');
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
     cardapio_item_nome: '',
@@ -82,6 +83,24 @@ export default function ConfigurarCardapioWeb() {
     }));
   }, [todasLojas, integracoes]);
 
+  // Filter lojas for mapeamento (only non-CPD stores)
+  const lojasParaMapeamento = useMemo(() => {
+    return todasLojas.filter(l => l.tipo !== 'cpd');
+  }, [todasLojas]);
+
+  // Set default loja for mapeamento when lojas are loaded
+  useMemo(() => {
+    if (lojasParaMapeamento.length > 0 && !lojaIdMapeamento) {
+      setLojaIdMapeamento(lojasParaMapeamento[0].id);
+    }
+  }, [lojasParaMapeamento, lojaIdMapeamento]);
+
+  // Filter mapeamentos by selected loja
+  const mapeamentosFiltrados = useMemo(() => {
+    if (!lojaIdMapeamento) return [];
+    return mapeamentosAgrupados.filter(m => m.loja_id === lojaIdMapeamento);
+  }, [mapeamentosAgrupados, lojaIdMapeamento]);
+
   // Count active integrations
   const integracoesAtivas = integracoes.filter(i => i.ativo).length;
 
@@ -94,12 +113,13 @@ export default function ConfigurarCardapioWeb() {
 
   const handleAddMapeamento = async () => {
     const itemId = parseInt(novoMapeamento.cardapio_item_id);
-    if (isNaN(itemId) || !novoMapeamento.cardapio_item_nome || !novoMapeamento.item_porcionado_id) {
+    if (isNaN(itemId) || !novoMapeamento.cardapio_item_nome || !novoMapeamento.item_porcionado_id || !lojaIdMapeamento) {
       toast.error('Preencha todos os campos');
       return;
     }
 
     await addMapeamento.mutateAsync({
+      loja_id: lojaIdMapeamento,
       cardapio_item_id: itemId,
       cardapio_item_nome: novoMapeamento.cardapio_item_nome,
       item_porcionado_id: novoMapeamento.item_porcionado_id,
@@ -116,7 +136,11 @@ export default function ConfigurarCardapioWeb() {
   };
 
   const handleImportarMapeamentos = async (items: ParsedCardapioItem[]) => {
-    await importarMapeamentos.mutateAsync(items as ImportarMapeamentoItem[]);
+    if (!lojaIdMapeamento) {
+      toast.error('Selecione uma loja');
+      return;
+    }
+    await importarMapeamentos.mutateAsync({ loja_id: lojaIdMapeamento, items: items as ImportarMapeamentoItem[] });
   };
 
   const handleVincularItem = async (mapeamentoId: string, itemPorcionadoId: string) => {
@@ -132,9 +156,10 @@ export default function ConfigurarCardapioWeb() {
   };
 
   const handleAdicionarVinculo = async (itemPorcionadoId: string, quantidade: number) => {
-    if (!produtoSelecionado) return;
+    if (!produtoSelecionado || !lojaIdMapeamento) return;
     
     await adicionarVinculo.mutateAsync({
+      loja_id: lojaIdMapeamento,
       cardapio_item_id: produtoSelecionado.cardapio_item_id,
       cardapio_item_nome: produtoSelecionado.cardapio_item_nome,
       tipo: produtoSelecionado.tipo,
@@ -238,160 +263,186 @@ export default function ConfigurarCardapioWeb() {
           <TabsContent value="mapeamento" className="space-y-4">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <CardTitle>Mapeamento de Produtos</CardTitle>
                     <CardDescription>
                       Configure quais itens porcionados são consumidos para cada produto do cardápio.
                     </CardDescription>
                   </div>
-                  <div className="flex gap-2">
-                    {mapeamentosAgrupados.length > 0 && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Limpar Tudo
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remover todos os mapeamentos?</AlertDialogTitle>
-                            <AlertDialogDescription asChild>
-                              <div>
-                                Esta ação é <strong>PERMANENTE e IRREVERSÍVEL</strong>. 
-                                Todos os <strong>{mapeamentosAgrupados.length}</strong> produtos mapeados 
-                                e seus vínculos serão excluídos.
-                              </div>
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={(e) => {
-                                e.preventDefault();
-                                deleteAllMapeamentos.mutate();
-                              }}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              {deleteAllMapeamentos.isPending && (
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              )}
-                              Confirmar Exclusão
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                    <Button variant="outline" onClick={() => setImportarModalOpen(true)}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Importar Arquivo
-                    </Button>
-                    <Dialog open={novoMapeamentoOpen} onOpenChange={setNovoMapeamentoOpen}>
-                      <DialogTrigger asChild>
-                        <Button>
-                          <Plus className="h-4 w-4 mr-2" />
-                          Adicionar
+                  
+                  {/* Seletor de Loja */}
+                  <div className="flex items-center gap-2">
+                    <Store className="h-4 w-4 text-muted-foreground" />
+                    <Select value={lojaIdMapeamento} onValueChange={setLojaIdMapeamento}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Selecione a loja" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lojasParaMapeamento.map(loja => (
+                          <SelectItem key={loja.id} value={loja.id}>
+                            {loja.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {mapeamentosFiltrados.length > 0 && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Limpar Tudo
                         </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Novo Mapeamento</DialogTitle>
-                          <DialogDescription>
-                            Vincule um produto do Cardápio Web a um item porcionado.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label>ID do Produto (Cardápio Web)</Label>
-                              <Input
-                                type="number"
-                                placeholder="Ex: 123"
-                                value={novoMapeamento.cardapio_item_id}
-                                onChange={(e) => setNovoMapeamento({
-                                  ...novoMapeamento,
-                                  cardapio_item_id: e.target.value
-                                })}
-                              />
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remover todos os mapeamentos desta loja?</AlertDialogTitle>
+                          <AlertDialogDescription asChild>
+                            <div>
+                              Esta ação é <strong>PERMANENTE e IRREVERSÍVEL</strong>. 
+                              Todos os <strong>{mapeamentosFiltrados.length}</strong> produtos mapeados 
+                              e seus vínculos serão excluídos desta loja.
                             </div>
-                            <div className="space-y-2">
-                              <Label>Nome do Produto</Label>
-                              <Input
-                                placeholder="Ex: Pizza Mussarela G"
-                                value={novoMapeamento.cardapio_item_nome}
-                                onChange={(e) => setNovoMapeamento({
-                                  ...novoMapeamento,
-                                  cardapio_item_nome: e.target.value
-                                })}
-                              />
-                            </div>
-                          </div>
-
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (lojaIdMapeamento) {
+                                deleteAllMapeamentos.mutate(lojaIdMapeamento);
+                              }
+                            }}
+                            disabled={!lojaIdMapeamento}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            {deleteAllMapeamentos.isPending && (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            )}
+                            Confirmar Exclusão
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  <Button variant="outline" onClick={() => setImportarModalOpen(true)} disabled={!lojaIdMapeamento}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Importar Arquivo
+                  </Button>
+                  <Dialog open={novoMapeamentoOpen} onOpenChange={setNovoMapeamentoOpen}>
+                    <DialogTrigger asChild>
+                      <Button disabled={!lojaIdMapeamento}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Adicionar
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Novo Mapeamento</DialogTitle>
+                        <DialogDescription>
+                          Vincule um produto do Cardápio Web a um item porcionado.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
-                            <Label>Item Porcionado</Label>
-                            <Select
-                              value={novoMapeamento.item_porcionado_id}
-                              onValueChange={(v) => setNovoMapeamento({
-                                ...novoMapeamento,
-                                item_porcionado_id: v
-                              })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o item" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {itensPorcionados?.map(item => (
-                                  <SelectItem key={item.id} value={item.id}>
-                                    {item.nome}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label>Quantidade Consumida</Label>
+                            <Label>ID do Produto (Cardápio Web)</Label>
                             <Input
                               type="number"
-                              min="1"
-                              value={novoMapeamento.quantidade_consumida}
+                              placeholder="Ex: 123"
+                              value={novoMapeamento.cardapio_item_id}
                               onChange={(e) => setNovoMapeamento({
                                 ...novoMapeamento,
-                                quantidade_consumida: e.target.value
+                                cardapio_item_id: e.target.value
                               })}
                             />
-                            <p className="text-xs text-muted-foreground">
-                              Quantos itens porcionados são consumidos por unidade do produto
-                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Nome do Produto</Label>
+                            <Input
+                              placeholder="Ex: Pizza Mussarela G"
+                              value={novoMapeamento.cardapio_item_nome}
+                              onChange={(e) => setNovoMapeamento({
+                                ...novoMapeamento,
+                                cardapio_item_nome: e.target.value
+                              })}
+                            />
                           </div>
                         </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setNovoMapeamentoOpen(false)}>
-                            Cancelar
-                          </Button>
-                          <Button 
-                            onClick={handleAddMapeamento}
-                            disabled={addMapeamento.isPending}
+
+                        <div className="space-y-2">
+                          <Label>Item Porcionado</Label>
+                          <Select
+                            value={novoMapeamento.item_porcionado_id}
+                            onValueChange={(v) => setNovoMapeamento({
+                              ...novoMapeamento,
+                              item_porcionado_id: v
+                            })}
                           >
-                            {addMapeamento.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Adicionar
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o item" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {itensPorcionados?.map(item => (
+                                <SelectItem key={item.id} value={item.id}>
+                                  {item.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Quantidade Consumida</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={novoMapeamento.quantidade_consumida}
+                            onChange={(e) => setNovoMapeamento({
+                              ...novoMapeamento,
+                              quantidade_consumida: e.target.value
+                            })}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Quantos itens porcionados são consumidos por unidade do produto
+                          </p>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setNovoMapeamentoOpen(false)}>
+                          Cancelar
+                        </Button>
+                        <Button 
+                          onClick={handleAddMapeamento}
+                          disabled={addMapeamento.isPending}
+                        >
+                          {addMapeamento.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Adicionar
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </CardHeader>
               <CardContent>
-                {loadingMapeamentos ? (
+                {!lojaIdMapeamento ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Store className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Selecione uma loja para ver os mapeamentos</p>
+                  </div>
+                ) : loadingMapeamentos ? (
                   <div className="py-8 flex justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                ) : mapeamentosAgrupados.length === 0 ? (
+                ) : mapeamentosFiltrados.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <List className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum mapeamento configurado</p>
+                    <p>Nenhum mapeamento configurado para esta loja</p>
                     <p className="text-sm">Adicione mapeamentos para vincular produtos do cardápio aos itens porcionados</p>
                   </div>
                 ) : (
@@ -407,7 +458,7 @@ export default function ConfigurarCardapioWeb() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {mapeamentosAgrupados.map((produto) => (
+                      {mapeamentosFiltrados.map((produto) => (
                         <TableRow key={produto.cardapio_item_id}>
                           <TableCell>
                             {produto.tipo && (
@@ -432,9 +483,10 @@ export default function ConfigurarCardapioWeb() {
                                     // Se já existe um registro sem vínculo, atualiza ele
                                     if (produto.vinculos[0]?.id) {
                                       handleVincularItem(produto.vinculos[0].id, v);
-                                    } else {
+                                    } else if (lojaIdMapeamento) {
                                       // Caso contrário, cria um novo vínculo
                                       adicionarVinculo.mutate({
+                                        loja_id: lojaIdMapeamento,
                                         cardapio_item_id: produto.cardapio_item_id,
                                         cardapio_item_nome: produto.cardapio_item_nome,
                                         tipo: produto.tipo,
