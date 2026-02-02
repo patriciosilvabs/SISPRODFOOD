@@ -559,6 +559,28 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Delete ALL mappings at once
+  const deleteAllMapeamentos = useMutation({
+    mutationFn: async () => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const { error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .delete()
+        .eq('organization_id', organizationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Todos os mapeamentos foram removidos');
+    },
+    onError: (error) => {
+      console.error('Erro ao remover mapeamentos:', error);
+      toast.error('Erro ao remover mapeamentos');
+    }
+  });
+
   return {
     // Data
     integracoes: integracoes || [],
@@ -588,6 +610,7 @@ export function useCardapioWebIntegracao() {
     addMapeamento,
     updateMapeamento,
     deleteMapeamento,
+    deleteAllMapeamentos,
     importarMapeamentos,
     vincularItemPorcionado,
     adicionarVinculo,
