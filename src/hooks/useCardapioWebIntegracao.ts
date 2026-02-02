@@ -245,7 +245,7 @@ export function useCardapioWebIntegracao() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
       toast.success('Integração configurada com sucesso!');
     },
     onError: (error) => {
@@ -265,7 +265,7 @@ export function useCardapioWebIntegracao() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
       toast.success('Status atualizado');
     },
     onError: (error) => {
@@ -291,7 +291,7 @@ export function useCardapioWebIntegracao() {
       return newToken;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracao'] });
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-integracoes'] });
       toast.success('Token regenerado com sucesso!');
     },
     onError: (error) => {
