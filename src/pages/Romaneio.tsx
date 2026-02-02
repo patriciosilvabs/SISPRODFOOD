@@ -1824,6 +1824,69 @@ const Romaneio = () => {
         }
       });
 
+      // NOVO: Creditar estoque na loja de destino (final_sobra)
+      const currentDate = new Date().toISOString().split('T')[0];
+      const diaAtual = ['domingo','segunda','terca','quarta','quinta','sexta','sabado'][new Date().getDay()] as 'domingo' | 'segunda' | 'terca' | 'quarta' | 'quinta' | 'sexta' | 'sabado';
+      
+      for (const item of romaneio.romaneio_itens) {
+        if (!item.id) continue;
+        
+        const itemId = item.id;
+        const recItem = recebimentosPorItem[itemId];
+        const qtdRecebida = recItem?.quantidade_recebida ?? item.quantidade;
+        
+        // Buscar item_porcionado_id do banco (não está no tipo local)
+        const { data: romaneioItemDb } = await supabase
+          .from('romaneio_itens')
+          .select('item_porcionado_id')
+          .eq('id', item.id)
+          .single();
+        
+        if (!romaneioItemDb?.item_porcionado_id) continue;
+        
+        // Buscar contagem atual da loja para este item
+        const { data: contagemLoja } = await supabase
+          .from('contagem_porcionados')
+          .select('id, final_sobra')
+          .eq('loja_id', romaneio.loja_id)
+          .eq('item_porcionado_id', romaneioItemDb.item_porcionado_id)
+          .eq('dia_operacional', currentDate)
+          .maybeSingle();
+        
+        if (contagemLoja?.id) {
+          // Atualizar: incrementar final_sobra com quantidade recebida
+          const novoSobra = (contagemLoja.final_sobra || 0) + qtdRecebida;
+          await supabase
+            .from('contagem_porcionados')
+            .update({ 
+              final_sobra: novoSobra,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', contagemLoja.id);
+        } else {
+          // Criar contagem nova para a loja com o estoque recebido
+          const { data: estoqueIdeal } = await supabase
+            .from('estoques_ideais_semanais')
+            .select('*')
+            .eq('loja_id', romaneio.loja_id)
+            .eq('item_porcionado_id', romaneioItemDb.item_porcionado_id)
+            .maybeSingle();
+          
+          const idealDoDia = estoqueIdeal?.[diaAtual] ?? 0;
+          
+          await supabase.from('contagem_porcionados').insert({
+            loja_id: romaneio.loja_id,
+            item_porcionado_id: romaneioItemDb.item_porcionado_id,
+            final_sobra: qtdRecebida,
+            ideal_amanha: idealDoDia,
+            dia_operacional: currentDate,
+            usuario_id: user.id,
+            usuario_nome: userProfile?.nome || 'Usuário',
+            organization_id: organizationId
+          });
+        }
+      }
+
       // Alertar sobre divergência (mas não bloquear)
       if (div.temDivergencia) {
         if (status.tipo === 'falta') {
@@ -1834,7 +1897,7 @@ const Romaneio = () => {
       } else {
         toast.success('Recebimento confirmado! Conferência perfeita.');
       }
-      
+
       fetchRomaneiosEnviados();
       fetchRomaneiosHistorico();
     } catch (error: any) {
