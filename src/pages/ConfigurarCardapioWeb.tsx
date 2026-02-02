@@ -39,6 +39,7 @@ export default function ConfigurarCardapioWeb() {
     updateCardapioApiKey,
     addMapeamento,
     deleteMapeamento,
+    deleteAllMapeamentos,
     importarMapeamentos,
     vincularItemPorcionado,
     adicionarVinculo,
@@ -245,6 +246,43 @@ export default function ConfigurarCardapioWeb() {
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
+                    {mapeamentosAgrupados.length > 0 && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Limpar Tudo
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remover todos os mapeamentos?</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div>
+                                Esta ação é <strong>PERMANENTE e IRREVERSÍVEL</strong>. 
+                                Todos os <strong>{mapeamentosAgrupados.length}</strong> produtos mapeados 
+                                e seus vínculos serão excluídos.
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                deleteAllMapeamentos.mutate();
+                              }}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              {deleteAllMapeamentos.isPending && (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              )}
+                              Confirmar Exclusão
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                     <Button variant="outline" onClick={() => setImportarModalOpen(true)}>
                       <Upload className="h-4 w-4 mr-2" />
                       Importar Arquivo
