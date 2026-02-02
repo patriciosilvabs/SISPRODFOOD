@@ -1,88 +1,100 @@
 
 
-# Plano: Modelo Decremento - Sobra Inicia no Ideal e Desconta Vendas
+# Plano: Adicionar Verificação de Idempotência no Webhook
 
-## Entendimento do Requisito
+## Diagnóstico
 
-A lógica correta é simples:
-1. **Sobra inicia com o valor do Ideal** (ex: 140)
-2. **Cada venda do Cardápio Web DESCONTA** da sobra
+### Problema Identificado
+O pedido `179964837` foi processado **2 vezes** pelo webhook:
+- 15:48:35 → sobra: 140 - 50 = **90** ✓
+- 15:48:57 → sobra: 90 - 50 = **40** ✗ (duplicado!)
 
-### Comportamento Esperado
+O Cardápio Web enviou o mesmo webhook 2 vezes (retry automático para garantir entrega), e o sistema processou ambos porque **não há verificação de duplicidade**.
 
-| Ação | `final_sobra` |
-|------|---------------|
-| Sobra inicia com ideal | **140** |
-| Cardápio Web envia 1 venda (1 pizza) | **139** (140 - 1) |
-| Cardápio Web envia 1 venda (10 pizzas) | **129** (139 - 10) |
+### Por que "A Produzir" mostra 100?
+- Ideal = 140
+- Final Sobra (após 2 descontos) = 40
+- A Produzir = 140 - 40 = **100** ← resultado do erro
 
-## Problema Atual
+### Como deveria funcionar:
+- Ideal = 140
+- Final Sobra (1 desconto apenas) = 90
+- A Produzir = 140 - 90 = **50** ← resultado correto
 
-O código atual está **SOMANDO** as vendas:
+## Solução
+
+Adicionar verificação de idempotência **ANTES** de processar o pedido.
+
+### Alteração no Edge Function
+
+No arquivo `supabase/functions/cardapio-web-webhook/index.ts`, adicionar verificação logo após obter o `order_id`:
+
 ```typescript
-const novoFinalSobra = estoqueAtual + quantidadeTotal  // ❌ ERRADO
+// APÓS extrair orderId (linha ~265)
+const orderId = payload.order_id || payload.order?.id || 0
+
+// NOVA VERIFICAÇÃO DE IDEMPOTÊNCIA
+if (orderId > 0) {
+  const { data: existingLog, error: logCheckError } = await supabase
+    .from('cardapio_web_pedidos_log')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('organization_id', organization_id)
+    .eq('sucesso', true)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingLog) {
+    console.log(`⏭️ Pedido ${orderId} já foi processado anteriormente. Ignorando webhook duplicado.`)
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: 'Pedido já processado anteriormente (idempotente)',
+        order_id: orderId 
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+    )
+  }
+}
 ```
 
-## Alterações Necessárias
-
-### Edge Function: `supabase/functions/cardapio-web-webhook/index.ts`
-
-**Cenário 1: Contagem não existe (linhas 523-559)**
-
-Quando não há contagem para o dia, criar uma nova iniciando com `ideal - venda`:
-```typescript
-// DE (modelo soma):
-const novoFinalSobra = quantidadeTotal
-
-// PARA (modelo decremento):
-const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
-```
-
-**Cenário 2: Contagem já existe (linhas 560-593)**
-
-Quando já existe contagem, descontar da sobra atual:
-```typescript
-// DE (modelo soma):
-const novoFinalSobra = estoqueAtual + quantidadeTotal
-
-// PARA (modelo decremento):
-const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
-```
-
-## Fluxo Completo
+### Fluxo Corrigido
 
 ```text
-DIA OPERACIONAL INICIA:
-├── ideal_amanha = 140
-└── final_sobra = (ainda não existe contagem)
+PRIMEIRO WEBHOOK (order_id: 179964837):
+├── Verifica log → NÃO encontrado
+├── Processa itens → final_sobra = 140 - 50 = 90
+└── Insere log → sucesso = true
 
-PRIMEIRA VENDA (1 pizza) - cria contagem:
-├── ideal = 140
-├── quantidadeTotal = 1
-├── novoFinalSobra = 140 - 1 = 139 ✓
-└── cardapio_web_baixa_total = 1
-
-SEGUNDA VENDA (10 pizzas) - atualiza contagem:
-├── estoqueAtual = 139
-├── quantidadeTotal = 10
-├── novoFinalSobra = 139 - 10 = 129 ✓
-└── cardapio_web_baixa_total = 11
+SEGUNDO WEBHOOK (retry - mesmo order_id):
+├── Verifica log → ENCONTRADO com sucesso = true
+├── Retorna 200 OK sem processar
+└── Sobra permanece 90 ✓
 ```
-
-## Impacto na Produção
-
-Com `a_produzir = MAX(0, ideal - final_sobra)`:
-- `ideal = 140`, `final_sobra = 129` → `a_produzir = 11`
-
-Isso significa que quanto mais vendas, **MENOR** o `final_sobra` e **MAIOR** o `a_produzir`.
 
 ## Detalhes Técnicos
 
-Arquivos a modificar:
-- `supabase/functions/cardapio-web-webhook/index.ts` (linhas 523-593)
+### Arquivo a modificar
+- `supabase/functions/cardapio-web-webhook/index.ts`
 
-Mudanças específicas:
-1. **Linha 528**: `novoFinalSobra = quantidadeTotal` → `novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)`
-2. **Linha 564**: `novoFinalSobra = estoqueAtual + quantidadeTotal` → `novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)`
-3. Atualizar comentários e logs para refletir o modelo "decremento"
+### Local da inserção
+Após linha ~265 onde `orderId` é extraído, antes de buscar mapeamentos e processar itens.
+
+### Resposta para webhooks duplicados
+Retornar HTTP 200 (sucesso) para que o Cardápio Web não faça mais retries:
+```json
+{
+  "success": true,
+  "message": "Pedido já processado anteriormente (idempotente)",
+  "order_id": 179964837
+}
+```
+
+## Resultado Esperado
+
+Após a correção, quando o Cardápio Web enviar um pedido de 50 pizzas com ideal = 140:
+- Sobra: **90** (140 - 50)
+- A Produzir: **50** (140 - 90)
+
+Mesmo se o webhook for enviado múltiplas vezes, o resultado será sempre correto.
 
