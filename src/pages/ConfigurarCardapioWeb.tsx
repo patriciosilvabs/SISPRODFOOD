@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
@@ -21,6 +22,154 @@ import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
 import { LojaIntegracaoCard } from '@/components/cardapio-web/LojaIntegracaoCard';
+
+// Row component for mapeamento table
+interface MapeamentoTableRowProps {
+  produto: MapeamentoCardapioItemAgrupado;
+  itensPorcionados: { id: string; nome: string }[];
+  lojaIdMapeamento: string;
+  onVincularItem: (mapeamentoId: string, itemPorcionadoId: string) => void;
+  onAdicionarVinculo: (data: {
+    loja_id: string;
+    cardapio_item_id: number;
+    cardapio_item_nome: string;
+    tipo: string | null;
+    categoria: string | null;
+    item_porcionado_id: string;
+    quantidade_consumida: number;
+  }) => void;
+  onDeleteMapeamento: (id: string) => void;
+  onAbrirModalVinculo: (produto: MapeamentoCardapioItemAgrupado) => void;
+  showTipo: boolean;
+  showCategoria: boolean;
+}
+
+function MapeamentoTableRow({
+  produto,
+  itensPorcionados,
+  lojaIdMapeamento,
+  onVincularItem,
+  onAdicionarVinculo,
+  onDeleteMapeamento,
+  onAbrirModalVinculo,
+  showTipo,
+  showCategoria,
+}: MapeamentoTableRowProps) {
+  return (
+    <TableRow>
+      {showTipo && (
+        <TableCell>
+          {produto.tipo && (
+            <Badge variant={produto.tipo === 'PRODUTO' ? 'default' : 'secondary'} className="text-xs">
+              {produto.tipo}
+            </Badge>
+          )}
+        </TableCell>
+      )}
+      {showCategoria && (
+        <TableCell className="max-w-32 truncate text-sm" title={produto.categoria || ''}>
+          {produto.categoria || '-'}
+        </TableCell>
+      )}
+      <TableCell className="max-w-40 truncate" title={produto.cardapio_item_nome}>
+        {produto.cardapio_item_nome}
+      </TableCell>
+      <TableCell className="font-mono text-sm">{produto.cardapio_item_id}</TableCell>
+      <TableCell>
+        <div className="space-y-1">
+          {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
+            <Select
+              value=""
+              onValueChange={(v) => {
+                // Se já existe um registro sem vínculo, atualiza ele
+                if (produto.vinculos[0]?.id) {
+                  onVincularItem(produto.vinculos[0].id, v);
+                } else if (lojaIdMapeamento) {
+                  // Caso contrário, cria um novo vínculo
+                  onAdicionarVinculo({
+                    loja_id: lojaIdMapeamento,
+                    cardapio_item_id: produto.cardapio_item_id,
+                    cardapio_item_nome: produto.cardapio_item_nome,
+                    tipo: produto.tipo,
+                    categoria: produto.categoria,
+                    item_porcionado_id: v,
+                    quantidade_consumida: 1,
+                  });
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 border-dashed border-primary/50">
+                <SelectValue placeholder="Vincular item..." />
+              </SelectTrigger>
+              <SelectContent>
+                {itensPorcionados.map(item => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="space-y-1">
+              {produto.vinculos.filter(v => v.item_porcionado_id).map((vinculo) => (
+                <div key={vinculo.id} className="flex items-center gap-2 text-sm">
+                  <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="truncate">{vinculo.item_porcionado_nome}</span>
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {vinculo.quantidade_consumida}x
+                  </Badge>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remover vínculo?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          O item "{vinculo.item_porcionado_nome}" não será mais consumido quando este produto for vendido.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction 
+                          onClick={() => onDeleteMapeamento(vinculo.id)}
+                          className="bg-destructive text-destructive-foreground"
+                        >
+                          Remover
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-primary hover:text-primary"
+                onClick={() => onAbrirModalVinculo(produto)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Adicionar item
+              </Button>
+            </div>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        {produto.vinculos.length > 0 && produto.vinculos.some(v => v.item_porcionado_id) && (
+          <div className="flex items-center gap-1">
+            <Link2 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">
+              {produto.vinculos.filter(v => v.item_porcionado_id).length}
+            </span>
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function ConfigurarCardapioWeb() {
   const { organizationId } = useOrganization();
@@ -51,6 +200,8 @@ export default function ConfigurarCardapioWeb() {
   const [adicionarVinculoModalOpen, setAdicionarVinculoModalOpen] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState<MapeamentoCardapioItemAgrupado | null>(null);
   const [lojaIdMapeamento, setLojaIdMapeamento] = useState<string>('');
+  const [modoVisualizacao, setModoVisualizacao] = useState<'produto' | 'tipo' | 'categoria'>('produto');
+  const [gruposExpandidos, setGruposExpandidos] = useState<Set<string>>(new Set());
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
     cardapio_item_nome: '',
@@ -100,6 +251,51 @@ export default function ConfigurarCardapioWeb() {
     if (!lojaIdMapeamento) return [];
     return mapeamentosAgrupados.filter(m => m.loja_id === lojaIdMapeamento);
   }, [mapeamentosAgrupados, lojaIdMapeamento]);
+
+  // Group mapeamentos by tipo or categoria
+  const mapeamentosVisualizacao = useMemo(() => {
+    if (modoVisualizacao === 'produto') {
+      return { grupos: null, items: mapeamentosFiltrados };
+    }
+    
+    const grupos = new Map<string, MapeamentoCardapioItemAgrupado[]>();
+    
+    for (const item of mapeamentosFiltrados) {
+      const chave = modoVisualizacao === 'tipo' 
+        ? (item.tipo || 'Sem tipo')
+        : (item.categoria || 'Sem categoria');
+      
+      if (!grupos.has(chave)) {
+        grupos.set(chave, []);
+      }
+      grupos.get(chave)!.push(item);
+    }
+    
+    // Ordenar grupos alfabeticamente
+    return { 
+      grupos: Array.from(grupos.entries()).sort((a, b) => a[0].localeCompare(b[0])),
+      items: null 
+    };
+  }, [mapeamentosFiltrados, modoVisualizacao]);
+
+  // Initialize all groups as expanded when mode changes or data changes
+  useEffect(() => {
+    if (mapeamentosVisualizacao.grupos) {
+      setGruposExpandidos(new Set(mapeamentosVisualizacao.grupos.map(([key]) => key)));
+    }
+  }, [modoVisualizacao, lojaIdMapeamento, mapeamentosVisualizacao.grupos?.length]);
+
+  const toggleGrupo = (grupo: string) => {
+    setGruposExpandidos(prev => {
+      const novo = new Set(prev);
+      if (novo.has(grupo)) {
+        novo.delete(grupo);
+      } else {
+        novo.add(grupo);
+      }
+      return novo;
+    });
+  };
 
   // Count active integrations
   const integracoesAtivas = integracoes.filter(i => i.ativo).length;
@@ -271,21 +467,37 @@ export default function ConfigurarCardapioWeb() {
                     </CardDescription>
                   </div>
                   
-                  {/* Seletor de Loja */}
-                  <div className="flex items-center gap-2">
-                    <Store className="h-4 w-4 text-muted-foreground" />
-                    <Select value={lojaIdMapeamento} onValueChange={setLojaIdMapeamento}>
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Selecione a loja" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {lojasParaMapeamento.map(loja => (
-                          <SelectItem key={loja.id} value={loja.id}>
-                            {loja.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  {/* Seletor de Loja e Visualização */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Store className="h-4 w-4 text-muted-foreground" />
+                      <Select value={lojaIdMapeamento} onValueChange={setLojaIdMapeamento}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Selecione a loja" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {lojasParaMapeamento.map(loja => (
+                            <SelectItem key={loja.id} value={loja.id}>
+                              {loja.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                      <Select value={modoVisualizacao} onValueChange={(v) => setModoVisualizacao(v as 'produto' | 'tipo' | 'categoria')}>
+                        <SelectTrigger className="w-[160px]">
+                          <SelectValue placeholder="Visualizar por..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="produto">Por Produto</SelectItem>
+                          <SelectItem value="tipo">Por Tipo</SelectItem>
+                          <SelectItem value="categoria">Por Categoria</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
                 
@@ -445,7 +657,8 @@ export default function ConfigurarCardapioWeb() {
                     <p>Nenhum mapeamento configurado para esta loja</p>
                     <p className="text-sm">Adicione mapeamentos para vincular produtos do cardápio aos itens porcionados</p>
                   </div>
-                ) : (
+                ) : modoVisualizacao === 'produto' ? (
+                  // Modo Por Produto - Tabela simples
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -459,117 +672,82 @@ export default function ConfigurarCardapioWeb() {
                     </TableHeader>
                     <TableBody>
                       {mapeamentosFiltrados.map((produto) => (
-                        <TableRow key={produto.cardapio_item_id}>
-                          <TableCell>
-                            {produto.tipo && (
-                              <Badge variant={produto.tipo === 'PRODUTO' ? 'default' : 'secondary'} className="text-xs">
-                                {produto.tipo}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-32 truncate text-sm" title={produto.categoria || ''}>
-                            {produto.categoria || '-'}
-                          </TableCell>
-                          <TableCell className="max-w-40 truncate" title={produto.cardapio_item_nome}>
-                            {produto.cardapio_item_nome}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">{produto.cardapio_item_id}</TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
-                                <Select
-                                  value=""
-                                  onValueChange={(v) => {
-                                    // Se já existe um registro sem vínculo, atualiza ele
-                                    if (produto.vinculos[0]?.id) {
-                                      handleVincularItem(produto.vinculos[0].id, v);
-                                    } else if (lojaIdMapeamento) {
-                                      // Caso contrário, cria um novo vínculo
-                                      adicionarVinculo.mutate({
-                                        loja_id: lojaIdMapeamento,
-                                        cardapio_item_id: produto.cardapio_item_id,
-                                        cardapio_item_nome: produto.cardapio_item_nome,
-                                        tipo: produto.tipo,
-                                        categoria: produto.categoria,
-                                        item_porcionado_id: v,
-                                        quantidade_consumida: 1,
-                                      });
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 border-dashed border-primary/50">
-                                    <SelectValue placeholder="Vincular item..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {itensPorcionados?.map(item => (
-                                      <SelectItem key={item.id} value={item.id}>
-                                        {item.nome}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <div className="space-y-1">
-                                  {produto.vinculos.filter(v => v.item_porcionado_id).map((vinculo) => (
-                                    <div key={vinculo.id} className="flex items-center gap-2 text-sm">
-                                      <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />
-                                      <span className="truncate">{vinculo.item_porcionado_nome}</span>
-                                      <Badge variant="outline" className="text-xs shrink-0">
-                                        {vinculo.quantidade_consumida}x
-                                      </Badge>
-                                      <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive shrink-0">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                          <AlertDialogHeader>
-                                            <AlertDialogTitle>Remover vínculo?</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                              O item "{vinculo.item_porcionado_nome}" não será mais consumido quando este produto for vendido.
-                                            </AlertDialogDescription>
-                                          </AlertDialogHeader>
-                                          <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                            <AlertDialogAction 
-                                              onClick={() => deleteMapeamento.mutate(vinculo.id)}
-                                              className="bg-destructive text-destructive-foreground"
-                                            >
-                                              Remover
-                                            </AlertDialogAction>
-                                          </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                      </AlertDialog>
-                                    </div>
-                                  ))}
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-xs text-primary hover:text-primary"
-                                    onClick={() => handleAbrirModalVinculo(produto)}
-                                  >
-                                    <Plus className="h-3.5 w-3.5 mr-1" />
-                                    Adicionar item
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {produto.vinculos.length > 0 && produto.vinculos.some(v => v.item_porcionado_id) && (
-                              <div className="flex items-center gap-1">
-                                <Link2 className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground">
-                                  {produto.vinculos.filter(v => v.item_porcionado_id).length}
-                                </span>
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
+                        <MapeamentoTableRow
+                          key={produto.cardapio_item_id}
+                          produto={produto}
+                          itensPorcionados={itensPorcionados || []}
+                          lojaIdMapeamento={lojaIdMapeamento}
+                          onVincularItem={handleVincularItem}
+                          onAdicionarVinculo={(v) => adicionarVinculo.mutate(v)}
+                          onDeleteMapeamento={(id) => deleteMapeamento.mutate(id)}
+                          onAbrirModalVinculo={handleAbrirModalVinculo}
+                          showTipo={true}
+                          showCategoria={true}
+                        />
                       ))}
                     </TableBody>
                   </Table>
+                ) : (
+                  // Modo Por Tipo ou Por Categoria - Grupos colapsáveis
+                  <div className="space-y-4">
+                    {mapeamentosVisualizacao.grupos?.map(([grupoNome, produtos]) => (
+                      <Collapsible
+                        key={grupoNome}
+                        open={gruposExpandidos.has(grupoNome)}
+                        onOpenChange={() => toggleGrupo(grupoNome)}
+                      >
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted transition-colors">
+                            {gruposExpandidos.has(grupoNome) ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span className="font-semibold">{grupoNome}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}
+                            </Badge>
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <div className="mt-2 border rounded-lg overflow-hidden">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  {modoVisualizacao === 'categoria' && (
+                                    <TableHead className="w-20">Tipo</TableHead>
+                                  )}
+                                  {modoVisualizacao === 'tipo' && (
+                                    <TableHead>Categoria</TableHead>
+                                  )}
+                                  <TableHead>Produto</TableHead>
+                                  <TableHead className="w-24">Código</TableHead>
+                                  <TableHead>Itens Vinculados</TableHead>
+                                  <TableHead className="w-24"></TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {produtos.map((produto) => (
+                                  <MapeamentoTableRow
+                                    key={produto.cardapio_item_id}
+                                    produto={produto}
+                                    itensPorcionados={itensPorcionados || []}
+                                    lojaIdMapeamento={lojaIdMapeamento}
+                                    onVincularItem={handleVincularItem}
+                                    onAdicionarVinculo={(v) => adicionarVinculo.mutate(v)}
+                                    onDeleteMapeamento={(id) => deleteMapeamento.mutate(id)}
+                                    onAbrirModalVinculo={handleAbrirModalVinculo}
+                                    showTipo={modoVisualizacao === 'categoria'}
+                                    showCategoria={modoVisualizacao === 'tipo'}
+                                  />
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
