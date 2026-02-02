@@ -1,104 +1,102 @@
 
-
-# Plano: Corrigir Importação Criando Duplicatas
+# Plano: Corrigir Lógica de "A Produzir" para Modelo Baseado em Vendas
 
 ## Problema Identificado
 
-| Problema | Causa |
-|----------|-------|
-| Planilha tem 287 itens | Esperado |
-| Banco de dados tem 1.393 registros | **Duplicatas!** |
-| Cada item aparece até 15 vezes | Constraint UNIQUE falha com NULL |
-
-### Por que isso acontece?
-
-A constraint UNIQUE atual inclui `item_porcionado_id`:
-```sql
-UNIQUE(organization_id, loja_id, cardapio_item_id, item_porcionado_id)
+A fórmula atual calcula o que falta para atingir o estoque ideal:
+```
+a_produzir = ideal - sobra_atual
 ```
 
-**O PostgreSQL trata cada NULL como um valor DISTINTO**, então a constraint não impede duplicatas quando `item_porcionado_id` é `NULL`.
-
-```text
-Registro 1: org=A, loja=1, item=123, item_porc=NULL  -- Inserido ✅
-Registro 2: org=A, loja=1, item=123, item_porc=NULL  -- Inserido ✅ (NULL ≠ NULL)
-Registro 3: org=A, loja=1, item=123, item_porc=NULL  -- Inserido ✅ (NULL ≠ NULL)
-... repete a cada importação
+O modelo esperado é baseado em **repor vendas**:
 ```
+a_produzir = vendas_acumuladas (limitado ao ideal)
+```
+
+### Exemplo Concreto
+
+| Situação | Lógica Atual | Lógica Esperada |
+|----------|--------------|-----------------|
+| Ideal = 140 | | |
+| Sobra inicial = 210 | | |
+| Vendas = 100 | | |
+| Sobra atual = 110 | | |
+| **A Produzir** | `140 - 110 = 30` | `MIN(140, 100) = 100` |
+
+### Por que a lógica atual está incorreta?
+
+O modelo JIT atual assume que o objetivo é **manter um teto fixo** de estoque. Se a loja tem 210 (acima do ideal), vendas apenas "consomem o excedente" até atingir o ideal novamente.
+
+O modelo correto para este negócio é **repor cada unidade vendida**, independente da sobra física inicial. Cada pizza vendida deve gerar uma pizza a produzir.
 
 ## Solução
 
-### 1. Database: Criar Unique Index PARCIAL
+### Mudança na Fórmula
 
-Usar um **índice único parcial** que funciona quando `item_porcionado_id IS NULL`:
+**Antes:**
+```sql
+a_produzir = GREATEST(0, ideal_amanha - final_sobra)
+```
+
+**Depois:**
+```sql
+a_produzir = LEAST(
+  COALESCE(ideal_amanha, 0),
+  COALESCE(cardapio_web_baixa_total, 0)
+)
+```
+
+Esta fórmula garante:
+1. **A produzir = vendas**: Cada unidade vendida gera demanda de produção
+2. **Limitado ao ideal**: Nunca produzir mais que o ideal configurado
+3. **Simples e previsível**: O operador vê venda = produção
+
+### Alteração no Banco de Dados
+
+Alterar a definição da coluna gerada `a_produzir`:
 
 ```sql
--- Índice para quando NÃO há vínculo (item_porcionado_id IS NULL)
-CREATE UNIQUE INDEX IF NOT EXISTS 
-  mapeamento_cardapio_itens_org_loja_item_null_unique 
-ON mapeamento_cardapio_itens(organization_id, loja_id, cardapio_item_id) 
-WHERE item_porcionado_id IS NULL;
+ALTER TABLE contagem_porcionados 
+DROP COLUMN a_produzir;
+
+ALTER TABLE contagem_porcionados
+ADD COLUMN a_produzir integer GENERATED ALWAYS AS (
+  LEAST(
+    COALESCE(ideal_amanha, 0),
+    COALESCE(cardapio_web_baixa_total, 0)
+  )
+) STORED;
 ```
 
-Este índice garante que só pode existir **UM registro por produto/loja** quando não há vínculo.
-
-### 2. Database: Limpar Duplicatas Existentes
-
-Antes de criar o índice, precisamos remover os registros duplicados:
-
-```sql
--- Deletar duplicatas mantendo apenas o registro mais antigo
-DELETE FROM mapeamento_cardapio_itens a
-USING mapeamento_cardapio_itens b
-WHERE a.id > b.id
-  AND a.organization_id = b.organization_id
-  AND a.loja_id = b.loja_id
-  AND a.cardapio_item_id = b.cardapio_item_id
-  AND a.item_porcionado_id IS NULL
-  AND b.item_porcionado_id IS NULL;
-```
-
-### 3. Hook: Usar INSERT com ON CONFLICT DO UPDATE
-
-Mudar de `upsert` para `INSERT ... ON CONFLICT ... DO UPDATE` para atualizar registros existentes ao invés de criar novos:
-
-```typescript
-// No importarMapeamentos mutation
-// Estratégia: Para cada item, tentar atualizar, se não existir, inserir
-const { data, error } = await supabase.rpc('upsert_mapeamento_cardapio', {
-  p_mappings: mappings
-});
-```
-
-**Alternativa simplificada**: Antes de importar, deletar todos os mapeamentos **sem vínculo** da loja selecionada, depois inserir os novos.
-
-## Alterações
-
-| Arquivo/Componente | Alteração |
-|--------------------|-----------|
-| **Migration SQL** | Criar índice único parcial + limpar duplicatas |
-| `src/hooks/useCardapioWebIntegracao.ts` | Modificar `importarMapeamentos` para deletar antes de inserir |
-
-## Fluxo Corrigido de Importação
+## Fluxo Corrigido
 
 ```text
-ANTES (Problemático):
-1. Importar arquivo (287 itens)
-2. INSERT com onConflict
-3. PostgreSQL ignora conflict (NULL ≠ NULL)
-4. 287 novos registros criados → Total: 287 × N importações
+DIA INICIA:
+├── final_sobra = ideal_amanha (ex: 140)
+├── cardapio_web_baixa_total = 0
+└── a_produzir = 0
 
-DEPOIS (Correto):
-1. Importar arquivo (287 itens)
-2. DELETE todos mapeamentos SEM VÍNCULO da loja
-3. INSERT novos registros
-4. Resultado: Exatamente 287 registros para a loja
+VENDA DE 50 PIZZAS:
+├── final_sobra decrementado = 90 (140 - 50)
+├── cardapio_web_baixa_total = 50
+└── a_produzir = MIN(140, 50) = 50 ✓
+
+VENDA DE MAIS 50 PIZZAS:
+├── final_sobra decrementado = 40 (90 - 50)
+├── cardapio_web_baixa_total = 100
+└── a_produzir = MIN(140, 100) = 100 ✓
 ```
 
-## Benefícios
+## Considerações
 
-1. **Sem duplicatas**: Cada produto aparece uma única vez por loja
-2. **Importações repetíveis**: Re-importar atualiza ao invés de duplicar
-3. **Performance**: Menos registros = consultas mais rápidas
-4. **Dados limpos**: Banco de dados consistente
+### Contagem Manual
+Se o operador fizer contagem manual (botão azul), isso não afeta `a_produzir` no novo modelo, pois a produção é baseada apenas em:
+1. Vendas registradas pelo Cardápio Web (`cardapio_web_baixa_total`)
+2. Limite do estoque ideal (`ideal_amanha`)
 
+### Lojas sem Cardápio Web
+Para lojas que não usam Cardápio Web, `cardapio_web_baixa_total` será 0, então `a_produzir` também será 0. Essas lojas continuarão usando o modelo de demanda manual via contagem.
+
+---
+
+**Resultado esperado**: Com ideal = 140 e 100 pizzas vendidas, `a_produzir` mostrará **100** (não 30).
