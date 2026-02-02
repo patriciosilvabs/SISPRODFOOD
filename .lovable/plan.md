@@ -1,55 +1,88 @@
 
 
-
-# Plano: Somar Vendas à Coluna Sobra ✅ IMPLEMENTADO
+# Plano: Modelo Decremento - Sobra Inicia no Ideal e Desconta Vendas
 
 ## Entendimento do Requisito
 
-Cada venda do Cardápio Web deve ser **SOMADA** ao valor atual da coluna sobra.
+A lógica correta é simples:
+1. **Sobra inicia com o valor do Ideal** (ex: 140)
+2. **Cada venda do Cardápio Web DESCONTA** da sobra
 
-### Comportamento Implementado
+### Comportamento Esperado
 
 | Ação | `final_sobra` |
 |------|---------------|
-| Item "MASSA" começa com | **3** |
-| Cardápio Web envia 1 venda | **4** (3 + 1) |
-| Cardápio Web envia mais 2 vendas | **6** (4 + 2) |
+| Sobra inicia com ideal | **140** |
+| Cardápio Web envia 1 venda (1 pizza) | **139** (140 - 1) |
+| Cardápio Web envia 1 venda (10 pizzas) | **129** (139 - 10) |
 
-## Alteração Realizada
+## Problema Atual
+
+O código atual está **SOMANDO** as vendas:
+```typescript
+const novoFinalSobra = estoqueAtual + quantidadeTotal  // ❌ ERRADO
+```
+
+## Alterações Necessárias
 
 ### Edge Function: `supabase/functions/cardapio-web-webhook/index.ts`
 
-**Atualização de contagem existente:**
+**Cenário 1: Contagem não existe (linhas 523-559)**
 
+Quando não há contagem para o dia, criar uma nova iniciando com `ideal - venda`:
 ```typescript
-// MODELO SOMA: final_sobra = sobra_atual + vendas
-const estoqueAtual = contagem.final_sobra ?? 0;
-const novoFinalSobra = estoqueAtual + quantidadeTotal;
-const novoTotalBaixas = (contagem.cardapio_web_baixa_total || 0) + quantidadeTotal;
+// DE (modelo soma):
+const novoFinalSobra = quantidadeTotal
+
+// PARA (modelo decremento):
+const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
 ```
 
-**Criação de nova contagem:**
+**Cenário 2: Contagem já existe (linhas 560-593)**
 
+Quando já existe contagem, descontar da sobra atual:
 ```typescript
-// MODELO SOMA: final_sobra = vendas (começa com a quantidade)
-const novoTotalBaixas = quantidadeTotal;
-const novoFinalSobra = quantidadeTotal;
+// DE (modelo soma):
+const novoFinalSobra = estoqueAtual + quantidadeTotal
+
+// PARA (modelo decremento):
+const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
 ```
 
-## Fluxo Implementado
+## Fluxo Completo
 
 ```text
-ITEM "MASSA" JÁ EXISTE COM final_sobra = 3:
+DIA OPERACIONAL INICIA:
+├── ideal_amanha = 140
+└── final_sobra = (ainda não existe contagem)
 
-VENDA WEB DE 1 PIZZA:
-├── estoqueAtual = 3
+PRIMEIRA VENDA (1 pizza) - cria contagem:
+├── ideal = 140
 ├── quantidadeTotal = 1
-├── novoFinalSobra = 3 + 1 = 4 ✓
-└── cardapio_web_baixa_total = 1 (auditoria)
+├── novoFinalSobra = 140 - 1 = 139 ✓
+└── cardapio_web_baixa_total = 1
 
-VENDA WEB DE 2 PIZZAS:
-├── estoqueAtual = 4
-├── quantidadeTotal = 2
-├── novoFinalSobra = 4 + 2 = 6 ✓
-└── cardapio_web_baixa_total = 3 (auditoria)
+SEGUNDA VENDA (10 pizzas) - atualiza contagem:
+├── estoqueAtual = 139
+├── quantidadeTotal = 10
+├── novoFinalSobra = 139 - 10 = 129 ✓
+└── cardapio_web_baixa_total = 11
 ```
+
+## Impacto na Produção
+
+Com `a_produzir = MAX(0, ideal - final_sobra)`:
+- `ideal = 140`, `final_sobra = 129` → `a_produzir = 11`
+
+Isso significa que quanto mais vendas, **MENOR** o `final_sobra` e **MAIOR** o `a_produzir`.
+
+## Detalhes Técnicos
+
+Arquivos a modificar:
+- `supabase/functions/cardapio-web-webhook/index.ts` (linhas 523-593)
+
+Mudanças específicas:
+1. **Linha 528**: `novoFinalSobra = quantidadeTotal` → `novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)`
+2. **Linha 564**: `novoFinalSobra = estoqueAtual + quantidadeTotal` → `novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)`
+3. Atualizar comentários e logs para refletir o modelo "decremento"
+
