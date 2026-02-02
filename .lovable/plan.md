@@ -1,49 +1,111 @@
 
-# Plano: Correção de Webhooks Duplicados - IMPLEMENTADO ✅
+# Plano: Correção da Lógica de Decremento Real no Webhook Cardápio Web
 
-## Status: CONCLUÍDO
+## Diagnóstico Confirmado
 
-### O Que Foi Implementado
+Você identificou corretamente o problema na lógica do webhook. Após analisar o código (linhas 620-656), confirmo:
 
-#### 1. ✅ UNIQUE Constraint no Banco de Dados
-- Adicionada constraint `unique_order_per_org_event` em `cardapio_web_pedidos_log`
-- Garante que cada combinação (organization_id, order_id, evento) seja única
-- Registros duplicados existentes foram limpos antes de criar a constraint
+### Problema Atual (Linha 628)
+```typescript
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
+```
 
-#### 2. ✅ INSERT Atômico na Edge Function
-- Substituída verificação SELECT por INSERT atômico
-- Se já existe registro (erro 23505 - UNIQUE violation), webhook é ignorado
-- Evita race conditions quando 2 webhooks chegam simultaneamente
+**O que faz:** Recalcula o saldo como `Ideal - Total de Vendas Acumuladas`, ignorando qualquer ajuste manual feito pelo funcionário.
 
-#### 3. ✅ Tratamento de ORDER_STATUS_UPDATED
-- Eventos de atualização de status agora são apenas logados
-- NÃO baixam estoque novamente (evita duplicação de vendas)
-- Apenas `ORDER_CREATED` processa baixa de estoque
+**Exemplo do problema:**
+1. Ideal = 140, Vendas = 50 → Sistema calcula saldo = 90
+2. Funcionário ajusta para 105 (clicou + porque viu mais massa)
+3. Nova venda de 5 → Sistema faz `140 - 55 = 85`, sobrescrevendo o 105
 
-#### 4. ✅ Policy de UPDATE para Log
-- Criada policy para permitir UPDATE no log pelo sistema
-- Edge Function agora faz INSERT inicial (reserva slot) e UPDATE final (com resultado)
+### Solução Proposta (Decremento Real)
+```typescript
+const estoqueAtual = (contagem as any).final_sobra || 0
+const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+```
 
----
+**O que fará:** Subtrai apenas a venda atual do valor que está no campo azul (respeitando ajustes manuais).
 
-## Resultado Verificado
-
-Após as correções, os dados de Japiim mostram:
-- **13 pedidos únicos** processados
-- **506 unidades de MASSA** vendidas (legítimas, não duplicadas)
-- Com **ideal = 140** e **vendas = 506**:
-  - `final_sobra = MAX(0, 140 - 506) = 0` ✅
-  - `a_produzir = 140` (limitado ao teto) ✅
-
-**Isso está CORRETO** segundo o modelo Tanque Cheio (Opção B - limitado ao teto).
+**Exemplo corrigido:**
+1. Ideal = 140, Vendas = 50 → Sistema calcula saldo = 90
+2. Funcionário ajusta para 105
+3. Nova venda de 5 → Sistema faz `105 - 5 = 100` ✅
 
 ---
 
-## Observação Importante
+## Mudanças Necessárias
 
-O usuário mencionou "50 pizzas vendidas", mas os dados reais mostram **506 pizzas vendidas** em 13 pedidos. Cada pedido contém em média ~39 pizzas (típico de pizzarias com pedidos grandes).
+### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
 
-Se o usuário esperava menos vendas, pode haver:
-1. Mapeamento incorreto no Cardápio Web (muitos itens mapeados para MASSA)
-2. Pedidos de teste que não deveriam ser processados
-3. Quantidade_consumida configurada incorretamente nos mapeamentos
+#### 1. Cenário de Atualização (Linhas 626-630)
+
+**Antes:**
+```typescript
+const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
+const novoTotalBaixas = vendasAnteriores + quantidadeTotal
+const novoFinalSobra = Math.max(0, idealDoDia - novoTotalBaixas)
+```
+
+**Depois:**
+```typescript
+const vendasAnteriores = ((contagem as unknown as Record<string, number>).cardapio_web_baixa_total || 0)
+const novoTotalBaixas = vendasAnteriores + quantidadeTotal
+
+// DECREMENTO REAL: Subtrai da sobra atual (respeitando ajustes manuais)
+const estoqueAtual = ((contagem as unknown as Record<string, number>).final_sobra || 0)
+const novoFinalSobra = Math.max(0, estoqueAtual - quantidadeTotal)
+```
+
+#### 2. Atualizar Log de Debug (Linha 630)
+
+**Antes:**
+```typescript
+console.log(`📦 Atualizando contagem (tanque cheio): ideal=${idealDoDia}, vendas_anteriores=${vendasAnteriores} + novas=${quantidadeTotal} = vendas_total=${novoTotalBaixas} → saldo_restante=${novoFinalSobra}, a_produzir=${idealDoDia - novoFinalSobra}`)
+```
+
+**Depois:**
+```typescript
+console.log(`📦 Atualizando contagem (decremento real): estoque_atual=${estoqueAtual} - vendas_novas=${quantidadeTotal} = saldo_novo=${novoFinalSobra} (vendas_acumuladas=${novoTotalBaixas}, ideal=${idealDoDia})`)
+```
+
+#### 3. Cenário de Criação (Linhas 588-591) - Manter Igual
+
+O cenário de criação (primeira venda do dia) continua correto:
+```typescript
+const novoFinalSobra = Math.max(0, idealDoDia - quantidadeTotal)
+```
+
+Isso está certo porque na primeira venda do dia, assumimos que o "tanque estava cheio" (Ideal).
+
+---
+
+## Comportamento Final Esperado
+
+| Hora | Ação | Estoque Anterior | Venda | Estoque Novo | a_produzir |
+|------|------|------------------|-------|--------------|------------|
+| 08:00 | Início do dia | - | - | 140 (ideal) | 0 |
+| 10:00 | Venda 10 pizzas | 140 | 10 | 130 | 10 |
+| 12:00 | Ajuste manual +15 | 130 | - | 145 | 0 |
+| 14:00 | Venda 5 pizzas | 145 | 5 | 140 | 0 |
+| 16:00 | Venda 50 pizzas | 140 | 50 | 90 | 50 |
+
+**Resultado:** O botão laranja sempre mostrará `Ideal - final_sobra`, que representa o que realmente falta para repor.
+
+---
+
+## Detalhes Técnicos da Implementação
+
+1. **Modificar apenas 2-3 linhas** no cenário de atualização (linha 628)
+2. **Manter `cardapio_web_baixa_total`** como registro de auditoria (total de vendas do dia)
+3. **Manter o log atualizado** para facilitar debugging futuro
+4. **Deploy automático** da Edge Function após aprovação
+
+---
+
+## Nota sobre Dados Existentes
+
+Os dados de hoje já estão "corrompidos" pelo cálculo antigo. Após a correção:
+- Novas vendas respeitarão o valor atual do campo azul
+- O funcionário pode fazer um ajuste manual para "resetar" se necessário
+- Amanhã o sistema iniciará com o Ideal correto (tanque cheio)
+
+**Opção adicional:** Podemos criar uma query SQL para recalcular os saldos atuais baseado nas vendas reais de hoje, se necessário.
