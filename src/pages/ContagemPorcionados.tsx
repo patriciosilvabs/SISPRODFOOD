@@ -601,8 +601,9 @@ const ContagemPorcionados = () => {
       const contagemExistente = contagens[lojaId]?.find(c => c.item_porcionado_id === itemId);
       const cardapioWebBaixaTotal = contagemExistente?.cardapio_web_baixa_total || 0;
       
-      // MODELO VENDAS: a_produzir = MIN(ideal, vendas_web)
-      const aProduzir = Math.min(idealAmanha, cardapioWebBaixaTotal);
+      // MODELO UNIFICADO: a_produzir = MAX(0, ideal - sobra)
+      // Funciona tanto para ajustes manuais quanto automáticos (Cardápio Web)
+      const aProduzir = Math.max(0, idealAmanha - finalSobra);
 
       // Buscar data do servidor (respeita fuso horário da organização)
       const { data: dataServidor } = await supabase.rpc('get_current_date');
@@ -1114,10 +1115,9 @@ const ContagemPorcionados = () => {
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
                       const idealFromConfig = estoqueSemanal?.[currentDay] ?? 0;
                       
-                      // MODELO VENDAS: a_produzir = MIN(ideal, vendas_web)
-                      // Exibe vendas acumuladas limitadas ao ideal configurado
-                      const cardapioWebBaixaTotal = contagem?.cardapio_web_baixa_total || 0;
-                      const aProduzir = Math.min(idealFromConfig, cardapioWebBaixaTotal);
+                      // MODELO UNIFICADO: a_produzir = MAX(0, ideal - sobra)
+                      // Funciona tanto para ajustes manuais (botões +/-) quanto automáticos (Cardápio Web)
+                      const aProduzir = Math.max(0, idealFromConfig - finalSobra);
                       const isDirty = isRowDirty(loja.id, item.id);
                       
                       // Calcular lotes necessários para itens lote_masseira
