@@ -186,6 +186,7 @@ export default function ConfigurarCardapioWeb() {
     addMapeamento,
     deleteMapeamento,
     deleteAllMapeamentos,
+    deleteVinculosByCategoria,
     importarMapeamentos,
     vincularItemPorcionado,
     vincularEmLote,
@@ -832,34 +833,73 @@ export default function ConfigurarCardapioWeb() {
                           open={gruposExpandidos.has(grupoNome)}
                           onOpenChange={() => toggleGrupo(grupoNome)}
                         >
-                          <CollapsibleTrigger asChild>
-                            <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted transition-colors">
-                              {modoSelecao && (
-                                <Checkbox
-                                  checked={todosGrupoSelecionados}
-                                  className={algunsGrupoSelecionados && !todosGrupoSelecionados ? 'data-[state=unchecked]:bg-muted-foreground/20' : ''}
-                                  onCheckedChange={(checked) => {
-                                    toggleSelecionarGrupo(produtos, !!checked);
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              )}
-                              {gruposExpandidos.has(grupoNome) ? (
-                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              )}
-                              <span className="font-semibold">{grupoNome}</span>
-                              <Badge variant="secondary" className="text-xs">
-                                {produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}
-                              </Badge>
-                              {modoSelecao && algunsGrupoSelecionados && (
-                                <Badge variant="outline" className="text-xs">
-                                  {produtos.filter(p => produtosSelecionados.has(p.cardapio_item_id)).length} selecionado(s)
+                          <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 rounded-lg">
+                            <CollapsibleTrigger asChild>
+                              <div className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80 transition-opacity">
+                                {modoSelecao && (
+                                  <Checkbox
+                                    checked={todosGrupoSelecionados}
+                                    className={algunsGrupoSelecionados && !todosGrupoSelecionados ? 'data-[state=unchecked]:bg-muted-foreground/20' : ''}
+                                    onCheckedChange={(checked) => {
+                                      toggleSelecionarGrupo(produtos, !!checked);
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                )}
+                                {gruposExpandidos.has(grupoNome) ? (
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                )}
+                                <span className="font-semibold">{grupoNome}</span>
+                                <Badge variant="secondary" className="text-xs">
+                                  {produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}
                                 </Badge>
-                              )}
-                            </div>
-                          </CollapsibleTrigger>
+                                {modoSelecao && algunsGrupoSelecionados && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {produtos.filter(p => produtosSelecionados.has(p.cardapio_item_id)).length} selecionado(s)
+                                  </Badge>
+                                )}
+                              </div>
+                            </CollapsibleTrigger>
+                            
+                            {/* Botão de remover categoria - apenas no modo categoria */}
+                            {modoVisualizacao === 'categoria' && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                    Remover
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remover todos os vínculos desta categoria?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Esta ação irá remover <strong>{produtos.length} {produtos.length === 1 ? 'produto' : 'produtos'}</strong> da categoria 
+                                      "<strong>{grupoNome}</strong>" e seus vínculos.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction 
+                                      onClick={() => deleteVinculosByCategoria.mutate({ lojaId: lojaIdMapeamento, categoria: grupoNome })}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      disabled={deleteVinculosByCategoria.isPending}
+                                    >
+                                      {deleteVinculosByCategoria.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                      Confirmar Exclusão
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
                           <CollapsibleContent>
                             <div className="mt-2 border rounded-lg overflow-hidden">
                               <Table>

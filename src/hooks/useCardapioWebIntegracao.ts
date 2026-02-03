@@ -768,6 +768,30 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Delete all mappings by category for a specific store
+  const deleteVinculosByCategoria = useMutation({
+    mutationFn: async ({ lojaId, categoria }: { lojaId: string; categoria: string }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      const { error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .delete()
+        .eq('organization_id', organizationId)
+        .eq('loja_id', lojaId)
+        .eq('categoria', categoria);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success('Vínculos da categoria removidos');
+    },
+    onError: (error) => {
+      console.error('Erro ao remover vínculos da categoria:', error);
+      toast.error('Erro ao remover vínculos da categoria');
+    }
+  });
+
   return {
     // Data
     integracoes: integracoes || [],
@@ -798,6 +822,7 @@ export function useCardapioWebIntegracao() {
     updateMapeamento,
     deleteMapeamento,
     deleteAllMapeamentos,
+    deleteVinculosByCategoria,
     importarMapeamentos,
     vincularItemPorcionado,
     vincularEmLote,
