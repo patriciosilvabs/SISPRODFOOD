@@ -17,7 +17,7 @@ interface MapearPorInsumoModalProps {
   produtosDisponiveis: MapeamentoCardapioItemAgrupado[];
   lojaId: string;
   onConfirm: (data: {
-    item_porcionado_id: string;
+    itens_porcionados_ids: string[];
     produtos: Array<{
       cardapio_item_id: number;
       cardapio_item_nome: string;
@@ -45,7 +45,8 @@ export function MapearPorInsumoModal({
   onConfirm,
   isLoading = false,
 }: MapearPorInsumoModalProps) {
-  const [itemPorcionadoSelecionado, setItemPorcionadoSelecionado] = useState<string>('');
+  // Multi-selection of portioned items
+  const [itensPorcionadosSelecionados, setItensPorcionadosSelecionados] = useState<Set<string>>(new Set());
   const [termoBusca, setTermoBusca] = useState('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
   // Map: cardapio_item_id -> quantidade
@@ -81,10 +82,25 @@ export function MapearPorInsumoModal({
     return filtrados.slice(0, 50);
   }, [produtosDisponiveis, termoBusca]);
 
-  // Check if a product is already linked to the selected item
+  // Toggle portioned item selection
+  const toggleItemPorcionado = (id: string, checked: boolean | 'indeterminate') => {
+    setItensPorcionadosSelecionados(prev => {
+      const novo = new Set(prev);
+      if (checked === true) {
+        novo.add(id);
+      } else {
+        novo.delete(id);
+      }
+      return novo;
+    });
+  };
+
+  // Check if a product is already linked to ANY selected item
   const produtoJaVinculado = (produto: MapeamentoCardapioItemAgrupado): boolean => {
-    if (!itemPorcionadoSelecionado) return false;
-    return produto.vinculos.some(v => v.item_porcionado_id === itemPorcionadoSelecionado);
+    if (itensPorcionadosSelecionados.size === 0) return false;
+    return produto.vinculos.some(v => 
+      v.item_porcionado_id && itensPorcionadosSelecionados.has(v.item_porcionado_id)
+    );
   };
 
   // Get name of the item that the product is already linked to (if any)
@@ -193,36 +209,37 @@ export function MapearPorInsumoModal({
   const todosProdutosSelecionados = useMemo(() => {
     const disponiveis = produtosDisponiveis.filter(p => !produtoJaVinculado(p));
     return disponiveis.length > 0 && disponiveis.every(p => produtosSelecionados.has(p.cardapio_item_id));
-  }, [produtosDisponiveis, produtosSelecionados, itemPorcionadoSelecionado]);
+  }, [produtosDisponiveis, produtosSelecionados, itensPorcionadosSelecionados]);
+
+  // Total de vínculos que serão criados
+  const totalVinculos = itensPorcionadosSelecionados.size * produtosSelecionados.size;
 
   const handleConfirm = async () => {
-    if (!itemPorcionadoSelecionado || produtosSelecionados.size === 0) return;
+    if (itensPorcionadosSelecionados.size === 0 || produtosSelecionados.size === 0) return;
     
     const produtos = Array.from(produtosSelecionados.values());
     
     await onConfirm({
-      item_porcionado_id: itemPorcionadoSelecionado,
+      itens_porcionados_ids: Array.from(itensPorcionadosSelecionados),
       produtos,
     });
     
     // Reset state on success
-    setItemPorcionadoSelecionado('');
+    setItensPorcionadosSelecionados(new Set());
     setTermoBusca('');
     setProdutosSelecionados(new Map());
+    setCategoriaSelecionada('');
   };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
-      setItemPorcionadoSelecionado('');
+      setItensPorcionadosSelecionados(new Set());
       setTermoBusca('');
       setProdutosSelecionados(new Map());
       setCategoriaSelecionada('');
     }
     onOpenChange(newOpen);
   };
-
-  // Get selected item name for display
-  const itemPorcionadoNome = itensPorcionados.find(i => i.id === itemPorcionadoSelecionado)?.nome || '';
 
   // Count how many filtered products are already selected
   const todosFiltradosSelecionados = produtosFiltrados
@@ -243,25 +260,38 @@ export function MapearPorInsumoModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2 flex-1 overflow-hidden flex flex-col">
-          {/* Select Item Porcionado */}
+          {/* Seleção de Itens Porcionados com Checkboxes */}
           <div className="space-y-2">
-            <Label>Item Porcionado</Label>
-            <Select value={itemPorcionadoSelecionado} onValueChange={setItemPorcionadoSelecionado}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o item a vincular..." />
-              </SelectTrigger>
-              <SelectContent>
+            <div className="flex items-center justify-between">
+              <Label>Itens Porcionados</Label>
+              {itensPorcionadosSelecionados.size > 0 && (
+                <Badge variant="secondary">{itensPorcionadosSelecionados.size} selecionado(s)</Badge>
+              )}
+            </div>
+            <ScrollArea className="h-[140px] border rounded-md">
+              <div className="p-2 space-y-1">
                 {itensPorcionados.map(item => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
-                  </SelectItem>
+                  <div 
+                    key={item.id}
+                    className={`flex items-center gap-3 p-2 rounded transition-colors cursor-pointer hover:bg-muted/50 ${
+                      itensPorcionadosSelecionados.has(item.id) ? 'bg-primary/10' : ''
+                    }`}
+                    onClick={() => toggleItemPorcionado(item.id, !itensPorcionadosSelecionados.has(item.id))}
+                  >
+                    <Checkbox
+                      checked={itensPorcionadosSelecionados.has(item.id)}
+                      onCheckedChange={(checked) => toggleItemPorcionado(item.id, checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <span className="text-sm">{item.nome}</span>
+                  </div>
                 ))}
-              </SelectContent>
-          </Select>
+              </div>
+            </ScrollArea>
           </div>
 
-          {/* Seleção em Massa - aparece quando item está selecionado */}
-          {itemPorcionadoSelecionado && produtosDisponiveis.length > 0 && (
+          {/* Seleção em Massa - aparece quando pelo menos um item está selecionado */}
+          {itensPorcionadosSelecionados.size > 0 && produtosDisponiveis.length > 0 && (
             <div className="space-y-3 p-3 bg-muted/30 rounded-lg border">
               {/* Contagem total */}
               <div className="text-sm">
@@ -338,7 +368,7 @@ export function MapearPorInsumoModal({
                 value={termoBusca}
                 onChange={(e) => setTermoBusca(e.target.value)}
                 className="pl-9"
-                disabled={!itemPorcionadoSelecionado}
+                disabled={itensPorcionadosSelecionados.size === 0}
               />
             </div>
             {termoBusca.length > 0 && termoBusca.length < 2 && (
@@ -447,15 +477,21 @@ export function MapearPorInsumoModal({
           )}
 
           {/* Summary */}
-          {produtosSelecionados.size > 0 && itemPorcionadoSelecionado && (
+          {produtosSelecionados.size > 0 && itensPorcionadosSelecionados.size > 0 && (
             <div className="p-3 bg-muted/50 rounded-lg text-sm">
               <p className="font-medium flex items-center gap-2">
                 <Link2 className="h-4 w-4" />
-                {produtosSelecionados.size} produto(s) serão vinculados a:
+                {produtosSelecionados.size} produto(s) serão vinculados a {itensPorcionadosSelecionados.size} item(ns):
               </p>
-              <Badge variant="secondary" className="mt-1">
-                {itemPorcionadoNome}
-              </Badge>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {Array.from(itensPorcionadosSelecionados).map(id => {
+                  const item = itensPorcionados.find(i => i.id === id);
+                  return item ? <Badge key={id} variant="secondary">{item.nome}</Badge> : null;
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Total: {totalVinculos} vínculos
+              </p>
             </div>
           )}
         </div>
@@ -466,10 +502,10 @@ export function MapearPorInsumoModal({
           </Button>
           <Button 
             onClick={handleConfirm} 
-            disabled={!itemPorcionadoSelecionado || produtosSelecionados.size === 0 || isLoading}
+            disabled={itensPorcionadosSelecionados.size === 0 || produtosSelecionados.size === 0 || isLoading}
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Confirmar {produtosSelecionados.size} Vínculos
+            Confirmar {totalVinculos} Vínculos
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -434,9 +434,9 @@ export default function ConfigurarCardapioWeb() {
     setVinculoEmLoteModalOpen(false);
   };
 
-  // Handle inverse mapping (insumo -> produtos)
+  // Handle inverse mapping (insumo -> produtos) - now supports multiple portioned items
   const handleMapearPorInsumo = async (data: {
-    item_porcionado_id: string;
+    itens_porcionados_ids: string[];
     produtos: Array<{
       cardapio_item_id: number;
       cardapio_item_nome: string;
@@ -447,11 +447,14 @@ export default function ConfigurarCardapioWeb() {
   }) => {
     if (!lojaIdMapeamento) return;
     
-    await vincularPorInsumo.mutateAsync({
-      loja_id: lojaIdMapeamento,
-      item_porcionado_id: data.item_porcionado_id,
-      produtos: data.produtos,
-    });
+    // Para cada item porcionado selecionado, vincular todos os produtos
+    for (const itemId of data.itens_porcionados_ids) {
+      await vincularPorInsumo.mutateAsync({
+        loja_id: lojaIdMapeamento,
+        item_porcionado_id: itemId,
+        produtos: data.produtos,
+      });
+    }
     
     setMapearPorInsumoModalOpen(false);
   };
