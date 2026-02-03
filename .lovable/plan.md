@@ -1,128 +1,143 @@
 
-# Plano: Corrigir Detecção de Baixa do Cardápio Web no Realtime
+# Plano: Adicionar Produtos ao Mapeamento via Texto Simples
 
-## Problema Identificado
+## Objetivo
 
-O webhook do Cardápio Web **NÃO está atualizando o campo `usuario_nome`** nas operações de UPDATE:
+Criar uma funcionalidade que permite ao usuário colar texto simples (como uma lista de produtos) diretamente em um textarea, e o sistema irá extrair e adicionar os produtos ao mapeamento do Cardápio Web.
 
-```typescript
-// No webhook (linha 686-697):
-.update({ 
-  final_sobra: novoFinalSobra,
-  ideal_amanha: idealDoDia,
-  updated_at: agora,
-  cardapio_web_baixa_total: novoTotalBaixas,
-  cardapio_web_ultima_baixa_at: agora,
-  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
-  // ❌ NÃO TEM: usuario_nome: 'Cardápio Web'
-})
-```
+## Cenário de Uso
 
-Enquanto isso, o frontend verifica:
-```typescript
-const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd > 0 &&
-                           updated.usuario_nome === 'Cardápio Web'; // ← SEMPRE FALSE!
-```
+O usuário quer adicionar rapidamente uma lista de produtos do cardápio sem precisar usar arquivo Excel ou CSV. Basta copiar/colar de qualquer fonte (planilha, documento, site) e o sistema interpreta automaticamente.
 
-### Fluxo do Bug:
+## Arquitetura da Solução
 
-```text
-1. Usuário edita: usuario_nome = "DOM HELDER PIZZARIA"
-2. Venda chega via Cardápio Web
-3. Webhook UPDATE: final_sobra -= 10, cardapio_web_ultima_baixa_qtd = 10
-   → NÃO atualiza usuario_nome → permanece "DOM HELDER PIZZARIA"
-4. Realtime recebe: usuario_nome = "DOM HELDER PIZZARIA"
-5. Frontend: isCardapioWebBaixa = false (porque usuario_nome ≠ "Cardápio Web")
-6. Frontend ignora a atualização
-7. Autosave envia valor antigo → decrementa novamente
-```
+### 1. Novo Modal: `ImportarTextoCardapioModal.tsx`
 
-Confirmação nos dados do banco:
-- `usuario_nome: 'DOM HELDER PIZZARIA'` (não 'Cardápio Web')
-- `cardapio_web_ultima_baixa_qtd: 10` (venda foi de 10)
-- `final_sobra: 230` (decrementou 20 em vez de 10)
+Interface simples com:
+- **Textarea** grande para colar o texto
+- **Lógica de parsing** que detecta automaticamente o formato:
+  - Linhas separadas por quebra de linha
+  - Colunas separadas por tab, ponto-e-vírgula ou vírgula
+  - Suporte a formato: `TIPO | CATEGORIA | NOME | CÓDIGO`
+  - Suporte a formato simples: `NOME | CÓDIGO`
+- **Preview** dos itens detectados antes de importar
+- **Contador** de itens válidos encontrados
 
-## Solução
+### 2. Integração na Página `ConfigurarCardapioWeb.tsx`
 
-Há duas opções. A mais robusta é atualizar o **webhook** para incluir `usuario_nome: 'Cardápio Web'` no UPDATE.
+Adicionar um novo botão "Colar Texto" ao lado do botão "Importar Arquivo" na aba de Mapeamento.
 
-### Opção 1 (Recomendada): Atualizar Webhook
-
-**Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`**
-
-Na linha 688-697, adicionar `usuario_nome`:
-
-```typescript
-.update({ 
-  final_sobra: novoFinalSobra,
-  ideal_amanha: idealDoDia,
-  updated_at: agora,
-  usuario_nome: 'Cardápio Web', // ← ADICIONAR
-  // Campos de rastreamento Cardápio Web (auditoria)
-  cardapio_web_baixa_total: novoTotalBaixas,
-  cardapio_web_ultima_baixa_at: agora,
-  cardapio_web_ultima_baixa_qtd: quantidadeTotal,
-})
-```
-
-### Opção 2 (Alternativa): Alterar Detecção no Frontend
-
-Se preferir não alterar o webhook, podemos mudar a lógica de detecção no frontend para usar o campo `cardapio_web_ultima_baixa_at` (timestamp da última baixa):
-
-```typescript
-// Verificar se é uma baixa recente do Cardápio Web (últimos 5 segundos)
-const agora = new Date().getTime();
-const timestampBaixa = updated.cardapio_web_ultima_baixa_at 
-  ? new Date(updated.cardapio_web_ultima_baixa_at).getTime() 
-  : 0;
-const baixaRecente = (agora - timestampBaixa) < 5000; // 5 segundos
-
-const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd > 0 && baixaRecente;
-```
-
-## Recomendação
-
-A **Opção 1** é mais robusta e semântica - o campo `usuario_nome` passa a refletir corretamente quem fez a última alteração. Isso também melhora a auditoria.
-
-## Mudanças Técnicas
-
-### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
-
-**Linha 688-697 - Adicionar `usuario_nome` e `usuario_id` no UPDATE:**
-
-```typescript
-const { error: updateError } = await supabase
-  .from('contagem_porcionados')
-  .update({ 
-    final_sobra: novoFinalSobra,
-    ideal_amanha: idealDoDia,
-    updated_at: agora,
-    usuario_id: '00000000-0000-0000-0000-000000000000', // Sistema
-    usuario_nome: 'Cardápio Web', // ← ADICIONAR
-    // Campos de rastreamento
-    cardapio_web_baixa_total: novoTotalBaixas,
-    cardapio_web_ultima_baixa_at: agora,
-    cardapio_web_ultima_baixa_qtd: quantidadeTotal,
-  })
-  .eq('id', contagem.id)
-```
-
-## Fluxo Corrigido
+## Fluxo do Usuário
 
 ```text
-1. Usuário edita: usuario_nome = "DOM HELDER PIZZARIA", final_sobra = 250
-2. Venda de 10 un chega via Cardápio Web
-3. Webhook UPDATE: final_sobra = 240, usuario_nome = "Cardápio Web"
-4. Realtime recebe: usuario_nome = "Cardápio Web", final_sobra = 240
-5. Frontend: isCardapioWebBaixa = TRUE ✓
-6. Frontend: setEditingValues com final_sobra = 240
-7. UI mostra: SOBRA = 240, C. WEB = 10, PRODUZIR = 10 ✓
+1. Usuário clica em "Colar Texto"
+2. Modal abre com textarea vazio
+3. Usuário cola texto (ex: copiado do Cardápio Web ou planilha)
+4. Sistema detecta automaticamente formato e extrai produtos
+5. Preview mostra itens encontrados
+6. Usuário confirma → Produtos são adicionados ao mapeamento
 ```
+
+## Formatos Suportados
+
+O parser será flexível e detectará automaticamente:
+
+**Formato Completo (4 colunas):**
+```
+PRODUTO	PIZZAS	Pizza de Calabresa	12345
+PRODUTO	PIZZAS	Pizza Mussarela	12346
+```
+
+**Formato Simples (2 colunas):**
+```
+Pizza de Calabresa	12345
+Pizza Mussarela	12346
+```
+
+**Formato Apenas Nome:**
+```
+Pizza de Calabresa - 12345
+Pizza Mussarela (12346)
+```
+
+## Detalhes Técnicos
+
+### Arquivo: `src/components/modals/ImportarTextoCardapioModal.tsx`
+
+```tsx
+interface ImportarTextoCardapioModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImport: (items: ParsedCardapioItem[]) => Promise<void>;
+  isLoading?: boolean;
+}
+
+// Funções de parsing:
+// - detectDelimiter(): detecta tab, ponto-e-vírgula ou vírgula
+// - parseTextoSimples(): extrai produtos do texto colado
+// - extrairCodigoDoNome(): tenta extrair código do nome (ex: "Pizza 12345" → código=12345)
+```
+
+### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
+
+Adicionar:
+- Estado: `importarTextoModalOpen`
+- Botão na toolbar: "Colar Texto" com ícone `ClipboardPaste`
+- Importar e renderizar o novo modal
+
+### Reutilização
+
+O modal usará a mesma função `importarMapeamentos` do hook `useCardapioWebIntegracao.ts`, que já:
+- Remove duplicatas
+- Faz deduplicação por código
+- Adiciona os itens sem vínculo para vincular depois
+
+## UI do Modal
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  📋 Importar via Texto                                   [X]│
+├─────────────────────────────────────────────────────────────┤
+│  Cole o texto com os produtos do cardápio abaixo:           │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                                                     │   │
+│  │  (textarea para colar texto)                        │   │
+│  │                                                     │   │
+│  │                                                     │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  💡 Dica: Copie do Cardápio Web ou planilha                │
+│     Formatos aceitos: Nome + Código separados por tab,      │
+│     vírgula ou ponto-e-vírgula                              │
+│                                                             │
+│  ───────────────────────────────────────────────────────── │
+│                                                             │
+│  ✅ 25 itens encontrados                                    │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ TIPO    │ CATEGORIA │ NOME            │ CÓDIGO     │   │
+│  │ PRODUTO │ PIZZAS    │ Pizza Calabresa │ 12345      │   │
+│  │ PRODUTO │ PIZZAS    │ Pizza Mussarela │ 12346      │   │
+│  │ ...     │ ...       │ ...             │ ...        │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                          [Cancelar]  [Importar 25 itens]    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `src/components/modals/ImportarTextoCardapioModal.tsx` | **CRIAR** |
+| `src/pages/ConfigurarCardapioWeb.tsx` | **MODIFICAR** (adicionar botão e estado) |
 
 ## Resultado Esperado
 
-| Evento | Banco | UI SOBRA | C. WEB | PRODUZIR |
-|--------|-------|----------|--------|----------|
-| Inicial | 250 | 250 | 0 | 0 |
-| Venda 10 un | 240 | 240 | 10 | 10 |
-| Venda 5 un | 235 | 235 | 5 | 15 |
+- Usuário pode colar texto simples de qualquer fonte
+- Sistema detecta automaticamente formato e extrai produtos
+- Preview mostra itens antes de importar
+- Importação usa mesma lógica do arquivo (deduplicação automática)
+- Itens são adicionados sem vínculo, prontos para vincular depois
