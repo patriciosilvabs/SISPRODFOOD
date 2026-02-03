@@ -1,175 +1,199 @@
 
-# Plano: Mapeamento por Categoria
+# Plano: Mapeamento Inverso (Insumo → Produtos)
 
 ## Problema Atual
 
-O sistema atual vincula **item a item**, ou seja:
-- Pizza Calabresa (código 3541758) → MASSA-PORCIONADO
-- Pizza Portuguesa (código 3541759) → MASSA-PORCIONADO  
-- Pizza 4 Queijos (código 3541760) → MASSA-PORCIONADO
-- ... (dezenas de itens)
-
-Isso é trabalhoso, especialmente quando **todos os itens de uma categoria** consomem o mesmo ingrediente.
+O fluxo atual é **Produto → Insumo**:
+1. Usuário vê lista de 500+ produtos do cardápio
+2. Para cada produto, escolhe qual item porcionado vincular
+3. Se 100 pizzas consomem "CALABRESA", precisa fazer 100 cliques
 
 ## Solução Proposta
 
-Criar um novo nível de mapeamento: **Mapeamento por Categoria**
+Adicionar um **fluxo inverso: Insumo → Produtos**:
+1. Usuário seleciona "CALABRESA - PORCIONADO"
+2. Digita "calabresa" na busca
+3. Sistema mostra todos os produtos que contêm "calabresa" no nome
+4. Usuário marca os desejados e define quantidade
+5. Com 1 clique, vincula todos
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│  Regras de Mapeamento por Categoria                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Categoria                    Item Porcionado       Quantidade  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │ Pizzas                     MASSA - PORCIONADO        1     ││
-│  │ Pizzas                     MUSSARELA - PORCIONADO    1     ││
-│  │ Selecione o sabor          (herda item principal)    -     ││
-│  │ Massas & Bordas (Grande)   BORDA - PORCIONADO        1     ││
-│  │ Bebidas                    (sem mapeamento)          -     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                 │
-│                                        [+ Adicionar Regra]      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Lógica de Processamento (Webhook)
-
-O webhook processaria na seguinte ordem de prioridade:
-
-1. **Mapeamento específico** (por item_id) → maior prioridade
-2. **Mapeamento por categoria** → fallback se não houver específico
-3. **Sem mapeamento** → ignora o item
-
-### Exemplo de Fluxo:
-
-```text
-Pedido: Pizza Calabresa (item_id=3541758, categoria="Pizzas")
-
-1. Busca mapeamento para item_id=3541758 → NÃO ENCONTRADO
-2. Busca mapeamento para categoria="Pizzas" → ENCONTRADO!
-   → Vinculado a: MASSA-PORCIONADO (1x), MUSSARELA-PORCIONADO (1x)
-3. Baixa estoque de MASSA e MUSSARELA
-```
-
-## Estrutura de Dados
-
-### Nova Tabela: `mapeamento_cardapio_categorias`
-
-```sql
-CREATE TABLE mapeamento_cardapio_categorias (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  loja_id UUID REFERENCES lojas(id),
-  categoria TEXT NOT NULL,
-  tipo TEXT, -- 'PRODUTO' ou 'OPÇÃO' (opcional, para filtrar)
-  item_porcionado_id UUID NOT NULL REFERENCES itens_porcionados(id),
-  quantidade_consumida INTEGER NOT NULL DEFAULT 1,
-  ativo BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  
-  UNIQUE (organization_id, loja_id, categoria, item_porcionado_id)
-);
-```
-
-## Mudanças no Código
-
-### 1. Nova Interface na UI
-
-Adicionar uma nova aba "Regras por Categoria" na página de configuração:
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  [Lojas] [Mapeamento] [Regras por Categoria] [Histórico]        │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Funcionalidades da aba:**
-- Listar categorias existentes (extraídas dos mapeamentos)
-- Permitir criar regra: Categoria → Item Porcionado (Qtd)
-- Editar/remover regras existentes
-
-### 2. Atualização do Webhook
-
-**Arquivo:** `supabase/functions/cardapio-web-webhook/index.ts`
-
-Modificar a função `processItem` para buscar também por categoria:
-
-```typescript
-const processItem = async (itemId, itemName, quantity, sourceType, categoria) => {
-  // 1. Buscar mapeamento específico por item_id
-  let mappings = mapeamentoMap.get(itemId);
-  
-  // 2. Se não encontrou, buscar por categoria
-  if (!mappings || mappings.length === 0) {
-    mappings = categoriaMapeamentoMap.get(categoria);
-    if (mappings) {
-      console.log(`[${sourceType}] Usando mapeamento por categoria: ${categoria}`);
-    }
-  }
-  
-  // 3. Processar normalmente
-  // ...
-}
-```
-
-### 3. Hook de Integração
-
-**Arquivo:** `src/hooks/useCardapioWebIntegracao.ts`
-
-Adicionar queries e mutations para gerenciar mapeamentos por categoria:
-
-```typescript
-// Query para mapeamentos por categoria
-const { data: mapeamentosCategorias } = useQuery({
-  queryKey: ['cardapio-web-mapeamentos-categorias', organizationId],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from('mapeamento_cardapio_categorias')
-      .select(`*, item_porcionado:itens_porcionados(id, nome)`)
-      .eq('organization_id', organizationId);
-    return data;
-  }
-});
-
-// Mutation para criar mapeamento por categoria
-const addMapeamentoCategoria = useMutation({
-  mutationFn: async ({ categoria, item_porcionado_id, quantidade_consumida }) => {
-    // ...
-  }
-});
+┌───────────────────────────────────────────────────────────────────────────┐
+│  Mapear por Insumo                                                    [X] │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  Item Porcionado:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ CALABRESA - PORCIONADO                                         ▼   │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                           │
+│  Buscar produtos:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ 🔍 calabresa                                                        │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                           │
+│  Produtos encontrados (8):                             [✓ Selecionar Todos]│
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ ☑ Pizza Calabresa G          [Código: 3541758]        Qtd: [1]      │  │
+│  │ ☑ Pizza Calabresa M          [Código: 3541759]        Qtd: [1]      │  │
+│  │ ☑ Pizza Calabresa P          [Código: 3541760]        Qtd: [0.5]    │  │
+│  │ ☐ Brotinho Calabresa         [Código: 3541801]        Qtd: [1]      │  │
+│  │ ☑ Pizza Calabresa c/ Cebola  [Código: 3541812]        Qtd: [1]      │  │
+│  │ ...                                                                 │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                           │
+│  ℹ️ 5 produtos selecionados serão vinculados a CALABRESA - PORCIONADO     │
+│                                                                           │
+│                                    [Cancelar]  [Confirmar 5 Vínculos]      │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| **Novo:** `mapeamento_cardapio_categorias` | Criar tabela via migration |
-| `supabase/functions/cardapio-web-webhook/index.ts` | Buscar mapeamentos por categoria como fallback |
-| `src/hooks/useCardapioWebIntegracao.ts` | Adicionar queries/mutations para categorias |
-| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar aba "Regras por Categoria" |
+| **Novo:** `src/components/modals/MapearPorInsumoModal.tsx` | Modal principal do fluxo inverso |
+| `src/pages/ConfigurarCardapioWeb.tsx` | Adicionar botão "Mapear por Insumo" na aba Mapeamento |
+| `src/hooks/useCardapioWebIntegracao.ts` | Adicionar mutation `vincularPorInsumo` para batch insert |
+
+## Detalhes Técnicos
+
+### 1. Novo Modal: `MapearPorInsumoModal.tsx`
+
+**Props:**
+```typescript
+interface MapearPorInsumoModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  itensPorcionados: { id: string; nome: string }[];
+  produtosDisponiveis: MapeamentoCardapioItemAgrupado[]; // Produtos da loja
+  lojaId: string;
+  onConfirm: (data: {
+    item_porcionado_id: string;
+    produtos: Array<{
+      cardapio_item_id: number;
+      cardapio_item_nome: string;
+      tipo: string | null;
+      categoria: string | null;
+      quantidade_consumida: number;
+    }>;
+  }) => Promise<void>;
+  isLoading?: boolean;
+}
+```
+
+**Estado interno:**
+```typescript
+const [itemPorcionadoSelecionado, setItemPorcionadoSelecionado] = useState<string>('');
+const [termoBusca, setTermoBusca] = useState('');
+// Map: cardapio_item_id -> quantidade
+const [produtosSelecionados, setProdutosSelecionados] = useState<Map<number, number>>(new Map());
+```
+
+**Lógica de busca:**
+```typescript
+const produtosFiltrados = useMemo(() => {
+  if (!termoBusca.trim()) return [];
+  
+  const termo = termoBusca.toLowerCase().trim();
+  return produtosDisponiveis.filter(p => 
+    p.cardapio_item_nome.toLowerCase().includes(termo)
+  );
+}, [produtosDisponiveis, termoBusca]);
+```
+
+### 2. Mutation no Hook: `vincularPorInsumo`
+
+```typescript
+const vincularPorInsumo = useMutation({
+  mutationFn: async ({
+    loja_id,
+    item_porcionado_id,
+    produtos
+  }: {
+    loja_id: string;
+    item_porcionado_id: string;
+    produtos: Array<{
+      cardapio_item_id: number;
+      cardapio_item_nome: string;
+      tipo: string | null;
+      categoria: string | null;
+      quantidade_consumida: number;
+    }>;
+  }) => {
+    if (!organizationId) throw new Error('Organização não encontrada');
+    
+    // Para cada produto, verifica se já existe vínculo com este item porcionado
+    // Se não existir, cria novo registro
+    const inserts = produtos.map(p => ({
+      organization_id: organizationId,
+      loja_id,
+      cardapio_item_id: p.cardapio_item_id,
+      cardapio_item_nome: p.cardapio_item_nome,
+      tipo: p.tipo,
+      categoria: p.categoria,
+      item_porcionado_id,
+      quantidade_consumida: p.quantidade_consumida,
+      ativo: true
+    }));
+    
+    // Usa upsert para evitar duplicatas
+    const { data, error } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .upsert(inserts, {
+        onConflict: 'organization_id,loja_id,cardapio_item_id,item_porcionado_id',
+        ignoreDuplicates: false
+      })
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+  onSuccess: (data) => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    toast.success(`${data?.length || 0} produtos vinculados com sucesso!`);
+  }
+});
+```
+
+### 3. Botão na Interface
+
+Na aba "Mapeamento", adicionar botão ao lado dos existentes:
+
+```tsx
+<Button 
+  variant="outline" 
+  onClick={() => setMapearPorInsumoModalOpen(true)}
+  disabled={!lojaIdMapeamento || mapeamentosFiltrados.length === 0}
+>
+  <Link2 className="h-4 w-4 mr-2" />
+  Mapear por Insumo
+</Button>
+```
 
 ## Fluxo de Uso
 
-1. **Admin importa produtos do Cardápio Web** (CSV/Excel)
-2. **Admin cria regras por categoria:**
-   - Categoria "Pizzas" → MASSA (1x), MUSSARELA (1x)
-   - Categoria "Massas & Bordas" → BORDA (1x)
-3. **Pedido chega via webhook:**
-   - Pizza Calabresa (categoria: Pizzas)
-   - Sistema busca mapeamento específico → não encontra
-   - Sistema busca mapeamento por categoria → encontra "Pizzas"
-   - Baixa MASSA e MUSSARELA automaticamente
-
-## Benefícios
-
-1. **Menos trabalho manual**: Uma regra cobre dezenas de produtos
-2. **Manutenção simplificada**: Novo produto na categoria já herda as regras
-3. **Flexibilidade**: Ainda permite override específico por produto
-4. **Organização**: Separa regras gerais (categoria) de exceções (produto específico)
+1. **Admin importa produtos** do Cardápio Web (CSV) - já existente
+2. **Admin abre modal "Mapear por Insumo"**
+3. **Seleciona item porcionado** (ex: CALABRESA)
+4. **Digita termo de busca** (ex: "calabresa")
+5. **Sistema filtra produtos** que contêm o termo
+6. **Admin marca produtos desejados** e define quantidade para cada
+7. **Clica "Confirmar"** - sistema cria vínculos em batch
+8. **Repete** para outros insumos (MUSSARELA, PRESUNTO, etc.)
 
 ## Considerações
 
-- **Prioridade**: Mapeamento específico sempre prevalece sobre categoria
-- **Loja-específico**: Regras podem ser por loja ou globais (loja_id = NULL)
-- **Tipo**: Opcionalmente filtrar por tipo (PRODUTO vs OPÇÃO)
+**Validações:**
+- Mostrar aviso se produto já está vinculado ao item selecionado
+- Permitir sobrescrever quantidade se vínculo já existir
+
+**Performance:**
+- Busca local (já temos todos os produtos em memória)
+- Mínimo de 2 caracteres para iniciar busca
+- Limitar resultados a 50 itens para performance visual
+
+**UX:**
+- "Selecionar Todos" para marcar todos os resultados filtrados
+- Quantidade padrão = 1 (editável individualmente)
+- Mostrar badge indicando se produto já tem vínculo com outro insumo
