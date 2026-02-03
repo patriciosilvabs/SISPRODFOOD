@@ -487,31 +487,50 @@ Deno.serve(async (req) => {
     }
 
     // 6. Get mappings for this organization (specific items)
-    // IMPORTANTE: Usar .limit(10000) para garantir que todos os mapeamentos sejam retornados
-    // O Supabase tem limite padrão de 1000 registros, o que causava perda de vínculos
-    const { data: mapeamentos, error: mapError } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .select('*')
-      .eq('organization_id', organization_id)
-      .eq('ativo', true)
-      .limit(10000)
-
-    if (mapError) {
-      console.error('Erro ao buscar mapeamentos:', mapError)
-      throw new Error('Failed to fetch mappings')
+    // CORREÇÃO CRÍTICA: Usar paginação para buscar TODOS os mapeamentos
+    // O Supabase tem limite HARD de 1000 registros por query que não pode ser alterado via .limit()
+    // Precisamos fazer múltiplas queries com .range() para obter todos os registros
+    console.log(`🚀 WEBHOOK V4.0 - PAGINAÇÃO IMPLEMENTADA 🚀`)
+    
+    let allMapeamentos: MapeamentoItem[] = []
+    let offset = 0
+    const pageSize = 1000
+    let hasMore = true
+    
+    while (hasMore) {
+      const { data: pageMapeamentos, error: pageError } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .select('*')
+        .eq('organization_id', organization_id)
+        .eq('ativo', true)
+        .range(offset, offset + pageSize - 1)
+        .order('id')
+      
+      if (pageError) {
+        console.error(`Erro ao buscar mapeamentos (offset ${offset}):`, pageError)
+        throw new Error('Failed to fetch mappings')
+      }
+      
+      if (pageMapeamentos && pageMapeamentos.length > 0) {
+        allMapeamentos = allMapeamentos.concat(pageMapeamentos as MapeamentoItem[])
+        offset += pageSize
+        hasMore = pageMapeamentos.length === pageSize
+        console.log(`📄 Página carregada: ${pageMapeamentos.length} registros (total acumulado: ${allMapeamentos.length})`)
+      } else {
+        hasMore = false
+      }
     }
 
     // Create a map for quick lookup by item_id
     const mapeamentoMap = new Map<number, MapeamentoItem[]>()
-    for (const m of (mapeamentos || []) as MapeamentoItem[]) {
+    for (const m of allMapeamentos) {
       if (!mapeamentoMap.has(m.cardapio_item_id)) {
         mapeamentoMap.set(m.cardapio_item_id, [])
       }
       mapeamentoMap.get(m.cardapio_item_id)!.push(m)
     }
     
-    console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} produtos distintos, ${mapeamentos?.length || 0} registros totais`)
-    console.log(`🔧 Versão do webhook: v2.1 - limit(10000) aplicado`)
+    console.log(`✅ Mapeamentos carregados: ${mapeamentoMap.size} produtos distintos, ${allMapeamentos.length} registros totais (PAGINADO)`)
 
     // 6b. Get category mappings for fallback
     const { data: mapeamentosCategorias, error: catMapError } = await supabase
@@ -729,7 +748,7 @@ Deno.serve(async (req) => {
 
       // Process main item
       // Get categoria from the specific mapping if it exists (for main item)
-      const mainItemMapping = mapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === item.item_id)
+      const mainItemMapping = allMapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === item.item_id)
       const mainItemCategoria = mainItemMapping?.categoria || null
       
       const mainItemBaixados = await processItem(item.item_id, item.name, item.quantity, 'main', mainItemCategoria)
@@ -745,7 +764,7 @@ Deno.serve(async (req) => {
           
           if (optionId && !isNaN(optionId)) {
             // Get categoria from the specific mapping OR use option_group_name as categoria fallback
-            const optionMapping = mapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === optionId)
+            const optionMapping = allMapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === optionId)
             const optionCategoria = optionMapping?.categoria || option.option_group_name || null
             
             const optionBaixados = await processItem(
