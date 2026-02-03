@@ -487,11 +487,14 @@ Deno.serve(async (req) => {
     }
 
     // 6. Get mappings for this organization (specific items)
+    // IMPORTANTE: Usar .limit(10000) para garantir que todos os mapeamentos sejam retornados
+    // O Supabase tem limite padrão de 1000 registros, o que causava perda de vínculos
     const { data: mapeamentos, error: mapError } = await supabase
       .from('mapeamento_cardapio_itens')
       .select('*')
       .eq('organization_id', organization_id)
       .eq('ativo', true)
+      .limit(10000)
 
     if (mapError) {
       console.error('Erro ao buscar mapeamentos:', mapError)
@@ -506,6 +509,8 @@ Deno.serve(async (req) => {
       }
       mapeamentoMap.get(m.cardapio_item_id)!.push(m)
     }
+    
+    console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} produtos distintos, ${mapeamentos?.length || 0} registros totais`)
 
     // 6b. Get category mappings for fallback
     const { data: mapeamentosCategorias, error: catMapError } = await supabase
@@ -513,6 +518,7 @@ Deno.serve(async (req) => {
       .select('*')
       .eq('organization_id', organization_id)
       .eq('ativo', true)
+      .limit(10000)
 
     if (catMapError) {
       console.error('Erro ao buscar mapeamentos por categoria:', catMapError)
