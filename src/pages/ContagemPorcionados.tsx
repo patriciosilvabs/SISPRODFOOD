@@ -107,6 +107,7 @@ const ContagemPorcionados = () => {
   const [openLojas, setOpenLojas] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [editingValues, setEditingValues] = useState<Record<string, any>>({});
+  const editingValuesRef = useRef<Record<string, any>>(editingValues);
   const [originalValues, setOriginalValues] = useState<Record<string, any>>({});
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -157,6 +158,11 @@ const ContagemPorcionados = () => {
     }
   }, [user]);
 
+  // Manter ref sincronizado para evitar stale closure no realtime
+  useEffect(() => {
+    editingValuesRef.current = editingValues;
+  }, [editingValues]);
+
   // Realtime subscription para atualizações do Cardápio Web
   useEffect(() => {
     if (!organizationId) return;
@@ -180,15 +186,18 @@ const ContagemPorcionados = () => {
                                       updated.cardapio_web_ultima_baixa_qtd > 0 &&
                                       updated.usuario_nome === 'Cardápio Web';
           
+          // Usar ref para obter valor atual (evita stale closure)
+          const currentEditing = editingValuesRef.current;
+          
           // Se o usuário está editando E NÃO é baixa do Cardápio Web, ignorar
-          if (editingValues[key] && !isCardapioWebBaixa) {
+          if (currentEditing[key] && !isCardapioWebBaixa) {
             console.log(`🔒 Realtime: Item ${key} sendo editado, ignorando atualização remota`);
             return;
           }
           
           // Se é baixa do Cardápio Web E usuário está editando, aplicar decremento no editingValues
-          if (editingValues[key] && isCardapioWebBaixa) {
-            const sobraAtual = parseInt(editingValues[key].final_sobra || '0');
+          if (currentEditing[key] && isCardapioWebBaixa) {
+            const sobraAtual = parseInt(currentEditing[key].final_sobra || '0');
             const decremento = updated.cardapio_web_ultima_baixa_qtd || 0;
             const novaSobra = Math.max(0, sobraAtual - decremento);
             
