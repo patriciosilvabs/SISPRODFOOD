@@ -430,7 +430,7 @@ const ContagemPorcionados = () => {
     
     if (!current) return false;
     
-    const fields = ['final_sobra', 'peso_total_g'];
+    const fields = ['final_sobra'];
     for (const field of fields) {
       if (current[field] !== undefined) {
         const currentVal = normalizeValue(current[field]);
@@ -1188,7 +1188,6 @@ const ContagemPorcionados = () => {
                       const contagem = contagensLoja.find(c => c.item_porcionado_id === item.id);
                       const finalSobraRaw = getEditingValue(loja.id, item.id, 'final_sobra', contagem?.final_sobra ?? '');
                       const finalSobra = finalSobraRaw === '' ? 0 : Number(finalSobraRaw);
-                      const pesoTotal = getEditingValue(loja.id, item.id, 'peso_total_g', contagem?.peso_total_g ?? '');
                       
                       const estoqueKey = `${loja.id}-${item.id}`;
                       const estoqueSemanal = estoquesIdeaisMap[estoqueKey];
@@ -1215,7 +1214,6 @@ const ContagemPorcionados = () => {
                           item={item}
                           lojaNome={loja.nome}
                           finalSobra={finalSobra}
-                          pesoTotal={pesoTotal}
                           idealFromConfig={idealFromConfig}
                           aProduzir={aProduzir}
                           campoTocado={true}
@@ -1228,7 +1226,6 @@ const ContagemPorcionados = () => {
                           onIncrementSobra={() => handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra + 1))}
                           onDecrementSobra={() => finalSobra > 0 && handleValueChange(loja.id, item.id, 'final_sobra', String(finalSobra - 1))}
                           onSobraChange={(val) => handleSobraChange(loja.id, item.id, val)}
-                          onPesoChange={(val) => handleValueChange(loja.id, item.id, 'peso_total_g', val)}
                           currentDayLabel={diasSemanaLabels[currentDay]}
                           showProducaoExtra={isAdminUser}
                           onSolicitarProducaoExtra={() => handleOpenProducaoExtra(loja.id, item)}
