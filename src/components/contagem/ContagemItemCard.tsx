@@ -125,9 +125,9 @@ export const ContagemItemCard = ({
       </div>
 
       {/* Grid de Colunas Fixas */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1 lg:ml-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-6 flex-1 lg:ml-6">
         {/* SOBRA */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center w-[120px]">
           <span className="text-[10px] text-primary uppercase tracking-wide font-medium mb-1">
             SOBRA
           </span>
@@ -169,7 +169,7 @@ export const ContagemItemCard = ({
         </div>
 
         {/* EST. IDEAL */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center w-[120px]">
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">
             EST. IDEAL
           </span>
@@ -190,7 +190,7 @@ export const ContagemItemCard = ({
         </div>
 
         {/* C. WEB - sempre visível */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center w-[120px]">
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1 flex items-center gap-1">
             <Smartphone className="h-3 w-3" />
             C. WEB
@@ -211,7 +211,7 @@ export const ContagemItemCard = ({
         </div>
 
         {/* PRODUZIR */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center w-[120px]">
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">
             PRODUZIR
           </span>
@@ -226,7 +226,7 @@ export const ContagemItemCard = ({
 
         {/* LOTES - condicional para itens lote_masseira */}
         {isLoteMasseira && (
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center w-[120px]">
             <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1 flex items-center gap-1">
               <Layers className="h-3 w-3" />
               LOTES
