@@ -689,6 +689,62 @@ export function useCardapioWebIntegracao() {
     }
   });
 
+  // Mutation: Bulk link one item porcionado to multiple products (inverse mapping)
+  const vincularPorInsumo = useMutation({
+    mutationFn: async ({
+      loja_id,
+      item_porcionado_id,
+      produtos
+    }: {
+      loja_id: string;
+      item_porcionado_id: string;
+      produtos: Array<{
+        cardapio_item_id: number;
+        cardapio_item_nome: string;
+        tipo: string | null;
+        categoria: string | null;
+        quantidade_consumida: number;
+      }>;
+    }) => {
+      if (!organizationId) throw new Error('Organização não encontrada');
+      
+      // Build inserts for each product
+      const inserts = produtos.map(p => ({
+        organization_id: organizationId,
+        loja_id,
+        cardapio_item_id: p.cardapio_item_id,
+        cardapio_item_nome: p.cardapio_item_nome,
+        tipo: p.tipo,
+        categoria: p.categoria,
+        item_porcionado_id,
+        quantidade_consumida: p.quantidade_consumida,
+        ativo: true
+      }));
+      
+      // Use insert - duplicates will fail due to unique constraint
+      // We could use upsert but we want to show an error if already linked
+      const { data, error } = await supabase
+        .from('mapeamento_cardapio_itens')
+        .insert(inserts)
+        .select();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+      toast.success(`${data?.length || 0} produtos vinculados com sucesso!`);
+    },
+    onError: (error: Error) => {
+      console.error('Erro ao vincular por insumo:', error);
+      if (error.message?.includes('unique') || error.message?.includes('duplicate')) {
+        toast.error('Alguns produtos já estão vinculados a este item');
+      } else {
+        toast.error('Erro ao vincular produtos');
+      }
+    }
+  });
+
   // Mutation: Delete ALL mappings for a specific loja
   const deleteAllMapeamentos = useMutation({
     mutationFn: async (lojaId: string) => {
@@ -745,6 +801,7 @@ export function useCardapioWebIntegracao() {
     importarMapeamentos,
     vincularItemPorcionado,
     vincularEmLote,
+    vincularPorInsumo,
     adicionarVinculo,
     
     // Utils
