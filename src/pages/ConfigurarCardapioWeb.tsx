@@ -97,37 +97,15 @@ function MapeamentoTableRow({
       <TableCell>
         <div className="space-y-1">
           {produto.vinculos.length === 0 || (produto.vinculos.length === 1 && !produto.vinculos[0].item_porcionado_id) ? (
-            <Select
-              value=""
-              onValueChange={(v) => {
-                // Se já existe um registro sem vínculo, atualiza ele
-                if (produto.vinculos[0]?.id) {
-                  onVincularItem(produto.vinculos[0].id, v);
-                } else if (lojaIdMapeamento) {
-                  // Caso contrário, cria um novo vínculo
-                  onAdicionarVinculo({
-                    loja_id: lojaIdMapeamento,
-                    cardapio_item_id: produto.cardapio_item_id,
-                    cardapio_item_nome: produto.cardapio_item_nome,
-                    tipo: produto.tipo,
-                    categoria: produto.categoria,
-                    item_porcionado_id: v,
-                    quantidade_consumida: 1,
-                  });
-                }
-              }}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-dashed border-primary/50 w-full justify-start"
+              onClick={() => onAbrirModalVinculo(produto)}
             >
-              <SelectTrigger className="h-8 border-dashed border-primary/50">
-                <SelectValue placeholder="Vincular item..." />
-              </SelectTrigger>
-              <SelectContent>
-                {itensPorcionados.map(item => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Vincular itens...
+            </Button>
           ) : (
             <div className="space-y-1">
               {produto.vinculos.filter(v => v.item_porcionado_id).map((vinculo) => (
