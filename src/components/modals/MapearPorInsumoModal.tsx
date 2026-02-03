@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Link2, Search, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import { type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
@@ -48,7 +48,7 @@ export function MapearPorInsumoModal({
   // Multi-selection of portioned items
   const [itensPorcionadosSelecionados, setItensPorcionadosSelecionados] = useState<Set<string>>(new Set());
   const [termoBusca, setTermoBusca] = useState('');
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<Set<string>>(new Set());
   // Map: cardapio_item_id -> quantidade
   const [produtosSelecionados, setProdutosSelecionados] = useState<Map<number, ProdutoSelecionado>>(new Map());
 
@@ -63,11 +63,24 @@ export function MapearPorInsumoModal({
     return Array.from(categorias).sort();
   }, [produtosDisponiveis]);
 
-  // Produtos da categoria selecionada (não vinculados)
-  const produtosDaCategoria = useMemo(() => {
-    if (!categoriaSelecionada) return [];
-    return produtosDisponiveis.filter(p => p.categoria === categoriaSelecionada);
-  }, [produtosDisponiveis, categoriaSelecionada]);
+  // Produtos das categorias selecionadas
+  const produtosDasCategorias = useMemo(() => {
+    if (categoriasSelecionadas.size === 0) return [];
+    return produtosDisponiveis.filter(p => p.categoria && categoriasSelecionadas.has(p.categoria));
+  }, [produtosDisponiveis, categoriasSelecionadas]);
+
+  // Toggle categoria selection
+  const toggleCategoria = (categoria: string, checked: boolean | 'indeterminate') => {
+    setCategoriasSelecionadas(prev => {
+      const novo = new Set(prev);
+      if (checked === true) {
+        novo.add(categoria);
+      } else {
+        novo.delete(categoria);
+      }
+      return novo;
+    });
+  };
 
   // Filter products by search term (minimum 2 characters)
   const produtosFiltrados = useMemo(() => {
@@ -161,12 +174,12 @@ export function MapearPorInsumoModal({
     setProdutosSelecionados(new Map());
   };
 
-  // Seleciona produtos da categoria selecionada
-  const selecionarPorCategoria = () => {
-    if (!categoriaSelecionada) return;
+  // Seleciona produtos das categorias selecionadas
+  const selecionarPorCategorias = () => {
+    if (categoriasSelecionadas.size === 0) return;
     
     const novaSeleção = new Map(produtosSelecionados);
-    produtosDaCategoria
+    produtosDasCategorias
       .filter(p => !produtoJaVinculado(p))
       .forEach(p => {
         novaSeleção.set(p.cardapio_item_id, {
@@ -228,7 +241,7 @@ export function MapearPorInsumoModal({
     setItensPorcionadosSelecionados(new Set());
     setTermoBusca('');
     setProdutosSelecionados(new Map());
-    setCategoriaSelecionada('');
+    setCategoriasSelecionadas(new Set());
   };
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -236,7 +249,7 @@ export function MapearPorInsumoModal({
       setItensPorcionadosSelecionados(new Set());
       setTermoBusca('');
       setProdutosSelecionados(new Map());
-      setCategoriaSelecionada('');
+      setCategoriasSelecionadas(new Set());
     }
     onOpenChange(newOpen);
   };
@@ -299,22 +312,43 @@ export function MapearPorInsumoModal({
                 <span className="text-muted-foreground"> produtos disponíveis</span>
               </div>
               
-              {/* Seletor de categoria */}
+              {/* Lista de categorias com checkboxes */}
               {categoriasDisponiveis.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm shrink-0">Categoria:</Label>
-                  <Select value={categoriaSelecionada} onValueChange={setCategoriaSelecionada}>
-                    <SelectTrigger className="flex-1 h-8">
-                      <SelectValue placeholder="Selecione uma categoria..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categoriasDisponiveis.map(cat => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat} ({produtosDisponiveis.filter(p => p.categoria === cat && !produtoJaVinculado(p)).length})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Categorias</Label>
+                    {categoriasSelecionadas.size > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {categoriasSelecionadas.size} selecionada(s)
+                      </Badge>
+                    )}
+                  </div>
+                  <ScrollArea className="h-[120px] border rounded-md bg-background">
+                    <div className="p-2 space-y-1">
+                      {categoriasDisponiveis.map(cat => {
+                        const qtdDisponiveis = produtosDisponiveis.filter(
+                          p => p.categoria === cat && !produtoJaVinculado(p)
+                        ).length;
+                        return (
+                          <div 
+                            key={cat}
+                            className={`flex items-center gap-3 p-2 rounded cursor-pointer transition-colors hover:bg-muted/50 ${
+                              categoriasSelecionadas.has(cat) ? 'bg-primary/10' : ''
+                            }`}
+                            onClick={() => toggleCategoria(cat, !categoriasSelecionadas.has(cat))}
+                          >
+                            <Checkbox
+                              checked={categoriasSelecionadas.has(cat)}
+                              onCheckedChange={(checked) => toggleCategoria(cat, checked)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <span className="text-sm flex-1">{cat}</span>
+                            <Badge variant="secondary" className="text-xs">{qtdDisponiveis}</Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
                 </div>
               )}
               
@@ -332,15 +366,15 @@ export function MapearPorInsumoModal({
                   </Button>
                 )}
                 
-                {categoriaSelecionada && (
+                {categoriasSelecionadas.size > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={selecionarPorCategoria}
+                    onClick={selecionarPorCategorias}
                     className="h-8"
                   >
                     <CheckSquare className="h-4 w-4 mr-1.5" />
-                    Selecionar Categoria ({produtosDaCategoria.filter(p => !produtoJaVinculado(p)).length})
+                    Selecionar Categorias ({produtosDasCategorias.filter(p => !produtoJaVinculado(p)).length})
                   </Button>
                 )}
                 
