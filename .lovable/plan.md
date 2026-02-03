@@ -1,127 +1,103 @@
 
-
-# Plano: Remover Coluna Peso e Adicionar Coluna Estoque Ideal
+# Plano: Reorganizar Layout em Colunas Fixas com Headers
 
 ## Objetivo
 
-Na página "Contagem de Porcionados", remover o campo "Peso" (que não é mais necessário) e adicionar em seu lugar a coluna **"Estoque Ideal do Dia"** que já existe mas só é exibida para admins com detalhes ativados.
+Reorganizar o `ContagemItemCard` para seguir um layout tabular com colunas fixas e nomes de coluna visíveis, conforme a imagem de referência:
 
-## Mudanças Necessárias
+```text
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│  UNIDADE ALEIXO          SOBRA      EST. IDEAL    C. WEB    PRODUZIR    LOTES      │
+│  ✓ MASSA - PORCIONADO     250          250         100        150         4        │
+│  Atualizado: 03/02 11:39                                                           │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Mudanças no Código
 
 ### Arquivo: `src/components/contagem/ContagemItemCard.tsx`
 
-#### 1. Remover campo de Peso
+#### Nova Estrutura do Layout
 
-Remover completamente o bloco do campo "Peso":
 ```tsx
-{/* Campo de Peso - SERÁ REMOVIDO */}
-<div className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 bg-background min-w-[120px]">
-  <span className="text-xs text-muted-foreground font-medium">Peso</span>
-  <WeightInputInline ... />
-  <span className="text-xs text-muted-foreground">g</span>
-</div>
-```
-
-#### 2. Remover props relacionadas a peso
-
-- Remover `pesoTotal` das props
-- Remover `onPesoChange` das props
-- Remover import do `WeightInputInline`
-
-#### 3. Exibir "Estoque Ideal" sempre (não apenas para admin)
-
-Atualmente, a coluna "Ideal" só aparece quando `showAdminCols` é `true`:
-```tsx
-{showAdminCols && (
-  <div className="flex flex-col items-center...">
-    <span>Ideal ({currentDayLabel})</span>
-    ...
+<div className="...">
+  {/* Área do Nome (lado esquerdo) */}
+  <div className="flex-shrink-0 min-w-[200px]">
+    <p className="text-xs text-primary font-medium">{lojaNome}</p>
+    <div className="flex items-center gap-2">
+      {campoTocado && <CheckCircle className="h-4 w-4 text-success" />}
+      <span className="font-semibold text-sm uppercase">{item.nome}</span>
+    </div>
+    <p className="text-xs text-muted-foreground">Atualizado: ...</p>
   </div>
-)}
-```
 
-Alterar para aparecer **sempre**, sem a condição `showAdminCols`:
-```tsx
-{/* Estoque Ideal do Dia - SEMPRE VISÍVEL */}
-<div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ...">
-  <span className="text-[10px] text-gray-500 uppercase tracking-wide">
-    Ideal ({currentDayLabel})
-  </span>
-  {idealFromConfig === 0 ? (
-    <span className="text-xs flex items-center gap-0.5">
-      <AlertTriangle className="h-3 w-3" />
-      N/C
-    </span>
-  ) : (
-    <span className="text-base font-bold text-gray-900">{idealFromConfig}</span>
-  )}
+  {/* Grid de Colunas Fixas */}
+  <div className="grid grid-cols-5 gap-2 flex-1">
+    {/* SOBRA */}
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] text-gray-500 uppercase font-medium mb-1">SOBRA</span>
+      <div className="flex items-center">
+        <Button>-</Button>
+        <input value={finalSobra} />
+        <Button>+</Button>
+      </div>
+    </div>
+
+    {/* EST. IDEAL */}
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] text-gray-500 uppercase font-medium mb-1">EST. IDEAL</span>
+      <div className="bg-gray-100 rounded-lg px-4 py-2 min-w-[80px] text-center">
+        <span className="text-lg font-bold">{idealFromConfig}</span>
+      </div>
+    </div>
+
+    {/* C. WEB */}
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] text-gray-500 uppercase font-medium mb-1">C. WEB</span>
+      <div className="bg-gray-100 rounded-lg px-4 py-2 min-w-[80px] text-center">
+        <span className="text-lg font-bold">{cardapioWebBaixaTotal || 0}</span>
+      </div>
+    </div>
+
+    {/* PRODUZIR */}
+    <div className="flex flex-col items-center">
+      <span className="text-[10px] text-gray-500 uppercase font-medium mb-1">PRODUZIR</span>
+      <div className="bg-gray-100 rounded-lg px-4 py-2 min-w-[80px] text-center">
+        <span className="text-lg font-bold">{aProduzir}</span>
+      </div>
+    </div>
+
+    {/* LOTES (condicional) */}
+    {isLoteMasseira && (
+      <div className="flex flex-col items-center">
+        <span className="text-[10px] text-gray-500 uppercase font-medium mb-1">LOTES</span>
+        <div className="bg-gray-100 rounded-lg px-4 py-2 min-w-[80px] text-center">
+          <span className="text-lg font-bold">{lotesNecessarios}</span>
+        </div>
+      </div>
+    )}
+  </div>
 </div>
 ```
 
-### Arquivo: `src/pages/ContagemPorcionados.tsx`
+## Características do Novo Layout
 
-#### 4. Remover chamadas relacionadas ao peso
+| Coluna | Descrição | Estilo |
+|--------|-----------|--------|
+| **SOBRA** | Controle com botões +/- | Interativo (botões azuis) |
+| **EST. IDEAL** | Estoque ideal do dia | Fundo cinza, somente leitura |
+| **C. WEB** | Baixas do Cardápio Web | Fundo cinza, sempre visível (0 se não houver) |
+| **PRODUZIR** | Quantidade a produzir | Fundo cinza (laranja se > 0) |
+| **LOTES** | Lotes necessários | Só aparece para itens `lote_masseira` |
 
-Onde o `ContagemItemCard` é renderizado, remover:
-- `pesoTotal={pesoTotal}`
-- `onPesoChange={(val) => handleValueChange(...)}`
+## Pontos Principais
 
-### Interface atualizada do `ContagemItemCardProps`
+1. **Grid com colunas fixas**: Usar CSS Grid com `grid-cols-5` para alinhamento consistente
+2. **Headers sempre visíveis**: Cada coluna terá seu nome acima do valor
+3. **C. WEB sempre visível**: Mostrar 0 quando não houver baixas (não esconder a coluna)
+4. **Estilo uniforme**: Caixas com fundo cinza claro para valores somente leitura
+5. **Responsividade**: Em mobile, stack vertical; em desktop, layout horizontal
 
-```typescript
-interface ContagemItemCardProps {
-  item: { id: string; nome: string; peso_unitario_g: number; };
-  lojaNome?: string;
-  finalSobra: number;
-  // pesoTotal: string | number;  // REMOVIDO
-  idealFromConfig: number;
-  aProduzir: number;
-  campoTocado: boolean;
-  isDirty: boolean;
-  isItemNaoPreenchido: boolean;
-  sessaoAtiva: boolean;
-  isAdmin: boolean;
-  showAdminCols: boolean;
-  lastUpdate?: string;
-  onIncrementSobra: () => void;
-  onDecrementSobra: () => void;
-  onSobraChange: (value: number) => void;
-  // onPesoChange: (value: string) => void;  // REMOVIDO
-  currentDayLabel: string;
-  ...
-}
-```
+## Arquivo Modificado
 
-## Layout Resultante
-
-**Antes:**
-```
-[Nome Item] [- 150 +] [Peso: 0 g] [Ideal] [A Produzir] [Extra]
-                          ↑
-                      REMOVER
-```
-
-**Depois:**
-```
-[Nome Item] [- 150 +] [Ideal (Seg): 200] [A Produzir: 50] [Extra]
-                            ↑
-                    SEMPRE VISÍVEL
-```
-
-## Arquivos Modificados
-
-1. **`src/components/contagem/ContagemItemCard.tsx`**
-   - Remover import `WeightInputInline`
-   - Remover props `pesoTotal` e `onPesoChange`
-   - Remover bloco de UI do campo de peso
-   - Remover condição `showAdminCols` da coluna "Ideal"
-
-2. **`src/pages/ContagemPorcionados.tsx`**
-   - Remover `pesoTotal` e `onPesoChange` da chamada do componente
-
-## Benefícios
-
-- Interface mais limpa sem campo de peso não utilizado
-- Usuários comuns vêem o estoque ideal do dia, não apenas admins
-- Melhor visibilidade do objetivo diário
-
+- `src/components/contagem/ContagemItemCard.tsx`
