@@ -511,6 +511,7 @@ Deno.serve(async (req) => {
     }
     
     console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} produtos distintos, ${mapeamentos?.length || 0} registros totais`)
+    console.log(`🔧 Versão do webhook: v2.1 - limit(10000) aplicado`)
 
     // 6b. Get category mappings for fallback
     const { data: mapeamentosCategorias, error: catMapError } = await supabase
