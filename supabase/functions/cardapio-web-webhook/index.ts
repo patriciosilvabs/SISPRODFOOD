@@ -633,6 +633,13 @@ Deno.serve(async (req) => {
         return []
       }
 
+      // DEBUG V4.1: Log detalhado de TODOS os mapeamentos encontrados para este item
+      console.log(`🔍 [DEBUG V4.1] Item ${itemId} (${itemName}): encontrados ${mappings.length} mapeamentos`)
+      for (let i = 0; i < mappings.length; i++) {
+        const m = mappings[i]
+        console.log(`   → Mapeamento[${i}]: item_porcionado_id=${m.item_porcionado_id || 'NULL'}, qtd=${m.quantidade_consumida}`)
+      }
+
       const itensBaixados: { item_porcionado_id: string; quantidade_baixada: number }[] = []
 
       for (const mapping of mappings) {
