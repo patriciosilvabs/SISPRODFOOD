@@ -1,192 +1,121 @@
 
+# Plano: Botão "Remover Todos os Vínculos por Categoria"
 
-# Plano: Multi-Seleção de Categorias no Modal "Mapear por Insumo"
+## Objetivo
 
-## Problema Atual
+Adicionar um botão de exclusão em cada grupo de categoria para remover todos os mapeamentos daquela categoria específica, sem afetar outras categorias.
 
-O seletor de categorias usa um `<Select>` dropdown simples que permite selecionar apenas **uma categoria por vez**:
-- Para selecionar produtos de PIZZAS + LANCHES + ESFIHAS, precisa repetir 3x
+## Mudanças Necessárias
 
-## Solução Proposta
+### 1. Hook `useCardapioWebIntegracao.ts`
 
-Substituir o `<Select>` por uma **lista com checkboxes** (igual aos itens porcionados), permitindo:
-- Marcar **múltiplas categorias** de uma vez
-- Selecionar produtos de todas as categorias marcadas com um único botão
+Criar nova mutation `deleteVinculosByCategoria`:
+
+```typescript
+// Mutation: Delete all mappings by category for a specific store
+const deleteVinculosByCategoria = useMutation({
+  mutationFn: async ({ lojaId, categoria }: { lojaId: string; categoria: string }) => {
+    if (!organizationId) throw new Error('Organização não encontrada');
+    
+    const { error } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('loja_id', lojaId)
+      .eq('categoria', categoria);
+    
+    if (error) throw error;
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    toast.success('Vínculos da categoria removidos');
+  },
+  onError: (error) => {
+    console.error('Erro ao remover vínculos:', error);
+    toast.error('Erro ao remover vínculos da categoria');
+  }
+});
+```
+
+### 2. Página `ConfigurarCardapioWeb.tsx`
+
+Adicionar botão no header de cada grupo colapsável (apenas no modo "Por Categoria"):
 
 ```text
-┌───────────────────────────────────────────────────────────────────────────┐
-│  337 produtos disponíveis                                                 │
-│                                                                           │
-│  Categorias:                                       2 selecionada(s)       │
-│  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │ ☑ Pizzas (120)                                                     │  │
-│  │ ☑ Lanches (45)                                                     │  │
-│  │ ☐ Bebidas (30)                                                     │  │
-│  │ ☐ Combos (72)                                                      │  │
-│  │ ☐ Sobremesas (15)                                                  │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                           │
-│     [Limpar Seleção]    [Selecionar Categorias (165)]    [Selecionar Todos]│
-└───────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ▼  Combo: Pizza G + Refri - Massas & Bordas    7 produtos    [🗑️ Remover]  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  Tipo     │ Produto                │ Código   │ Itens Vinculados           │
+│  OPÇÃO    │ # Borda de Catupiry    │ 3543765  │ ✓ MASSA  ✓ MUSSARELA       │
+│  OPÇÃO    │ # Borda de Cheddar     │ 3543763  │ ✓ MASSA  ✓ MUSSARELA       │
+│  ...                                                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Mudanças no Código
+O botão terá:
+- Ícone de lixeira (`Trash2`)
+- Confirmação via `AlertDialog` antes de excluir
+- Exibição da contagem de produtos que serão afetados
+- Desabilitado enquanto a exclusão estiver em andamento
 
-**Arquivo:** `src/components/modals/MapearPorInsumoModal.tsx`
-
-### 1. Alterar estado para Set de múltiplas categorias
-
-```typescript
-// Antes: string única
-const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
-
-// Depois: Set de múltiplas categorias
-const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<Set<string>>(new Set());
-```
-
-### 2. Atualizar filtro de produtos por categorias
-
-```typescript
-// Antes: filtrava por uma categoria
-const produtosDaCategoria = useMemo(() => {
-  if (!categoriaSelecionada) return [];
-  return produtosDisponiveis.filter(p => p.categoria === categoriaSelecionada);
-}, [produtosDisponiveis, categoriaSelecionada]);
-
-// Depois: filtra por múltiplas categorias
-const produtosDasCategorias = useMemo(() => {
-  if (categoriasSelecionadas.size === 0) return [];
-  return produtosDisponiveis.filter(p => 
-    p.categoria && categoriasSelecionadas.has(p.categoria)
-  );
-}, [produtosDisponiveis, categoriasSelecionadas]);
-```
-
-### 3. Função toggle para categorias
-
-```typescript
-const toggleCategoria = (categoria: string, checked: boolean | 'indeterminate') => {
-  setCategoriasSelecionadas(prev => {
-    const novo = new Set(prev);
-    if (checked === true) {
-      novo.add(categoria);
-    } else {
-      novo.delete(categoria);
-    }
-    return novo;
-  });
-};
-```
-
-### 4. Substituir Select por lista com checkboxes
+### Layout do Botão
 
 ```tsx
-{/* Lista de categorias com checkboxes */}
-{categoriasDisponiveis.length > 0 && (
-  <div className="space-y-2">
-    <div className="flex items-center justify-between">
-      <Label className="text-sm">Categorias</Label>
-      {categoriasSelecionadas.size > 0 && (
-        <Badge variant="outline" className="text-xs">
-          {categoriasSelecionadas.size} selecionada(s)
-        </Badge>
-      )}
-    </div>
-    <ScrollArea className="h-[120px] border rounded-md">
-      <div className="p-2 space-y-1">
-        {categoriasDisponiveis.map(cat => {
-          const qtdDisponiveis = produtosDisponiveis.filter(
-            p => p.categoria === cat && !produtoJaVinculado(p)
-          ).length;
-          return (
-            <div 
-              key={cat}
-              className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-muted/50 ${
-                categoriasSelecionadas.has(cat) ? 'bg-primary/10' : ''
-              }`}
-              onClick={() => toggleCategoria(cat, !categoriasSelecionadas.has(cat))}
-            >
-              <Checkbox
-                checked={categoriasSelecionadas.has(cat)}
-                onCheckedChange={(checked) => toggleCategoria(cat, checked)}
-                onClick={(e) => e.stopPropagation()}
-              />
-              <span className="text-sm flex-1">{cat}</span>
-              <Badge variant="secondary" className="text-xs">{qtdDisponiveis}</Badge>
-            </div>
-          );
-        })}
-      </div>
-    </ScrollArea>
-  </div>
+{modoVisualizacao === 'categoria' && (
+  <AlertDialog>
+    <AlertDialogTrigger asChild>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Trash2 className="h-3.5 w-3.5 mr-1" />
+        Remover
+      </Button>
+    </AlertDialogTrigger>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Remover todos os vínculos desta categoria?</AlertDialogTitle>
+        <AlertDialogDescription>
+          Esta ação irá remover <strong>X produtos</strong> da categoria 
+          "<strong>Nome da Categoria</strong>" e seus vínculos.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+        <AlertDialogAction onClick={...} className="bg-destructive">
+          Confirmar Exclusão
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 )}
 ```
 
-### 5. Atualizar botão de selecionar categorias
+## Arquivos Modificados
 
-```tsx
-{categoriasSelecionadas.size > 0 && (
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={selecionarPorCategorias}
-    className="h-8"
-  >
-    <CheckSquare className="h-4 w-4 mr-1.5" />
-    Selecionar Categorias ({produtosDasCategorias.filter(p => !produtoJaVinculado(p)).length})
-  </Button>
-)}
-```
+1. **`src/hooks/useCardapioWebIntegracao.ts`**
+   - Adicionar mutation `deleteVinculosByCategoria`
+   - Exportar a nova mutation no retorno do hook
 
-### 6. Atualizar função de seleção por categorias
+2. **`src/pages/ConfigurarCardapioWeb.tsx`**
+   - Importar `deleteVinculosByCategoria` do hook
+   - Adicionar botão com `AlertDialog` no header do grupo colapsável
+   - Passar `lojaIdMapeamento` e `grupoNome` (categoria) para a mutation
 
-```typescript
-const selecionarPorCategorias = () => {
-  if (categoriasSelecionadas.size === 0) return;
-  
-  const novaSeleção = new Map(produtosSelecionados);
-  produtosDasCategorias
-    .filter(p => !produtoJaVinculado(p))
-    .forEach(p => {
-      novaSeleção.set(p.cardapio_item_id, {
-        cardapio_item_id: p.cardapio_item_id,
-        cardapio_item_nome: p.cardapio_item_nome,
-        tipo: p.tipo,
-        categoria: p.categoria,
-        quantidade_consumida: 1,
-      });
-    });
-  setProdutosSelecionados(novaSeleção);
-};
-```
+## Fluxo de Uso
 
-### 7. Atualizar reset ao fechar modal
+1. Usuário visualiza mapeamentos no modo "Por Categoria"
+2. Localiza a categoria que deseja limpar (ex: "Combo: Pizza G + Refri")
+3. Clica no botão "Remover" no header do grupo
+4. Confirmação aparece mostrando quantos produtos serão removidos
+5. Ao confirmar, todos os mapeamentos daquela categoria são deletados
+6. Lista é atualizada automaticamente
 
-```typescript
-const handleOpenChange = (newOpen: boolean) => {
-  if (!newOpen) {
-    setItensPorcionadosSelecionados(new Set());
-    setTermoBusca('');
-    setProdutosSelecionados(new Map());
-    setCategoriasSelecionadas(new Set()); // Reset múltiplas categorias
-  }
-  onOpenChange(newOpen);
-};
-```
+## Considerações
 
-## Fluxo de Uso Atualizado
-
-1. Usuário seleciona itens porcionados: MASSA ☑, MUSSARELA ☑
-2. Vê lista de categorias com checkboxes
-3. Marca: PIZZAS ☑ (120), LANCHES ☑ (45), COMBOS ☑ (72)
-4. Clica **"Selecionar Categorias (237)"**
-5. 237 produtos são selecionados
-6. Clica **"Confirmar 474 Vínculos"** (2 itens × 237 produtos)
-
-## Benefícios
-
-- **Consistência**: Interface igual aos itens porcionados (checkboxes)
-- **Eficiência**: Selecionar múltiplas categorias de uma vez
-- **Visibilidade**: Ver quantos produtos cada categoria tem
-- **Flexibilidade**: Combinar categorias antes de confirmar
-
+- Botão aparece **apenas** no modo de visualização "Por Categoria"
+- No modo "Por Tipo" não faz sentido, pois tipos são mais genéricos (PRODUTO, OPÇÃO)
+- A exclusão é por `categoria` (string exata no banco)
+- Afeta apenas a loja selecionada
