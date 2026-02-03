@@ -23,6 +23,7 @@ import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
 import { VincularEmLoteModal } from '@/components/modals/VincularEmLoteModal';
+import { MapearPorInsumoModal } from '@/components/modals/MapearPorInsumoModal';
 import { LojaIntegracaoCard } from '@/components/cardapio-web/LojaIntegracaoCard';
 import { CategoriaRegraTab } from '@/components/cardapio-web/CategoriaRegraTab';
 
@@ -210,6 +211,7 @@ export default function ConfigurarCardapioWeb() {
     importarMapeamentos,
     vincularItemPorcionado,
     vincularEmLote,
+    vincularPorInsumo,
     adicionarVinculo,
     testarConexao,
   } = useCardapioWebIntegracao();
@@ -223,6 +225,7 @@ export default function ConfigurarCardapioWeb() {
   const [modoSelecao, setModoSelecao] = useState(false);
   const [produtosSelecionados, setProdutosSelecionados] = useState<Set<number>>(new Set());
   const [vinculoEmLoteModalOpen, setVinculoEmLoteModalOpen] = useState(false);
+  const [mapearPorInsumoModalOpen, setMapearPorInsumoModalOpen] = useState(false);
   const [gruposExpandidos, setGruposExpandidos] = useState<Set<string>>(new Set());
   const [novoMapeamento, setNovoMapeamento] = useState({
     cardapio_item_id: '',
@@ -449,6 +452,28 @@ export default function ConfigurarCardapioWeb() {
     setVinculoEmLoteModalOpen(false);
   };
 
+  // Handle inverse mapping (insumo -> produtos)
+  const handleMapearPorInsumo = async (data: {
+    item_porcionado_id: string;
+    produtos: Array<{
+      cardapio_item_id: number;
+      cardapio_item_nome: string;
+      tipo: string | null;
+      categoria: string | null;
+      quantidade_consumida: number;
+    }>;
+  }) => {
+    if (!lojaIdMapeamento) return;
+    
+    await vincularPorInsumo.mutateAsync({
+      loja_id: lojaIdMapeamento,
+      item_porcionado_id: data.item_porcionado_id,
+      produtos: data.produtos,
+    });
+    
+    setMapearPorInsumoModalOpen(false);
+  };
+
   // Clear selection when changing loja or visualization mode
   useEffect(() => {
     setProdutosSelecionados(new Set());
@@ -645,6 +670,14 @@ export default function ConfigurarCardapioWeb() {
                       </AlertDialogContent>
                     </AlertDialog>
                   )}
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setMapearPorInsumoModalOpen(true)} 
+                    disabled={!lojaIdMapeamento || mapeamentosFiltrados.length === 0}
+                  >
+                    <Link2 className="h-4 w-4 mr-2" />
+                    Mapear por Insumo
+                  </Button>
                   <Button variant="outline" onClick={() => setImportarModalOpen(true)} disabled={!lojaIdMapeamento}>
                     <Upload className="h-4 w-4 mr-2" />
                     Importar Arquivo
@@ -1001,6 +1034,17 @@ export default function ConfigurarCardapioWeb() {
           itensPorcionados={itensPorcionados || []}
           onConfirm={handleVincularEmLote}
           isLoading={vincularEmLote.isPending}
+        />
+
+        {/* Modal de mapear por insumo */}
+        <MapearPorInsumoModal
+          open={mapearPorInsumoModalOpen}
+          onOpenChange={setMapearPorInsumoModalOpen}
+          itensPorcionados={itensPorcionados || []}
+          produtosDisponiveis={mapeamentosFiltrados}
+          lojaId={lojaIdMapeamento}
+          onConfirm={handleMapearPorInsumo}
+          isLoading={vincularPorInsumo.isPending}
         />
 
         {/* Barra de ações fixa quando há itens selecionados */}
