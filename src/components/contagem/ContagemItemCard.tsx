@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { WeightInputInline } from '@/components/ui/weight-input';
 import { 
   Plus, Minus, CheckCircle, AlertTriangle, TrendingUp, Layers, Smartphone 
 } from 'lucide-react';
@@ -14,7 +13,6 @@ interface ContagemItemCardProps {
   };
   lojaNome?: string;
   finalSobra: number;
-  pesoTotal: string | number;
   idealFromConfig: number;
   aProduzir: number;
   campoTocado: boolean;
@@ -27,7 +25,6 @@ interface ContagemItemCardProps {
   onIncrementSobra: () => void;
   onDecrementSobra: () => void;
   onSobraChange: (value: number) => void;
-  onPesoChange: (value: string) => void;
   currentDayLabel: string;
   // Novas props para produção extra
   showProducaoExtra?: boolean;
@@ -45,7 +42,6 @@ export const ContagemItemCard = ({
   item,
   lojaNome,
   finalSobra,
-  pesoTotal,
   idealFromConfig,
   aProduzir,
   campoTocado,
@@ -58,7 +54,6 @@ export const ContagemItemCard = ({
   onIncrementSobra,
   onDecrementSobra,
   onSobraChange,
-  onPesoChange,
   currentDayLabel,
   showProducaoExtra = false,
   onSolicitarProducaoExtra,
@@ -174,37 +169,24 @@ export const ContagemItemCard = ({
           </div>
         </div>
 
-        {/* Campo de Peso */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 bg-background min-w-[120px]">
-          <span className="text-xs text-muted-foreground font-medium">Peso</span>
-          <WeightInputInline
-            value={String(pesoTotal ?? '')}
-            onChange={onPesoChange}
-            placeholder="0"
-          />
-          <span className="text-xs text-muted-foreground">g</span>
-        </div>
-
-        {/* Coluna Ideal - apenas para admin com detalhes */}
-        {showAdminCols && (
-          <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
-            idealFromConfig === 0 
-              ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
-              : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-          }`}>
-            <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-              Ideal ({currentDayLabel})
+        {/* Coluna Ideal - sempre visível */}
+        <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
+          idealFromConfig === 0 
+            ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
+            : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+        }`}>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Ideal ({currentDayLabel})
+          </span>
+          {idealFromConfig === 0 ? (
+            <span className="text-xs flex items-center gap-0.5">
+              <AlertTriangle className="h-3 w-3" />
+              N/C
             </span>
-            {idealFromConfig === 0 ? (
-              <span className="text-xs flex items-center gap-0.5">
-                <AlertTriangle className="h-3 w-3" />
-                N/C
-              </span>
-            ) : (
-              <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
-            )}
-          </div>
-        )}
+          ) : (
+            <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
+          )}
+        </div>
 
         {/* Coluna Cardápio Web - mostra baixas automáticas */}
         {cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0 && (
