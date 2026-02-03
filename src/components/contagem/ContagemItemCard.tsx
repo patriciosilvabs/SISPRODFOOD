@@ -125,7 +125,7 @@ export const ContagemItemCard = ({
       </div>
 
       {/* Grid de Colunas Fixas */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1 lg:ml-6">
         {/* SOBRA */}
         <div className="flex flex-col items-center">
           <span className="text-[10px] text-primary uppercase tracking-wide font-medium mb-1">
