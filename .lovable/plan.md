@@ -1,139 +1,121 @@
 
-# Plano: Importação Aditiva (Não Sobrescreve Mapeamentos)
+# Plano: Corrigir Limite de 1000 Registros no Webhook do Cardápio Web
 
 ## Problema Identificado
 
-A função `importarMapeamentos` no hook `useCardapioWebIntegracao.ts` (linhas 496-504) está **deletando todos os mapeamentos não vinculados** antes de inserir novos:
+O webhook do Cardápio Web não está processando todos os vínculos de um produto porque a **query de mapeamentos está limitada a 1000 registros** (limite padrão do Supabase).
+
+### Evidência do Bug
+
+Mapeamentos para o produto "MILHO VERDE (G)" (código 3543853):
+
+| Posição na Query | Item Porcionado | Status |
+|-----------------|-----------------|--------|
+| 647 | NULL (sem vínculo) | ✅ Incluído |
+| 810 | MASSA - PORCIONADO | ✅ Incluído |
+| **1052** | **MUSSARELA - PORCIONADO** | ❌ **EXCLUÍDO** (além do limite 1000) |
+
+A organização tem **1264 mapeamentos ativos**, mas a query só retorna os primeiros 1000.
+
+### Código Problemático
 
 ```typescript
-// ATUAL - Deleta tudo antes de inserir
-const { error: deleteError } = await supabase
+// supabase/functions/cardapio-web-webhook/index.ts (linhas 490-494)
+const { data: mapeamentos, error: mapError } = await supabase
   .from('mapeamento_cardapio_itens')
-  .delete()
-  .eq('organization_id', organizationId)
-  .eq('loja_id', loja_id)
-  .is('item_porcionado_id', null);
+  .select('*')
+  .eq('organization_id', organization_id)
+  .eq('ativo', true)
+  // ❌ NÃO TEM .limit() - usa default de 1000
 ```
-
-Isso causa a **perda** de todos os produtos previamente importados que ainda não foram vinculados.
 
 ## Solução
 
-Mudar a estratégia de **delete + insert** para **upsert aditivo**:
+Adicionar `.limit(10000)` na query para garantir que todos os mapeamentos sejam retornados. Também aplicar a mesma correção na query de mapeamentos por categoria.
 
-1. Buscar os códigos de produtos que já existem no mapeamento para a loja
-2. Filtrar os itens de importação para incluir apenas os **novos** (que não existem)
-3. Inserir apenas os novos itens, mantendo os existentes intactos
-4. Opcionalmente, atualizar informações (tipo, categoria, nome) dos itens existentes
+## Detalhes Técnicos
+
+### Arquivo: `supabase/functions/cardapio-web-webhook/index.ts`
+
+#### Mudança 1: Query de mapeamentos específicos (linha 490-494)
+
+```typescript
+// ANTES
+const { data: mapeamentos, error: mapError } = await supabase
+  .from('mapeamento_cardapio_itens')
+  .select('*')
+  .eq('organization_id', organization_id)
+  .eq('ativo', true)
+
+// DEPOIS
+const { data: mapeamentos, error: mapError } = await supabase
+  .from('mapeamento_cardapio_itens')
+  .select('*')
+  .eq('organization_id', organization_id)
+  .eq('ativo', true)
+  .limit(10000) // Garantir que todos os mapeamentos sejam retornados
+```
+
+#### Mudança 2: Query de mapeamentos por categoria (linha 511-515)
+
+```typescript
+// ANTES
+const { data: mapeamentosCategorias, error: catMapError } = await supabase
+  .from('mapeamento_cardapio_categorias')
+  .select('*')
+  .eq('organization_id', organization_id)
+  .eq('ativo', true)
+
+// DEPOIS
+const { data: mapeamentosCategorias, error: catMapError } = await supabase
+  .from('mapeamento_cardapio_categorias')
+  .select('*')
+  .eq('organization_id', organization_id)
+  .eq('ativo', true)
+  .limit(10000) // Garantir que todas as regras de categoria sejam retornadas
+```
+
+#### Mudança 3: Adicionar log para diagnóstico (opcional, recomendado)
+
+Após a construção do Map, adicionar contagem total:
+
+```typescript
+console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} produtos, ${mapeamentos?.length || 0} registros totais`)
+```
 
 ## Fluxo Corrigido
 
 ```text
-ANTES (sobrescreve):
-1. Delete todos não vinculados
-2. Insert novos
-→ Resultado: Perde itens anteriores
+ANTES (bug):
+1. Query retorna apenas 1000 registros
+2. MUSSARELA (posição 1052) não é incluída
+3. Loop processa apenas MASSA
+4. Estoque da MUSSARELA não é decrementado ❌
 
-DEPOIS (adiciona):
-1. Busca códigos existentes na loja
-2. Filtra novos itens (que não existem)
-3. Insert apenas os novos
-4. (Opcional) Atualiza nome/tipo/categoria dos existentes
-→ Resultado: Mantém itens anteriores + adiciona novos
-```
-
-## Detalhes Técnicos
-
-### Arquivo: `src/hooks/useCardapioWebIntegracao.ts`
-
-**Linhas 483-535 - Alterar função `importarMapeamentos`:**
-
-```typescript
-const importarMapeamentos = useMutation({
-  mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
-    if (!organizationId) throw new Error('Organização não encontrada');
-    
-    // Step 1: Deduplicate items by codigo_interno
-    const itemsUnicos = new Map<number, ImportarMapeamentoItem>();
-    for (const item of items) {
-      itemsUnicos.set(item.codigo_interno, item);
-    }
-    const itemsDeduplicados = Array.from(itemsUnicos.values());
-    
-    // Step 2: Buscar códigos que JÁ existem no mapeamento para esta loja
-    const { data: existentes, error: queryError } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .select('cardapio_item_id')
-      .eq('organization_id', organizationId)
-      .eq('loja_id', loja_id);
-    
-    if (queryError) throw queryError;
-    
-    const codigosExistentes = new Set(existentes?.map(e => e.cardapio_item_id) || []);
-    
-    // Step 3: Filtrar apenas os itens NOVOS (que não existem)
-    const itensNovos = itemsDeduplicados.filter(
-      item => !codigosExistentes.has(item.codigo_interno)
-    );
-    
-    // Se não há itens novos, retornar early
-    if (itensNovos.length === 0) {
-      return { inseridos: 0, jaExistiam: itemsDeduplicados.length };
-    }
-    
-    // Step 4: Insert apenas os novos itens
-    const mappings = itensNovos.map(item => ({
-      organization_id: organizationId,
-      loja_id,
-      cardapio_item_id: item.codigo_interno,
-      cardapio_item_nome: item.nome,
-      tipo: item.tipo,
-      categoria: item.categoria,
-      item_porcionado_id: null,
-      quantidade_consumida: 1,
-      ativo: true,
-    }));
-
-    const { data, error } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .insert(mappings)
-      .select();
-    
-    if (error) throw error;
-    
-    return { 
-      inseridos: data.length, 
-      jaExistiam: itemsDeduplicados.length - itensNovos.length 
-    };
-  },
-  onSuccess: (result) => {
-    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-    
-    if (result.inseridos === 0) {
-      toast.info(`Todos os ${result.jaExistiam} itens já existiam no mapeamento`);
-    } else if (result.jaExistiam > 0) {
-      toast.success(`${result.inseridos} novos itens adicionados! (${result.jaExistiam} já existiam)`);
-    } else {
-      toast.success(`${result.inseridos} itens importados com sucesso!`);
-    }
-  },
-  onError: (error) => {
-    console.error('Erro ao importar mapeamentos:', error);
-    toast.error('Erro ao importar mapeamentos');
-  }
-});
+DEPOIS (correto):
+1. Query retorna todos os registros (até 10000)
+2. MUSSARELA é incluída no Map
+3. Loop processa MASSA + MUSSARELA
+4. Ambos os estoques são decrementados ✅
 ```
 
 ## Resultado Esperado
 
-| Cenário | Antes | Depois |
-|---------|-------|--------|
-| Importar 100 itens (50 novos) | Perde todos anteriores, fica com 100 | Mantém anteriores + 50 novos |
-| Re-importar mesma lista | Deleta e recria (perde ordem) | Ignora existentes, mantém tudo |
-| Importar de outra fonte | Substitui tudo | Adiciona os que faltam |
+Quando uma venda de "MILHO VERDE (G)" ocorrer:
 
-## Feedback ao Usuário
+| Item Porcionado | Antes | Depois |
+|-----------------|-------|--------|
+| MASSA - PORCIONADO | -1 | -1 ✅ |
+| MUSSARELA - PORCIONADO | 0 (não decrementava) | -1 ✅ |
 
-- **Todos novos:** "25 itens importados com sucesso!"
-- **Alguns novos:** "15 novos itens adicionados! (10 já existiam)"
-- **Nenhum novo:** "Todos os 25 itens já existiam no mapeamento"
+## Arquivos a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/cardapio-web-webhook/index.ts` | Adicionar `.limit(10000)` nas queries de mapeamentos |
+
+## Considerações
+
+- O limite de 10000 é suficiente para a maioria das organizações
+- Se necessário no futuro, implementar paginação para organizações muito grandes
+- A correção é retrocompatível e não afeta mapeamentos existentes
