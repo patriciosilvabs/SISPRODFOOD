@@ -105,7 +105,7 @@ export const ContagemItemCard = ({
                   ${getCardClasses()}`}
     >
       {/* Área do Nome (lado esquerdo) */}
-      <div className="flex-shrink-0 lg:min-w-[200px] lg:max-w-[250px]">
+      <div className="flex-shrink-0 lg:w-[280px]">
         {lojaNome && (
           <p className="text-xs text-primary font-medium mb-0.5">{lojaNome}</p>
         )}
