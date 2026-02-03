@@ -1,143 +1,139 @@
 
-# Plano: Adicionar Produtos ao Mapeamento via Texto Simples
+# Plano: Importação Aditiva (Não Sobrescreve Mapeamentos)
 
-## Objetivo
+## Problema Identificado
 
-Criar uma funcionalidade que permite ao usuário colar texto simples (como uma lista de produtos) diretamente em um textarea, e o sistema irá extrair e adicionar os produtos ao mapeamento do Cardápio Web.
+A função `importarMapeamentos` no hook `useCardapioWebIntegracao.ts` (linhas 496-504) está **deletando todos os mapeamentos não vinculados** antes de inserir novos:
 
-## Cenário de Uso
+```typescript
+// ATUAL - Deleta tudo antes de inserir
+const { error: deleteError } = await supabase
+  .from('mapeamento_cardapio_itens')
+  .delete()
+  .eq('organization_id', organizationId)
+  .eq('loja_id', loja_id)
+  .is('item_porcionado_id', null);
+```
 
-O usuário quer adicionar rapidamente uma lista de produtos do cardápio sem precisar usar arquivo Excel ou CSV. Basta copiar/colar de qualquer fonte (planilha, documento, site) e o sistema interpreta automaticamente.
+Isso causa a **perda** de todos os produtos previamente importados que ainda não foram vinculados.
 
-## Arquitetura da Solução
+## Solução
 
-### 1. Novo Modal: `ImportarTextoCardapioModal.tsx`
+Mudar a estratégia de **delete + insert** para **upsert aditivo**:
 
-Interface simples com:
-- **Textarea** grande para colar o texto
-- **Lógica de parsing** que detecta automaticamente o formato:
-  - Linhas separadas por quebra de linha
-  - Colunas separadas por tab, ponto-e-vírgula ou vírgula
-  - Suporte a formato: `TIPO | CATEGORIA | NOME | CÓDIGO`
-  - Suporte a formato simples: `NOME | CÓDIGO`
-- **Preview** dos itens detectados antes de importar
-- **Contador** de itens válidos encontrados
+1. Buscar os códigos de produtos que já existem no mapeamento para a loja
+2. Filtrar os itens de importação para incluir apenas os **novos** (que não existem)
+3. Inserir apenas os novos itens, mantendo os existentes intactos
+4. Opcionalmente, atualizar informações (tipo, categoria, nome) dos itens existentes
 
-### 2. Integração na Página `ConfigurarCardapioWeb.tsx`
-
-Adicionar um novo botão "Colar Texto" ao lado do botão "Importar Arquivo" na aba de Mapeamento.
-
-## Fluxo do Usuário
+## Fluxo Corrigido
 
 ```text
-1. Usuário clica em "Colar Texto"
-2. Modal abre com textarea vazio
-3. Usuário cola texto (ex: copiado do Cardápio Web ou planilha)
-4. Sistema detecta automaticamente formato e extrai produtos
-5. Preview mostra itens encontrados
-6. Usuário confirma → Produtos são adicionados ao mapeamento
-```
+ANTES (sobrescreve):
+1. Delete todos não vinculados
+2. Insert novos
+→ Resultado: Perde itens anteriores
 
-## Formatos Suportados
-
-O parser será flexível e detectará automaticamente:
-
-**Formato Completo (4 colunas):**
-```
-PRODUTO	PIZZAS	Pizza de Calabresa	12345
-PRODUTO	PIZZAS	Pizza Mussarela	12346
-```
-
-**Formato Simples (2 colunas):**
-```
-Pizza de Calabresa	12345
-Pizza Mussarela	12346
-```
-
-**Formato Apenas Nome:**
-```
-Pizza de Calabresa - 12345
-Pizza Mussarela (12346)
+DEPOIS (adiciona):
+1. Busca códigos existentes na loja
+2. Filtra novos itens (que não existem)
+3. Insert apenas os novos
+4. (Opcional) Atualiza nome/tipo/categoria dos existentes
+→ Resultado: Mantém itens anteriores + adiciona novos
 ```
 
 ## Detalhes Técnicos
 
-### Arquivo: `src/components/modals/ImportarTextoCardapioModal.tsx`
+### Arquivo: `src/hooks/useCardapioWebIntegracao.ts`
 
-```tsx
-interface ImportarTextoCardapioModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onImport: (items: ParsedCardapioItem[]) => Promise<void>;
-  isLoading?: boolean;
-}
+**Linhas 483-535 - Alterar função `importarMapeamentos`:**
 
-// Funções de parsing:
-// - detectDelimiter(): detecta tab, ponto-e-vírgula ou vírgula
-// - parseTextoSimples(): extrai produtos do texto colado
-// - extrairCodigoDoNome(): tenta extrair código do nome (ex: "Pizza 12345" → código=12345)
+```typescript
+const importarMapeamentos = useMutation({
+  mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
+    if (!organizationId) throw new Error('Organização não encontrada');
+    
+    // Step 1: Deduplicate items by codigo_interno
+    const itemsUnicos = new Map<number, ImportarMapeamentoItem>();
+    for (const item of items) {
+      itemsUnicos.set(item.codigo_interno, item);
+    }
+    const itemsDeduplicados = Array.from(itemsUnicos.values());
+    
+    // Step 2: Buscar códigos que JÁ existem no mapeamento para esta loja
+    const { data: existentes, error: queryError } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .select('cardapio_item_id')
+      .eq('organization_id', organizationId)
+      .eq('loja_id', loja_id);
+    
+    if (queryError) throw queryError;
+    
+    const codigosExistentes = new Set(existentes?.map(e => e.cardapio_item_id) || []);
+    
+    // Step 3: Filtrar apenas os itens NOVOS (que não existem)
+    const itensNovos = itemsDeduplicados.filter(
+      item => !codigosExistentes.has(item.codigo_interno)
+    );
+    
+    // Se não há itens novos, retornar early
+    if (itensNovos.length === 0) {
+      return { inseridos: 0, jaExistiam: itemsDeduplicados.length };
+    }
+    
+    // Step 4: Insert apenas os novos itens
+    const mappings = itensNovos.map(item => ({
+      organization_id: organizationId,
+      loja_id,
+      cardapio_item_id: item.codigo_interno,
+      cardapio_item_nome: item.nome,
+      tipo: item.tipo,
+      categoria: item.categoria,
+      item_porcionado_id: null,
+      quantidade_consumida: 1,
+      ativo: true,
+    }));
+
+    const { data, error } = await supabase
+      .from('mapeamento_cardapio_itens')
+      .insert(mappings)
+      .select();
+    
+    if (error) throw error;
+    
+    return { 
+      inseridos: data.length, 
+      jaExistiam: itemsDeduplicados.length - itensNovos.length 
+    };
+  },
+  onSuccess: (result) => {
+    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
+    
+    if (result.inseridos === 0) {
+      toast.info(`Todos os ${result.jaExistiam} itens já existiam no mapeamento`);
+    } else if (result.jaExistiam > 0) {
+      toast.success(`${result.inseridos} novos itens adicionados! (${result.jaExistiam} já existiam)`);
+    } else {
+      toast.success(`${result.inseridos} itens importados com sucesso!`);
+    }
+  },
+  onError: (error) => {
+    console.error('Erro ao importar mapeamentos:', error);
+    toast.error('Erro ao importar mapeamentos');
+  }
+});
 ```
-
-### Arquivo: `src/pages/ConfigurarCardapioWeb.tsx`
-
-Adicionar:
-- Estado: `importarTextoModalOpen`
-- Botão na toolbar: "Colar Texto" com ícone `ClipboardPaste`
-- Importar e renderizar o novo modal
-
-### Reutilização
-
-O modal usará a mesma função `importarMapeamentos` do hook `useCardapioWebIntegracao.ts`, que já:
-- Remove duplicatas
-- Faz deduplicação por código
-- Adiciona os itens sem vínculo para vincular depois
-
-## UI do Modal
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  📋 Importar via Texto                                   [X]│
-├─────────────────────────────────────────────────────────────┤
-│  Cole o texto com os produtos do cardápio abaixo:           │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                                                     │   │
-│  │  (textarea para colar texto)                        │   │
-│  │                                                     │   │
-│  │                                                     │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  💡 Dica: Copie do Cardápio Web ou planilha                │
-│     Formatos aceitos: Nome + Código separados por tab,      │
-│     vírgula ou ponto-e-vírgula                              │
-│                                                             │
-│  ───────────────────────────────────────────────────────── │
-│                                                             │
-│  ✅ 25 itens encontrados                                    │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ TIPO    │ CATEGORIA │ NOME            │ CÓDIGO     │   │
-│  │ PRODUTO │ PIZZAS    │ Pizza Calabresa │ 12345      │   │
-│  │ PRODUTO │ PIZZAS    │ Pizza Mussarela │ 12346      │   │
-│  │ ...     │ ...       │ ...             │ ...        │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│                          [Cancelar]  [Importar 25 itens]    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação |
-|---------|------|
-| `src/components/modals/ImportarTextoCardapioModal.tsx` | **CRIAR** |
-| `src/pages/ConfigurarCardapioWeb.tsx` | **MODIFICAR** (adicionar botão e estado) |
 
 ## Resultado Esperado
 
-- Usuário pode colar texto simples de qualquer fonte
-- Sistema detecta automaticamente formato e extrai produtos
-- Preview mostra itens antes de importar
-- Importação usa mesma lógica do arquivo (deduplicação automática)
-- Itens são adicionados sem vínculo, prontos para vincular depois
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| Importar 100 itens (50 novos) | Perde todos anteriores, fica com 100 | Mantém anteriores + 50 novos |
+| Re-importar mesma lista | Deleta e recria (perde ordem) | Ignora existentes, mantém tudo |
+| Importar de outra fonte | Substitui tudo | Adiciona os que faltam |
+
+## Feedback ao Usuário
+
+- **Todos novos:** "25 itens importados com sucesso!"
+- **Alguns novos:** "15 novos itens adicionados! (10 já existiam)"
+- **Nenhum novo:** "Todos os 25 itens já existiam no mapeamento"
