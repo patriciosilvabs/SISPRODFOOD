@@ -1,46 +1,48 @@
 
+# Plano: Uniformizar Espaçamento Entre Colunas
 
-# Plano: Corrigir Alinhamento das Colunas
+## Problema Identificado
 
-## Problema
+As colunas têm larguras diferentes:
+- **SOBRA**: ~118px (2 botões de 40px + input de 56px)
+- **EST. IDEAL, C. WEB, PRODUZIR, LOTES**: min-w-[70px] (podem variar)
 
-Nomes de itens com tamanhos diferentes (ex: "CALABRESA - PORCIONADO" vs "MASSA - PORCIONADO") estão causando desalinhamento das colunas, pois a área do nome não tem uma largura fixa suficiente.
+O CSS Grid com `gap-3` distribui o espaço restante de forma desigual quando as colunas têm tamanhos diferentes.
 
 ## Solução
 
-Definir uma largura fixa maior para a área do nome do item, garantindo que:
-1. Todos os nomes ocupem o mesmo espaço horizontal
-2. Nomes longos sejam truncados com reticências (...)
-3. As colunas fiquem perfeitamente alinhadas
+Definir largura fixa para todas as colunas, garantindo que:
+1. Cada coluna ocupe exatamente o mesmo espaço
+2. O espaçamento entre elas seja uniforme
 
-## Mudança
+### Mudanças no Arquivo: `src/components/contagem/ContagemItemCard.tsx`
 
-### Arquivo: `src/components/contagem/ContagemItemCard.tsx`
-
-**Linha 105** - Alterar a área do nome para ter largura fixa:
-
+**1. Aumentar o gap entre colunas** (linha 128):
 ```tsx
 // ANTES
-<div className="flex-shrink-0 lg:min-w-[200px] lg:max-w-[250px]">
+<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1 lg:ml-6">
 
 // DEPOIS
-<div className="flex-shrink-0 lg:w-[280px]">
+<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-6 flex-1 lg:ml-6">
 ```
 
-Isso define uma largura fixa de `280px` para a área do nome em telas grandes, garantindo que:
-- Todos os cards tenham a mesma largura para o nome
-- As colunas (SOBRA, EST. IDEAL, etc.) iniciem sempre na mesma posição
-- Nomes longos sejam truncados (já existe `truncate` no span do nome)
+**2. Definir largura fixa para cada coluna** - adicionar `w-[120px]` em cada div de coluna:
+
+- Linha 130: `<div className="flex flex-col items-center w-[120px]">` (SOBRA)
+- Linha 172: `<div className="flex flex-col items-center w-[120px]">` (EST. IDEAL)
+- Linha 193: `<div className="flex flex-col items-center w-[120px]">` (C. WEB)
+- Linha 214: `<div className="flex flex-col items-center w-[120px]">` (PRODUZIR)
+- Linha 229: `<div className="flex flex-col items-center w-[120px]">` (LOTES)
 
 ## Resultado Esperado
 
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────┐
-│  BACON - PORCIONADO       │  SOBRA  │  EST. IDEAL  │  C. WEB  │  PRODUZIR  │       │
-│  CALABRESA - PORCIONADO   │  SOBRA  │  EST. IDEAL  │  C. WEB  │  PRODUZIR  │       │
-│  MUSSARELA - PORCIONADO   │  SOBRA  │  EST. IDEAL  │  C. WEB  │  PRODUZIR  │       │
-└────────────────────────────────────────────────────────────────────────────────────┘
-                            ↑
-                     Colunas alinhadas
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│  BACON - PORCIONADO    │   SOBRA   │  EST. IDEAL  │   C. WEB   │  PRODUZIR  │  LOTES   │
+│                        │←── 24px ──→←── 24px ────→←── 24px ───→←── 24px ───→│          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+                         ↑           ↑              ↑            ↑
+                              Espaçamento uniforme de 24px (gap-6)
 ```
 
+Todas as colunas terão 120px de largura e 24px de espaçamento entre elas.
