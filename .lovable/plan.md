@@ -1,121 +1,127 @@
 
-# Plano: Botão "Remover Todos os Vínculos por Categoria"
+
+# Plano: Remover Coluna Peso e Adicionar Coluna Estoque Ideal
 
 ## Objetivo
 
-Adicionar um botão de exclusão em cada grupo de categoria para remover todos os mapeamentos daquela categoria específica, sem afetar outras categorias.
+Na página "Contagem de Porcionados", remover o campo "Peso" (que não é mais necessário) e adicionar em seu lugar a coluna **"Estoque Ideal do Dia"** que já existe mas só é exibida para admins com detalhes ativados.
 
 ## Mudanças Necessárias
 
-### 1. Hook `useCardapioWebIntegracao.ts`
+### Arquivo: `src/components/contagem/ContagemItemCard.tsx`
 
-Criar nova mutation `deleteVinculosByCategoria`:
+#### 1. Remover campo de Peso
+
+Remover completamente o bloco do campo "Peso":
+```tsx
+{/* Campo de Peso - SERÁ REMOVIDO */}
+<div className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 bg-background min-w-[120px]">
+  <span className="text-xs text-muted-foreground font-medium">Peso</span>
+  <WeightInputInline ... />
+  <span className="text-xs text-muted-foreground">g</span>
+</div>
+```
+
+#### 2. Remover props relacionadas a peso
+
+- Remover `pesoTotal` das props
+- Remover `onPesoChange` das props
+- Remover import do `WeightInputInline`
+
+#### 3. Exibir "Estoque Ideal" sempre (não apenas para admin)
+
+Atualmente, a coluna "Ideal" só aparece quando `showAdminCols` é `true`:
+```tsx
+{showAdminCols && (
+  <div className="flex flex-col items-center...">
+    <span>Ideal ({currentDayLabel})</span>
+    ...
+  </div>
+)}
+```
+
+Alterar para aparecer **sempre**, sem a condição `showAdminCols`:
+```tsx
+{/* Estoque Ideal do Dia - SEMPRE VISÍVEL */}
+<div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ...">
+  <span className="text-[10px] text-gray-500 uppercase tracking-wide">
+    Ideal ({currentDayLabel})
+  </span>
+  {idealFromConfig === 0 ? (
+    <span className="text-xs flex items-center gap-0.5">
+      <AlertTriangle className="h-3 w-3" />
+      N/C
+    </span>
+  ) : (
+    <span className="text-base font-bold text-gray-900">{idealFromConfig}</span>
+  )}
+</div>
+```
+
+### Arquivo: `src/pages/ContagemPorcionados.tsx`
+
+#### 4. Remover chamadas relacionadas ao peso
+
+Onde o `ContagemItemCard` é renderizado, remover:
+- `pesoTotal={pesoTotal}`
+- `onPesoChange={(val) => handleValueChange(...)}`
+
+### Interface atualizada do `ContagemItemCardProps`
 
 ```typescript
-// Mutation: Delete all mappings by category for a specific store
-const deleteVinculosByCategoria = useMutation({
-  mutationFn: async ({ lojaId, categoria }: { lojaId: string; categoria: string }) => {
-    if (!organizationId) throw new Error('Organização não encontrada');
-    
-    const { error } = await supabase
-      .from('mapeamento_cardapio_itens')
-      .delete()
-      .eq('organization_id', organizationId)
-      .eq('loja_id', lojaId)
-      .eq('categoria', categoria);
-    
-    if (error) throw error;
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-    toast.success('Vínculos da categoria removidos');
-  },
-  onError: (error) => {
-    console.error('Erro ao remover vínculos:', error);
-    toast.error('Erro ao remover vínculos da categoria');
-  }
-});
+interface ContagemItemCardProps {
+  item: { id: string; nome: string; peso_unitario_g: number; };
+  lojaNome?: string;
+  finalSobra: number;
+  // pesoTotal: string | number;  // REMOVIDO
+  idealFromConfig: number;
+  aProduzir: number;
+  campoTocado: boolean;
+  isDirty: boolean;
+  isItemNaoPreenchido: boolean;
+  sessaoAtiva: boolean;
+  isAdmin: boolean;
+  showAdminCols: boolean;
+  lastUpdate?: string;
+  onIncrementSobra: () => void;
+  onDecrementSobra: () => void;
+  onSobraChange: (value: number) => void;
+  // onPesoChange: (value: string) => void;  // REMOVIDO
+  currentDayLabel: string;
+  ...
+}
 ```
 
-### 2. Página `ConfigurarCardapioWeb.tsx`
+## Layout Resultante
 
-Adicionar botão no header de cada grupo colapsável (apenas no modo "Por Categoria"):
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ ▼  Combo: Pizza G + Refri - Massas & Bordas    7 produtos    [🗑️ Remover]  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Tipo     │ Produto                │ Código   │ Itens Vinculados           │
-│  OPÇÃO    │ # Borda de Catupiry    │ 3543765  │ ✓ MASSA  ✓ MUSSARELA       │
-│  OPÇÃO    │ # Borda de Cheddar     │ 3543763  │ ✓ MASSA  ✓ MUSSARELA       │
-│  ...                                                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+**Antes:**
+```
+[Nome Item] [- 150 +] [Peso: 0 g] [Ideal] [A Produzir] [Extra]
+                          ↑
+                      REMOVER
 ```
 
-O botão terá:
-- Ícone de lixeira (`Trash2`)
-- Confirmação via `AlertDialog` antes de excluir
-- Exibição da contagem de produtos que serão afetados
-- Desabilitado enquanto a exclusão estiver em andamento
-
-### Layout do Botão
-
-```tsx
-{modoVisualizacao === 'categoria' && (
-  <AlertDialog>
-    <AlertDialogTrigger asChild>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Trash2 className="h-3.5 w-3.5 mr-1" />
-        Remover
-      </Button>
-    </AlertDialogTrigger>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>Remover todos os vínculos desta categoria?</AlertDialogTitle>
-        <AlertDialogDescription>
-          Esta ação irá remover <strong>X produtos</strong> da categoria 
-          "<strong>Nome da Categoria</strong>" e seus vínculos.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-        <AlertDialogAction onClick={...} className="bg-destructive">
-          Confirmar Exclusão
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-)}
+**Depois:**
+```
+[Nome Item] [- 150 +] [Ideal (Seg): 200] [A Produzir: 50] [Extra]
+                            ↑
+                    SEMPRE VISÍVEL
 ```
 
 ## Arquivos Modificados
 
-1. **`src/hooks/useCardapioWebIntegracao.ts`**
-   - Adicionar mutation `deleteVinculosByCategoria`
-   - Exportar a nova mutation no retorno do hook
+1. **`src/components/contagem/ContagemItemCard.tsx`**
+   - Remover import `WeightInputInline`
+   - Remover props `pesoTotal` e `onPesoChange`
+   - Remover bloco de UI do campo de peso
+   - Remover condição `showAdminCols` da coluna "Ideal"
 
-2. **`src/pages/ConfigurarCardapioWeb.tsx`**
-   - Importar `deleteVinculosByCategoria` do hook
-   - Adicionar botão com `AlertDialog` no header do grupo colapsável
-   - Passar `lojaIdMapeamento` e `grupoNome` (categoria) para a mutation
+2. **`src/pages/ContagemPorcionados.tsx`**
+   - Remover `pesoTotal` e `onPesoChange` da chamada do componente
 
-## Fluxo de Uso
+## Benefícios
 
-1. Usuário visualiza mapeamentos no modo "Por Categoria"
-2. Localiza a categoria que deseja limpar (ex: "Combo: Pizza G + Refri")
-3. Clica no botão "Remover" no header do grupo
-4. Confirmação aparece mostrando quantos produtos serão removidos
-5. Ao confirmar, todos os mapeamentos daquela categoria são deletados
-6. Lista é atualizada automaticamente
+- Interface mais limpa sem campo de peso não utilizado
+- Usuários comuns vêem o estoque ideal do dia, não apenas admins
+- Melhor visibilidade do objetivo diário
 
-## Considerações
-
-- Botão aparece **apenas** no modo de visualização "Por Categoria"
-- No modo "Por Tipo" não faz sentido, pois tipos são mais genéricos (PRODUTO, OPÇÃO)
-- A exclusão é por `categoria` (string exata no banco)
-- Afeta apenas a loja selecionada
