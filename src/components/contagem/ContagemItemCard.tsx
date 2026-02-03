@@ -195,19 +195,19 @@ export const ContagemItemCard = ({
             <Smartphone className="h-3 w-3" />
             C. WEB
           </span>
-          <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center border ${
-            cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0
-              ? 'bg-violet-100 dark:bg-violet-900/50 border-violet-300 dark:border-violet-700'
-              : 'bg-muted border-border'
+        <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center border ${
+          cardapioWebUltimaBaixaQtd && cardapioWebUltimaBaixaQtd > 0
+            ? 'bg-violet-100 dark:bg-violet-900/50 border-violet-300 dark:border-violet-700'
+            : 'bg-muted border-border'
+        }`}>
+          <span className={`text-lg font-bold ${
+            cardapioWebUltimaBaixaQtd && cardapioWebUltimaBaixaQtd > 0
+              ? 'text-violet-700 dark:text-violet-300'
+              : 'text-muted-foreground'
           }`}>
-            <span className={`text-lg font-bold ${
-              cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0
-                ? 'text-violet-700 dark:text-violet-300'
-                : 'text-muted-foreground'
-            }`}>
-              {cardapioWebBaixaTotal || 0}
-            </span>
-          </div>
+            {cardapioWebUltimaBaixaQtd || 0}
+          </span>
+        </div>
         </div>
 
         {/* PRODUZIR */}
