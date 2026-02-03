@@ -47,8 +47,26 @@ export function MapearPorInsumoModal({
 }: MapearPorInsumoModalProps) {
   const [itemPorcionadoSelecionado, setItemPorcionadoSelecionado] = useState<string>('');
   const [termoBusca, setTermoBusca] = useState('');
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
   // Map: cardapio_item_id -> quantidade
   const [produtosSelecionados, setProdutosSelecionados] = useState<Map<number, ProdutoSelecionado>>(new Map());
+
+  // Extrair categorias únicas dos produtos disponíveis
+  const categoriasDisponiveis = useMemo(() => {
+    const categorias = new Set<string>();
+    produtosDisponiveis.forEach(p => {
+      if (p.categoria) {
+        categorias.add(p.categoria);
+      }
+    });
+    return Array.from(categorias).sort();
+  }, [produtosDisponiveis]);
+
+  // Produtos da categoria selecionada (não vinculados)
+  const produtosDaCategoria = useMemo(() => {
+    if (!categoriaSelecionada) return [];
+    return produtosDisponiveis.filter(p => p.categoria === categoriaSelecionada);
+  }, [produtosDisponiveis, categoriaSelecionada]);
 
   // Filter products by search term (minimum 2 characters)
   const produtosFiltrados = useMemo(() => {
@@ -127,6 +145,25 @@ export function MapearPorInsumoModal({
     setProdutosSelecionados(new Map());
   };
 
+  // Seleciona produtos da categoria selecionada
+  const selecionarPorCategoria = () => {
+    if (!categoriaSelecionada) return;
+    
+    const novaSeleção = new Map(produtosSelecionados);
+    produtosDaCategoria
+      .filter(p => !produtoJaVinculado(p))
+      .forEach(p => {
+        novaSeleção.set(p.cardapio_item_id, {
+          cardapio_item_id: p.cardapio_item_id,
+          cardapio_item_nome: p.cardapio_item_nome,
+          tipo: p.tipo,
+          categoria: p.categoria,
+          quantidade_consumida: 1,
+        });
+      });
+    setProdutosSelecionados(novaSeleção);
+  };
+
   // Seleciona apenas os filtrados
   const selecionarTodos = () => {
     const novaSeleção = new Map(produtosSelecionados);
@@ -179,6 +216,7 @@ export function MapearPorInsumoModal({
       setItemPorcionadoSelecionado('');
       setTermoBusca('');
       setProdutosSelecionados(new Map());
+      setCategoriaSelecionada('');
     }
     onOpenChange(newOpen);
   };
@@ -224,12 +262,34 @@ export function MapearPorInsumoModal({
 
           {/* Seleção em Massa - aparece quando item está selecionado */}
           {itemPorcionadoSelecionado && produtosDisponiveis.length > 0 && (
-            <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+            <div className="space-y-3 p-3 bg-muted/30 rounded-lg border">
+              {/* Contagem total */}
               <div className="text-sm">
                 <span className="font-medium">{produtosDisponiveis.filter(p => !produtoJaVinculado(p)).length}</span>
                 <span className="text-muted-foreground"> produtos disponíveis</span>
               </div>
-              <div className="flex gap-2">
+              
+              {/* Seletor de categoria */}
+              {categoriasDisponiveis.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm shrink-0">Categoria:</Label>
+                  <Select value={categoriaSelecionada} onValueChange={setCategoriaSelecionada}>
+                    <SelectTrigger className="flex-1 h-8">
+                      <SelectValue placeholder="Selecione uma categoria..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoriasDisponiveis.map(cat => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat} ({produtosDisponiveis.filter(p => p.categoria === cat && !produtoJaVinculado(p)).length})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              {/* Botões de ação */}
+              <div className="flex flex-wrap gap-2 justify-end">
                 {produtosSelecionados.size > 0 && (
                   <Button
                     variant="ghost"
@@ -241,6 +301,19 @@ export function MapearPorInsumoModal({
                     Limpar Seleção
                   </Button>
                 )}
+                
+                {categoriaSelecionada && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={selecionarPorCategoria}
+                    className="h-8"
+                  >
+                    <CheckSquare className="h-4 w-4 mr-1.5" />
+                    Selecionar Categoria ({produtosDaCategoria.filter(p => !produtoJaVinculado(p)).length})
+                  </Button>
+                )}
+                
                 <Button
                   variant={todosProdutosSelecionados ? "secondary" : "default"}
                   size="sm"
