@@ -690,6 +690,9 @@ Deno.serve(async (req) => {
               ideal_amanha: idealDoDia,
               // a_produzir é coluna GENERATED - calculada automaticamente pelo banco
               updated_at: agora,
+              // Identificação da origem (necessário para detecção no frontend realtime)
+              usuario_id: '00000000-0000-0000-0000-000000000000',
+              usuario_nome: 'Cardápio Web',
               // Campos de rastreamento Cardápio Web (auditoria)
               cardapio_web_baixa_total: novoTotalBaixas,
               cardapio_web_ultima_baixa_at: agora,
