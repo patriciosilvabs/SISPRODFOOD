@@ -1,50 +1,58 @@
 
-# Plano: Forçar Re-deploy da Edge Function cardapio-web-webhook
 
-## Diagnóstico Confirmado
+# Plano: Forçar Deploy com Modificação de Código
 
-A análise revelou que:
+## Diagnóstico Final
 
-1. **O código fonte está correto** - O arquivo `supabase/functions/cardapio-web-webhook/index.ts` tem `.limit(10000)` nas linhas 497 e 521
+Após investigação detalhada, confirmei que:
 
-2. **O deploy NÃO foi aplicado** - Os logs ainda mostram `802 produtos distintos, 1000 registros totais`
+1. **O código fonte está correto** com `.limit(10000)` nas linhas 497 e 521
+2. **Os mapeamentos estão corretos** - MILHO VERDE tem 3 mapeamentos (MASSA na posição 126, MUSSARELA na posição 266, NULL na posição 910)
+3. **Todos estão dentro do limite de 1000** - o problema NÃO é o limite em si
+4. **O deploy NÃO está sendo aplicado** - logs ainda mostram "1000 registros totais"
 
-3. **O mapeamento da MUSSARELA existe e está ativo** - ID `badb0a8c-4796-488a-a263-5fab66496684` com `ativo: true` e `item_porcionado_id` preenchido
-
-4. **A versão 87 está rodando mas com código antigo** - O deploy da correção `.limit(10000)` não foi efetivado
-
-### Logs que comprovam o bug:
+### Evidência nos Logs:
 ```
-📊 Mapeamentos carregados: 802 produtos distintos, 1000 registros totais
-[option] ✅ Atualizou contagem para MILHO VERDE (G) (MASSA)
-[option] Mapeamento para item 3543853 não tem item_porcionado_id configurado (NULL)
-← MUSSARELA NUNCA É MENCIONADA (está no registro 1052+)
+📊 Mapeamentos carregados: 761 produtos distintos, 1000 registros totais
+[option] ✅ Atualizou contagem para MILHO VERDE (G)  ← SÓ MASSA
+[option] Mapeamento para item 3543853 não tem item_porcionado_id configurado  ← SÓ NULL
+← MUSSARELA NUNCA PROCESSADA!
 ```
+
+O problema: mesmo que os 3 mapeamentos estejam dentro do limite de 1000, a versão deployada antiga não está carregando corretamente.
 
 ## Solução
 
-Forçar um novo deploy da edge function `cardapio-web-webhook`. O código já está correto, precisamos apenas garantir que a versão deployada corresponda ao código fonte.
+Fazer uma modificação cosmética no código para forçar um novo deploy e garantir que a versão correta seja aplicada.
 
-### Passos:
+## Modificação
 
-1. **Fazer um deploy manual** da edge function `cardapio-web-webhook`
+Adicionar um log de versão para rastrear qual versão está rodando:
 
-2. **Verificar nos logs** se agora mostra mais de 1000 registros
-
-3. **Testar** com um novo pedido de MILHO VERDE (G) e confirmar que tanto MASSA quanto MUSSARELA são decrementados
-
-## Resultado Esperado
-
-Após o deploy correto:
-
-| Item | Antes | Depois |
-|------|-------|--------|
-| Registros carregados | 1000 | 1264+ |
-| MASSA decrementada | ✅ | ✅ |
-| MUSSARELA decrementada | ❌ | ✅ |
+```typescript
+// Linha ~513 - após o log atual
+console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} produtos distintos, ${mapeamentos?.length || 0} registros totais`)
+console.log(`🔧 Versão do webhook: v2.1 - limit(10000) aplicado`)  // NOVO LOG
+```
 
 ## Arquivos
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/cardapio-web-webhook/index.ts` | Re-deploy (código já correto) |
+| `supabase/functions/cardapio-web-webhook/index.ts` | Adicionar log de versão para forçar deploy |
+
+## Resultado Esperado
+
+Após o deploy:
+
+1. Logs mostrarão `🔧 Versão do webhook: v2.1`
+2. Registros totais devem ser 1145 (não 1000)
+3. MILHO VERDE processará MASSA + MUSSARELA + pular NULL
+
+| Item | Antes | Depois |
+|------|-------|--------|
+| Versão | Antiga (sem log) | v2.1 |
+| Registros | 1000 | 1145+ |
+| MASSA | ✅ | ✅ |
+| MUSSARELA | ❌ | ✅ |
+
