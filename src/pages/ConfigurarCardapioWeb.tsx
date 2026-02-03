@@ -376,18 +376,22 @@ export default function ConfigurarCardapioWeb() {
     setAdicionarVinculoModalOpen(true);
   };
 
-  const handleAdicionarVinculo = async (itemPorcionadoId: string, quantidade: number) => {
+  const handleAdicionarVinculoMultiplo = async (vinculos: { itemPorcionadoId: string; quantidade: number }[]) => {
     if (!produtoSelecionado || !lojaIdMapeamento) return;
     
-    await adicionarVinculo.mutateAsync({
-      loja_id: lojaIdMapeamento,
-      cardapio_item_id: produtoSelecionado.cardapio_item_id,
-      cardapio_item_nome: produtoSelecionado.cardapio_item_nome,
-      tipo: produtoSelecionado.tipo,
-      categoria: produtoSelecionado.categoria,
-      item_porcionado_id: itemPorcionadoId,
-      quantidade_consumida: quantidade,
-    });
+    for (const vinculo of vinculos) {
+      await adicionarVinculo.mutateAsync({
+        loja_id: lojaIdMapeamento,
+        cardapio_item_id: produtoSelecionado.cardapio_item_id,
+        cardapio_item_nome: produtoSelecionado.cardapio_item_nome,
+        tipo: produtoSelecionado.tipo,
+        categoria: produtoSelecionado.categoria,
+        item_porcionado_id: vinculo.itemPorcionadoId,
+        quantidade_consumida: vinculo.quantidade,
+      });
+    }
+    
+    setAdicionarVinculoModalOpen(false);
   };
 
   const handleTestConnection = async (token: string) => {
@@ -1022,7 +1026,8 @@ export default function ConfigurarCardapioWeb() {
           onOpenChange={setAdicionarVinculoModalOpen}
           produtoNome={produtoSelecionado?.cardapio_item_nome || ''}
           itensPorcionados={itensPorcionados || []}
-          onConfirm={handleAdicionarVinculo}
+          vinculosExistentes={produtoSelecionado?.vinculos.filter(v => v.item_porcionado_id).map(v => v.item_porcionado_id!) || []}
+          onConfirm={handleAdicionarVinculoMultiplo}
           isLoading={adicionarVinculo.isPending}
         />
 
