@@ -195,13 +195,12 @@ const ContagemPorcionados = () => {
             return;
           }
           
-          // Se é baixa do Cardápio Web E usuário está editando, aplicar decremento no editingValues
+          // Se é baixa do Cardápio Web E usuário está editando, sincronizar com valor do banco
+          // O banco JÁ decrementou via webhook, então usamos updated.final_sobra diretamente
           if (currentEditing[key] && isCardapioWebBaixa) {
-            const sobraAtual = parseInt(currentEditing[key].final_sobra || '0');
-            const decremento = updated.cardapio_web_ultima_baixa_qtd || 0;
-            const novaSobra = Math.max(0, sobraAtual - decremento);
+            const novaSobra = updated.final_sobra ?? 0;
             
-            console.log(`📦 Realtime: Aplicando decremento Cardápio Web: ${sobraAtual} - ${decremento} = ${novaSobra}`);
+            console.log(`📦 Realtime: Sincronizando com valor do banco: ${novaSobra} (C.WEB: ${updated.cardapio_web_ultima_baixa_qtd})`);
             
             setEditingValues(prev => ({
               ...prev,
