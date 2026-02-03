@@ -1,48 +1,107 @@
 
-# Plano: Uniformizar Espaçamento Entre Colunas
+# Plano: Corrigir Sincronização Cardápio Web → SOBRA
 
 ## Problema Identificado
 
-As colunas têm larguras diferentes:
-- **SOBRA**: ~118px (2 botões de 40px + input de 56px)
-- **EST. IDEAL, C. WEB, PRODUZIR, LOTES**: min-w-[70px] (podem variar)
+Quando uma venda chega do Cardápio Web, o sistema **deveria** subtrair da coluna SOBRA (ex: 250 → 249). Porém, na situação atual:
 
-O CSS Grid com `gap-3` distribui o espaço restante de forma desigual quando as colunas têm tamanhos diferentes.
+1. Usuário clica em +/- → cria entrada em `editingValues`
+2. Webhook do Cardápio Web decrementa no banco (250 → 249)
+3. Realtime tenta atualizar a UI, mas **ignora** porque `editingValues[key]` existe
+4. Auto-save (800ms depois) salva o valor antigo (250) de volta ao banco
+5. O decremento do webhook é sobrescrito!
+
+**Resultado**: A coluna SOBRA permanece em 250 mesmo após 524 vendas do Cardápio Web.
 
 ## Solução
 
-Definir largura fixa para todas as colunas, garantindo que:
-1. Cada coluna ocupe exatamente o mesmo espaço
-2. O espaçamento entre elas seja uniforme
+Em vez de ignorar completamente as atualizações realtime quando há edição, devemos:
 
-### Mudanças no Arquivo: `src/components/contagem/ContagemItemCard.tsx`
+1. **Detectar se é uma baixa do Cardápio Web** (campo `cardapio_web_ultima_baixa_qtd` presente)
+2. **Aplicar o decremento no `editingValues`** para que o valor seja sincronizado
+3. Manter o bloqueio apenas para atualizações que NÃO são do Cardápio Web (evitar conflitos de edição simultânea)
 
-**1. Aumentar o gap entre colunas** (linha 128):
+## Mudanças Técnicas
+
+### Arquivo: `src/pages/ContagemPorcionados.tsx`
+
+**Linhas 174-226** - Modificar a lógica do handler realtime:
+
 ```tsx
-// ANTES
-<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1 lg:ml-6">
-
-// DEPOIS
-<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-6 flex-1 lg:ml-6">
+(payload) => {
+  const updated = payload.new as Contagem;
+  const key = `${updated.loja_id}-${updated.item_porcionado_id}`;
+  
+  // Verificar se é uma baixa do Cardápio Web
+  const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd && 
+                              updated.cardapio_web_ultima_baixa_qtd > 0 &&
+                              updated.usuario_nome === 'Cardápio Web';
+  
+  // Se o usuário está editando E NÃO é baixa do Cardápio Web, ignorar
+  if (editingValues[key] && !isCardapioWebBaixa) {
+    console.log(`🔒 Realtime: Item ${key} sendo editado, ignorando atualização remota`);
+    return;
+  }
+  
+  // Se é baixa do Cardápio Web E usuário está editando, aplicar decremento no editingValues
+  if (editingValues[key] && isCardapioWebBaixa) {
+    const sobraAtual = parseInt(editingValues[key].final_sobra || '0');
+    const decremento = updated.cardapio_web_ultima_baixa_qtd || 0;
+    const novaSobra = Math.max(0, sobraAtual - decremento);
+    
+    console.log(`📦 Realtime: Aplicando decremento Cardápio Web: ${sobraAtual} - ${decremento} = ${novaSobra}`);
+    
+    setEditingValues(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        final_sobra: String(novaSobra),
+      }
+    }));
+  }
+  
+  // Atualizar estado local (contagens)
+  setContagens(prev => {
+    // ... resto do código existente ...
+  });
+  
+  // Atualizar originalValues
+  setOriginalValues(prev => ({
+    ...prev,
+    [key]: {
+      final_sobra: String(updated.final_sobra ?? ''),
+      peso_total_g: String(updated.peso_total_g ?? ''),
+      ideal_amanha: updated.ideal_amanha,
+    }
+  }));
+  
+  // Mostrar toast se for baixa do Cardápio Web
+  if (isCardapioWebBaixa) {
+    const itemNome = itens.find(i => i.id === updated.item_porcionado_id)?.nome || 'Item';
+    toast.info(
+      `📦 Venda Cardápio Web: -${updated.cardapio_web_ultima_baixa_qtd} un de ${itemNome}`,
+      { duration: 4000 }
+    );
+  }
+}
 ```
-
-**2. Definir largura fixa para cada coluna** - adicionar `w-[120px]` em cada div de coluna:
-
-- Linha 130: `<div className="flex flex-col items-center w-[120px]">` (SOBRA)
-- Linha 172: `<div className="flex flex-col items-center w-[120px]">` (EST. IDEAL)
-- Linha 193: `<div className="flex flex-col items-center w-[120px]">` (C. WEB)
-- Linha 214: `<div className="flex flex-col items-center w-[120px]">` (PRODUZIR)
-- Linha 229: `<div className="flex flex-col items-center w-[120px]">` (LOTES)
 
 ## Resultado Esperado
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│  BACON - PORCIONADO    │   SOBRA   │  EST. IDEAL  │   C. WEB   │  PRODUZIR  │  LOTES   │
-│                        │←── 24px ──→←── 24px ────→←── 24px ───→←── 24px ───→│          │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
-                         ↑           ↑              ↑            ↑
-                              Espaçamento uniforme de 24px (gap-6)
+ANTES (bugado):
+┌─────────────────────────────────────────────────────┐
+│  SOBRA: 250  │  C. WEB: 524  │  (vendas ignoradas)  │
+└─────────────────────────────────────────────────────┘
+
+DEPOIS (corrigido):
+┌─────────────────────────────────────────────────────┐
+│  SOBRA: 0    │  C. WEB: 524  │  (decremento aplicado) │
+│  (ou 250-524=0, limitado a 0)                       │
+└─────────────────────────────────────────────────────┘
 ```
 
-Todas as colunas terão 120px de largura e 24px de espaçamento entre elas.
+A cada venda recebida do Cardápio Web:
+- Se SOBRA = 250 e vem 1 venda → SOBRA = 249
+- Se SOBRA = 250 e vem 50 vendas → SOBRA = 200
+- Se SOBRA = 10 e vem 50 vendas → SOBRA = 0 (nunca negativo)
