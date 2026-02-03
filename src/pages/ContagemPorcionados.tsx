@@ -175,18 +175,35 @@ const ContagemPorcionados = () => {
           const updated = payload.new as Contagem;
           const key = `${updated.loja_id}-${updated.item_porcionado_id}`;
           
-          // Só atualizar se o usuário NÃO estiver editando este item
-          // Isso evita sobrescrever valores que o usuário está digitando
-          if (editingValues[key]) {
+          // Verificar se é uma baixa do Cardápio Web
+          const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd && 
+                                      updated.cardapio_web_ultima_baixa_qtd > 0 &&
+                                      updated.usuario_nome === 'Cardápio Web';
+          
+          // Se o usuário está editando E NÃO é baixa do Cardápio Web, ignorar
+          if (editingValues[key] && !isCardapioWebBaixa) {
             console.log(`🔒 Realtime: Item ${key} sendo editado, ignorando atualização remota`);
             return;
           }
+          
+          // Se é baixa do Cardápio Web E usuário está editando, aplicar decremento no editingValues
+          if (editingValues[key] && isCardapioWebBaixa) {
+            const sobraAtual = parseInt(editingValues[key].final_sobra || '0');
+            const decremento = updated.cardapio_web_ultima_baixa_qtd || 0;
+            const novaSobra = Math.max(0, sobraAtual - decremento);
+            
+            console.log(`📦 Realtime: Aplicando decremento Cardápio Web: ${sobraAtual} - ${decremento} = ${novaSobra}`);
+            
+            setEditingValues(prev => ({
+              ...prev,
+              [key]: {
+                ...prev[key],
+                final_sobra: String(novaSobra),
+              }
+            }));
+          }
 
-          // Verificar se é uma baixa do Cardápio Web (tem cardapio_web_ultima_baixa_qtd)
-          const isCardapioWebBaixa = updated.cardapio_web_ultima_baixa_qtd && 
-                                      updated.cardapio_web_ultima_baixa_qtd > 0;
-
-          // Atualizar estado local
+          // Atualizar estado local (contagens)
           setContagens(prev => {
             const lojaContagens = [...(prev[updated.loja_id] || [])];
             const index = lojaContagens.findIndex(
@@ -206,7 +223,7 @@ const ContagemPorcionados = () => {
             return { ...prev, [updated.loja_id]: lojaContagens };
           });
 
-          // Atualizar originalValues para evitar "dirty state" falso
+          // Atualizar originalValues para sincronizar estado
           setOriginalValues(prev => ({
             ...prev,
             [key]: {
