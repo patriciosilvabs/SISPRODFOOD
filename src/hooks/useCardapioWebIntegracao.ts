@@ -478,33 +478,43 @@ export function useCardapioWebIntegracao() {
   });
 
   // Mutation: Import mappings in batch (creates base records without item_porcionado_id)
-  // Strategy: Delete all unlinked mappings for this store, then insert new ones
-  // This prevents duplicates caused by NULL item_porcionado_id not matching in UNIQUE constraint
+  // Strategy: ADDITIVE - only insert NEW items that don't exist yet
+  // This preserves existing mappings and their linked items
   const importarMapeamentos = useMutation({
     mutationFn: async ({ loja_id, items }: { loja_id: string; items: ImportarMapeamentoItem[] }) => {
       if (!organizationId) throw new Error('Organização não encontrada');
       
       // Step 1: Deduplicate items by codigo_interno (cardapio_item_id)
-      // If duplicates exist, keep only the last one (overwrites)
+      // If duplicates exist, keep only the last one
       const itemsUnicos = new Map<number, ImportarMapeamentoItem>();
       for (const item of items) {
         itemsUnicos.set(item.codigo_interno, item);
       }
       const itemsDeduplicados = Array.from(itemsUnicos.values());
       
-      // Step 2: Delete all unlinked mappings (item_porcionado_id IS NULL) for this store
-      // This ensures re-importing won't create duplicates
-      const { error: deleteError } = await supabase
+      // Step 2: Query existing cardapio_item_ids for this store
+      const { data: existentes, error: queryError } = await supabase
         .from('mapeamento_cardapio_itens')
-        .delete()
+        .select('cardapio_item_id')
         .eq('organization_id', organizationId)
-        .eq('loja_id', loja_id)
-        .is('item_porcionado_id', null);
+        .eq('loja_id', loja_id);
       
-      if (deleteError) throw deleteError;
+      if (queryError) throw queryError;
       
-      // Step 3: Insert deduplicated mappings
-      const mappings = itemsDeduplicados.map(item => ({
+      const codigosExistentes = new Set(existentes?.map(e => e.cardapio_item_id) || []);
+      
+      // Step 3: Filter only NEW items (that don't exist yet)
+      const itensNovos = itemsDeduplicados.filter(
+        item => !codigosExistentes.has(item.codigo_interno)
+      );
+      
+      // If no new items, return early with info
+      if (itensNovos.length === 0) {
+        return { inseridos: 0, jaExistiam: itemsDeduplicados.length };
+      }
+      
+      // Step 4: Insert only the new items
+      const mappings = itensNovos.map(item => ({
         organization_id: organizationId,
         loja_id,
         cardapio_item_id: item.codigo_interno,
@@ -522,11 +532,22 @@ export function useCardapioWebIntegracao() {
         .select();
       
       if (error) throw error;
-      return data;
+      
+      return { 
+        inseridos: data.length, 
+        jaExistiam: itemsDeduplicados.length - itensNovos.length 
+      };
     },
-    onSuccess: (data) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['cardapio-web-mapeamentos'] });
-      toast.success(`${data.length} itens importados com sucesso!`);
+      
+      if (result.inseridos === 0) {
+        toast.info(`Todos os ${result.jaExistiam} itens já existiam no mapeamento`);
+      } else if (result.jaExistiam > 0) {
+        toast.success(`${result.inseridos} novos itens adicionados! (${result.jaExistiam} já existiam)`);
+      } else {
+        toast.success(`${result.inseridos} itens importados com sucesso!`);
+      }
     },
     onError: (error) => {
       console.error('Erro ao importar mapeamentos:', error);
