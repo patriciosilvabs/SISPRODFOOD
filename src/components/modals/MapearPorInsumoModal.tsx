@@ -105,6 +105,29 @@ export function MapearPorInsumoModal({
     });
   };
 
+  // Seleciona TODOS os produtos disponíveis (não apenas filtrados)
+  const selecionarTodosProdutos = () => {
+    const novaSeleção = new Map<number, ProdutoSelecionado>();
+    produtosDisponiveis
+      .filter(p => !produtoJaVinculado(p))
+      .forEach(p => {
+        novaSeleção.set(p.cardapio_item_id, {
+          cardapio_item_id: p.cardapio_item_id,
+          cardapio_item_nome: p.cardapio_item_nome,
+          tipo: p.tipo,
+          categoria: p.categoria,
+          quantidade_consumida: 1,
+        });
+      });
+    setProdutosSelecionados(novaSeleção);
+  };
+
+  // Limpa toda a seleção
+  const limparSelecao = () => {
+    setProdutosSelecionados(new Map());
+  };
+
+  // Seleciona apenas os filtrados
   const selecionarTodos = () => {
     const novaSeleção = new Map(produtosSelecionados);
     produtosFiltrados
@@ -128,6 +151,12 @@ export function MapearPorInsumoModal({
     produtosFiltrados.forEach(p => novaSeleção.delete(p.cardapio_item_id));
     setProdutosSelecionados(novaSeleção);
   };
+
+  // Verifica se todos os produtos disponíveis estão selecionados
+  const todosProdutosSelecionados = useMemo(() => {
+    const disponiveis = produtosDisponiveis.filter(p => !produtoJaVinculado(p));
+    return disponiveis.length > 0 && disponiveis.every(p => produtosSelecionados.has(p.cardapio_item_id));
+  }, [produtosDisponiveis, produtosSelecionados, itemPorcionadoSelecionado]);
 
   const handleConfirm = async () => {
     if (!itemPorcionadoSelecionado || produtosSelecionados.size === 0) return;
@@ -190,16 +219,49 @@ export function MapearPorInsumoModal({
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+          </Select>
           </div>
+
+          {/* Seleção em Massa - aparece quando item está selecionado */}
+          {itemPorcionadoSelecionado && produtosDisponiveis.length > 0 && (
+            <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+              <div className="text-sm">
+                <span className="font-medium">{produtosDisponiveis.filter(p => !produtoJaVinculado(p)).length}</span>
+                <span className="text-muted-foreground"> produtos disponíveis</span>
+              </div>
+              <div className="flex gap-2">
+                {produtosSelecionados.size > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={limparSelecao}
+                    className="h-8 text-xs"
+                  >
+                    <Square className="h-3.5 w-3.5 mr-1.5" />
+                    Limpar Seleção
+                  </Button>
+                )}
+                <Button
+                  variant={todosProdutosSelecionados ? "secondary" : "default"}
+                  size="sm"
+                  onClick={selecionarTodosProdutos}
+                  disabled={todosProdutosSelecionados}
+                  className="h-8"
+                >
+                  <CheckSquare className="h-4 w-4 mr-1.5" />
+                  Selecionar Todos
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Search Products */}
           <div className="space-y-2">
-            <Label>Buscar produtos</Label>
+            <Label>Buscar produtos (opcional)</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Digite pelo menos 2 caracteres..."
+                placeholder="Digite para filtrar..."
                 value={termoBusca}
                 onChange={(e) => setTermoBusca(e.target.value)}
                 className="pl-9"
