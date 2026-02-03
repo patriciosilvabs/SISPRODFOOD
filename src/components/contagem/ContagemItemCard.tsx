@@ -99,13 +99,13 @@ export const ContagemItemCard = ({
 
   return (
     <div 
-      className={`flex flex-col md:flex-row md:items-center gap-3 p-4 
+      className={`flex flex-col lg:flex-row lg:items-center gap-3 p-4 
                   border-2 rounded-xl shadow-sm
                   border-l-4 transition-all
                   ${getCardClasses()}`}
     >
-      {/* Nome e Status */}
-      <div className="flex-1 min-w-0">
+      {/* Área do Nome (lado esquerdo) */}
+      <div className="flex-shrink-0 lg:min-w-[200px] lg:max-w-[250px]">
         {lojaNome && (
           <p className="text-xs text-primary font-medium mb-0.5">{lojaNome}</p>
         )}
@@ -113,7 +113,7 @@ export const ContagemItemCard = ({
           {campoTocado && (
             <CheckCircle className="h-4 w-4 text-success shrink-0" />
           )}
-          <span className="font-semibold text-sm uppercase tracking-wide text-gray-900 dark:text-gray-100 truncate">
+          <span className="font-semibold text-sm uppercase tracking-wide text-foreground truncate">
             {item.nome}
           </span>
         </div>
@@ -124,22 +124,22 @@ export const ContagemItemCard = ({
         )}
       </div>
 
-      {/* Controles de Sobra e Peso */}
-      <div className="flex items-center gap-4 flex-wrap">
-      {/* Controle de Quantidade com Label */}
+      {/* Grid de Colunas Fixas */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-3 flex-1">
+        {/* SOBRA */}
         <div className="flex flex-col items-center">
-          <span className="text-[10px] text-blue-600 dark:text-blue-400 uppercase tracking-wide font-medium mb-1">
-            Sobra
+          <span className="text-[10px] text-primary uppercase tracking-wide font-medium mb-1">
+            SOBRA
           </span>
           <div className="flex items-center">
             <Button 
               type="button"
               variant="default" 
               size="icon" 
-              className="h-12 w-12 rounded-l-xl rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+              className="h-10 w-10 rounded-l-lg rounded-r-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
               {...decrementHandlers}
             >
-              <Minus className="h-5 w-5" />
+              <Minus className="h-4 w-4" />
             </Button>
             <input
               type="text"
@@ -147,101 +147,114 @@ export const ContagemItemCard = ({
               pattern="[0-9]*"
               value={finalSobra}
               onChange={(e) => {
-                // Apenas números positivos - sobra física não pode ser negativa
                 const val = e.target.value.replace(/\D/g, '');
                 onSobraChange(val === '' ? 0 : parseInt(val, 10));
               }}
-              className={`h-12 w-16 text-center text-xl font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
+              className={`h-10 w-14 text-center text-lg font-bold border-y-2 focus:outline-none focus:ring-2 focus:ring-primary ${
                 isItemNaoPreenchido 
                   ? 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border-amber-400' 
-                  : 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-blue-500'
+                  : 'bg-background text-primary border-primary'
               }`}
             />
             <Button 
               type="button"
               variant="default" 
               size="icon" 
-              className="h-12 w-12 rounded-r-xl rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
+              className="h-10 w-10 rounded-r-lg rounded-l-none bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm select-none"
               {...incrementHandlers}
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        {/* Coluna Ideal - sempre visível */}
-        <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border-2 min-w-[80px] ${
-          idealFromConfig === 0 
-            ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400' 
-            : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-        }`}>
-          <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Ideal ({currentDayLabel})
+        {/* EST. IDEAL */}
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">
+            EST. IDEAL
           </span>
-          {idealFromConfig === 0 ? (
-            <span className="text-xs flex items-center gap-0.5">
-              <AlertTriangle className="h-3 w-3" />
-              N/C
-            </span>
-          ) : (
-            <span className="text-base font-bold text-gray-900 dark:text-gray-100">{idealFromConfig}</span>
-          )}
+          <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center border ${
+            idealFromConfig === 0 
+              ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700' 
+              : 'bg-muted border-border'
+          }`}>
+            {idealFromConfig === 0 ? (
+              <span className="text-sm flex items-center justify-center gap-1 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-3 w-3" />
+                N/C
+              </span>
+            ) : (
+              <span className="text-lg font-bold text-foreground">{idealFromConfig}</span>
+            )}
+          </div>
         </div>
 
-        {/* Coluna Cardápio Web - mostra baixas automáticas */}
-        {cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0 && (
-          <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[100px] 
-                          bg-violet-100 dark:bg-violet-900/50 border border-violet-300 dark:border-violet-700">
-            <span className="text-[10px] uppercase tracking-wide text-violet-600 dark:text-violet-400 flex items-center gap-1">
-              <Smartphone className="h-3 w-3" />
-              Cardápio Web
-            </span>
-            {cardapioWebUltimaBaixaAt && cardapioWebUltimaBaixaQtd && (
-              <span className="text-sm font-bold text-violet-700 dark:text-violet-300">
-                -{cardapioWebUltimaBaixaQtd} às {format(new Date(cardapioWebUltimaBaixaAt), 'HH:mm')}
-              </span>
-            )}
-            <span className="text-[10px] text-violet-500 dark:text-violet-400">
-              Total: -{cardapioWebBaixaTotal} un hoje
+        {/* C. WEB - sempre visível */}
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1 flex items-center gap-1">
+            <Smartphone className="h-3 w-3" />
+            C. WEB
+          </span>
+          <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center border ${
+            cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0
+              ? 'bg-violet-100 dark:bg-violet-900/50 border-violet-300 dark:border-violet-700'
+              : 'bg-muted border-border'
+          }`}>
+            <span className={`text-lg font-bold ${
+              cardapioWebBaixaTotal && cardapioWebBaixaTotal > 0
+                ? 'text-violet-700 dark:text-violet-300'
+                : 'text-muted-foreground'
+            }`}>
+              {cardapioWebBaixaTotal || 0}
             </span>
           </div>
-        )}
-
-        {/* Saldo Atual removido - final_sobra (botão azul) agora reflete o estoque virtual */}
-
-        {/* A Produzir - SEMPRE VISÍVEL para todos */}
-        <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[80px] ${
-          aProduzir > 0 
-            ? 'bg-amber-500 dark:bg-amber-600 text-white' 
-            : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-        }`}>
-          <span className="text-[10px] uppercase tracking-wide opacity-80">A Produzir</span>
-          <span className="text-base font-bold">{aProduzir}</span>
         </div>
 
-        {/* Lotes Necessários - apenas para itens lote_masseira */}
-        {isLoteMasseira && lotesNecessarios > 0 && (
-          <div className="flex flex-col items-center justify-center px-3 py-2 rounded-xl min-w-[70px] bg-blue-500 dark:bg-blue-600 text-white">
-            <span className="text-[10px] uppercase tracking-wide opacity-80 flex items-center gap-1">
+        {/* PRODUZIR */}
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">
+            PRODUZIR
+          </span>
+          <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center ${
+            aProduzir > 0 
+              ? 'bg-amber-500 dark:bg-amber-600 text-white' 
+              : 'bg-muted border border-border text-muted-foreground'
+          }`}>
+            <span className="text-lg font-bold">{aProduzir}</span>
+          </div>
+        </div>
+
+        {/* LOTES - condicional para itens lote_masseira */}
+        {isLoteMasseira && (
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1 flex items-center gap-1">
               <Layers className="h-3 w-3" />
-              Lotes
+              LOTES
             </span>
-            <span className="text-base font-bold">{lotesNecessarios}</span>
+            <div className={`rounded-lg px-4 py-2 min-w-[70px] text-center ${
+              lotesNecessarios > 0 
+                ? 'bg-blue-500 dark:bg-blue-600 text-white' 
+                : 'bg-muted border border-border text-muted-foreground'
+            }`}>
+              <span className="text-lg font-bold">{lotesNecessarios}</span>
+            </div>
           </div>
         )}
 
         {/* Botão Produção Extra */}
         {showProducaoExtra && onSolicitarProducaoExtra && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onSolicitarProducaoExtra}
-            className="h-10 gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
-          >
-            <TrendingUp className="h-4 w-4" />
-            <span className="hidden sm:inline">Extra</span>
-          </Button>
+          <div className="flex flex-col items-center justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onSolicitarProducaoExtra}
+              className="h-10 gap-1.5 text-primary border-primary/30 hover:bg-primary/10"
+            >
+              <TrendingUp className="h-4 w-4" />
+              <span className="hidden sm:inline">Extra</span>
+            </Button>
+          </div>
         )}
       </div>
     </div>
