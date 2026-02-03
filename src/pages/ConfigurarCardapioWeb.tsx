@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight, CheckSquare, FolderTree } from 'lucide-react';
 import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +24,7 @@ import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/comp
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
 import { VincularEmLoteModal } from '@/components/modals/VincularEmLoteModal';
 import { LojaIntegracaoCard } from '@/components/cardapio-web/LojaIntegracaoCard';
+import { CategoriaRegraTab } from '@/components/cardapio-web/CategoriaRegraTab';
 
 // Row component for mapeamento table
 interface MapeamentoTableRowProps {
@@ -482,6 +483,10 @@ export default function ConfigurarCardapioWeb() {
             <TabsTrigger value="logs" className="flex items-center gap-2">
               <History className="h-4 w-4" />
               Logs
+            </TabsTrigger>
+            <TabsTrigger value="categorias" className="flex items-center gap-2">
+              <FolderTree className="h-4 w-4" />
+              Regras por Categoria
             </TabsTrigger>
           </TabsList>
 
@@ -958,6 +963,15 @@ export default function ConfigurarCardapioWeb() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+          {/* Categorias Tab */}
+          <TabsContent value="categorias" className="space-y-4">
+            <CategoriaRegraTab
+              lojaId={lojaIdMapeamento}
+              lojasParaMapeamento={lojasParaMapeamento}
+              itensPorcionados={itensPorcionados || []}
+              onLojaChange={setLojaIdMapeamento}
+            />
           </TabsContent>
         </Tabs>
 

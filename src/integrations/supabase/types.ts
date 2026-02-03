@@ -1828,6 +1828,64 @@ export type Database = {
           },
         ]
       }
+      mapeamento_cardapio_categorias: {
+        Row: {
+          ativo: boolean
+          categoria: string
+          created_at: string | null
+          id: string
+          item_porcionado_id: string
+          loja_id: string | null
+          organization_id: string
+          quantidade_consumida: number
+          tipo: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          categoria: string
+          created_at?: string | null
+          id?: string
+          item_porcionado_id: string
+          loja_id?: string | null
+          organization_id: string
+          quantidade_consumida?: number
+          tipo?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          categoria?: string
+          created_at?: string | null
+          id?: string
+          item_porcionado_id?: string
+          loja_id?: string | null
+          organization_id?: string
+          quantidade_consumida?: number
+          tipo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mapeamento_cardapio_categorias_item_porcionado_id_fkey"
+            columns: ["item_porcionado_id"]
+            isOneToOne: false
+            referencedRelation: "itens_porcionados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapeamento_cardapio_categorias_loja_id_fkey"
+            columns: ["loja_id"]
+            isOneToOne: false
+            referencedRelation: "lojas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapeamento_cardapio_categorias_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mapeamento_cardapio_itens: {
         Row: {
           ativo: boolean
