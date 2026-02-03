@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight, CheckSquare, FolderTree } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, XCircle, Loader2, Settings, List, History, Upload, Link2, Store, LayoutGrid, ChevronDown, ChevronRight, CheckSquare, FolderTree, ClipboardPaste } from 'lucide-react';
 import { useCardapioWebIntegracao, type ImportarMapeamentoItem, type MapeamentoCardapioItemAgrupado } from '@/hooks/useCardapioWebIntegracao';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQuery } from '@tanstack/react-query';
@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ImportarMapeamentoCardapioModal, type ParsedCardapioItem } from '@/components/modals/ImportarMapeamentoCardapioModal';
+import { ImportarTextoCardapioModal } from '@/components/modals/ImportarTextoCardapioModal';
 import { AdicionarVinculoCardapioModal } from '@/components/modals/AdicionarVinculoCardapioModal';
 import { VincularEmLoteModal } from '@/components/modals/VincularEmLoteModal';
 import { MapearPorInsumoModal } from '@/components/modals/MapearPorInsumoModal';
@@ -197,6 +198,7 @@ export default function ConfigurarCardapioWeb() {
 
   const [novoMapeamentoOpen, setNovoMapeamentoOpen] = useState(false);
   const [importarModalOpen, setImportarModalOpen] = useState(false);
+  const [importarTextoModalOpen, setImportarTextoModalOpen] = useState(false);
   const [adicionarVinculoModalOpen, setAdicionarVinculoModalOpen] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState<MapeamentoCardapioItemAgrupado | null>(null);
   const [lojaIdMapeamento, setLojaIdMapeamento] = useState<string>('');
@@ -664,6 +666,10 @@ export default function ConfigurarCardapioWeb() {
                     <Link2 className="h-4 w-4 mr-2" />
                     Mapear por Insumo
                   </Button>
+                  <Button variant="outline" onClick={() => setImportarTextoModalOpen(true)} disabled={!lojaIdMapeamento}>
+                    <ClipboardPaste className="h-4 w-4 mr-2" />
+                    Colar Texto
+                  </Button>
                   <Button variant="outline" onClick={() => setImportarModalOpen(true)} disabled={!lojaIdMapeamento}>
                     <Upload className="h-4 w-4 mr-2" />
                     Importar Arquivo
@@ -1033,10 +1039,18 @@ export default function ConfigurarCardapioWeb() {
           </TabsContent>
         </Tabs>
 
-        {/* Modal de importação */}
+        {/* Modal de importação via arquivo */}
         <ImportarMapeamentoCardapioModal
           open={importarModalOpen}
           onOpenChange={setImportarModalOpen}
+          onImport={handleImportarMapeamentos}
+          isLoading={importarMapeamentos.isPending}
+        />
+
+        {/* Modal de importação via texto */}
+        <ImportarTextoCardapioModal
+          open={importarTextoModalOpen}
+          onOpenChange={setImportarTextoModalOpen}
           onImport={handleImportarMapeamentos}
           isLoading={importarMapeamentos.isPending}
         />
