@@ -65,6 +65,14 @@ interface MapeamentoItem {
   cardapio_item_nome: string;
   item_porcionado_id: string;
   quantidade_consumida: number;
+  categoria?: string | null;
+}
+
+interface MapeamentoCategoria {
+  categoria: string;
+  tipo: string | null;
+  item_porcionado_id: string;
+  quantidade_consumida: number;
 }
 
 // Status que devemos processar
@@ -478,7 +486,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 6. Get mappings for this organization
+    // 6. Get mappings for this organization (specific items)
     const { data: mapeamentos, error: mapError } = await supabase
       .from('mapeamento_cardapio_itens')
       .select('*')
@@ -490,7 +498,7 @@ Deno.serve(async (req) => {
       throw new Error('Failed to fetch mappings')
     }
 
-    // Create a map for quick lookup
+    // Create a map for quick lookup by item_id
     const mapeamentoMap = new Map<number, MapeamentoItem[]>()
     for (const m of (mapeamentos || []) as MapeamentoItem[]) {
       if (!mapeamentoMap.has(m.cardapio_item_id)) {
@@ -498,6 +506,29 @@ Deno.serve(async (req) => {
       }
       mapeamentoMap.get(m.cardapio_item_id)!.push(m)
     }
+
+    // 6b. Get category mappings for fallback
+    const { data: mapeamentosCategorias, error: catMapError } = await supabase
+      .from('mapeamento_cardapio_categorias')
+      .select('*')
+      .eq('organization_id', organization_id)
+      .eq('ativo', true)
+
+    if (catMapError) {
+      console.error('Erro ao buscar mapeamentos por categoria:', catMapError)
+      // Continue without category mappings (non-critical)
+    }
+
+    // Create a map for quick lookup by categoria
+    const categoriaMapeamentoMap = new Map<string, MapeamentoCategoria[]>()
+    for (const m of (mapeamentosCategorias || []) as MapeamentoCategoria[]) {
+      if (!categoriaMapeamentoMap.has(m.categoria)) {
+        categoriaMapeamentoMap.set(m.categoria, [])
+      }
+      categoriaMapeamentoMap.get(m.categoria)!.push(m)
+    }
+    
+    console.log(`📊 Mapeamentos carregados: ${mapeamentoMap.size} específicos, ${categoriaMapeamentoMap.size} categorias`)
 
     // 7. Get today's date in São Paulo timezone
     const today = new Date()
@@ -542,16 +573,37 @@ Deno.serve(async (req) => {
     }
 
     // Helper function to process a single item (main or option)
+    // Now with categoria fallback support
     const processItem = async (
       itemId: number,
       itemName: string,
       quantity: number,
-      sourceType: 'main' | 'option'
+      sourceType: 'main' | 'option',
+      categoria?: string | null
     ): Promise<{ item_porcionado_id: string; quantidade_baixada: number }[]> => {
-      const mappings = mapeamentoMap.get(itemId)
+      // 1. First try specific mapping by item_id
+      let mappings = mapeamentoMap.get(itemId)
+      let usedFallback = false
+      
+      // 2. If no specific mapping, try category fallback
+      if ((!mappings || mappings.length === 0 || !mappings.some(m => m.item_porcionado_id)) && categoria) {
+        const categoryMappings = categoriaMapeamentoMap.get(categoria)
+        if (categoryMappings && categoryMappings.length > 0) {
+          // Convert category mappings to the same format as item mappings
+          mappings = categoryMappings.map(cm => ({
+            cardapio_item_id: itemId,
+            cardapio_item_nome: itemName,
+            item_porcionado_id: cm.item_porcionado_id,
+            quantidade_consumida: cm.quantidade_consumida,
+            categoria: categoria
+          }))
+          usedFallback = true
+          console.log(`[${sourceType}] 📂 Usando mapeamento por CATEGORIA "${categoria}" para item ${itemId} (${itemName})`)
+        }
+      }
       
       if (!mappings || mappings.length === 0) {
-        console.log(`[${sourceType}] Item ${itemId} (${itemName}) não tem mapeamento configurado`)
+        console.log(`[${sourceType}] Item ${itemId} (${itemName}) não tem mapeamento específico nem por categoria${categoria ? ` (categoria: ${categoria})` : ''}`)
         return []
       }
 
@@ -666,7 +718,11 @@ Deno.serve(async (req) => {
       const allItensBaixados: { item_porcionado_id: string; quantidade_baixada: number }[] = []
 
       // Process main item
-      const mainItemBaixados = await processItem(item.item_id, item.name, item.quantity, 'main')
+      // Get categoria from the specific mapping if it exists (for main item)
+      const mainItemMapping = mapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === item.item_id)
+      const mainItemCategoria = mainItemMapping?.categoria || null
+      
+      const mainItemBaixados = await processItem(item.item_id, item.name, item.quantity, 'main', mainItemCategoria)
       allItensBaixados.push(...mainItemBaixados)
 
       // Process options (sabores, massas, etc) - CardápioWeb usa 'options' com option_id
@@ -678,11 +734,16 @@ Deno.serve(async (req) => {
           const optionId = option.option_id
           
           if (optionId && !isNaN(optionId)) {
+            // Get categoria from the specific mapping OR use option_group_name as categoria fallback
+            const optionMapping = mapeamentos?.find((m: MapeamentoItem) => m.cardapio_item_id === optionId)
+            const optionCategoria = optionMapping?.categoria || option.option_group_name || null
+            
             const optionBaixados = await processItem(
               optionId, 
               option.name, 
               item.quantity * (option.quantity || 1), // Multiply by item quantity
-              'option'
+              'option',
+              optionCategoria
             )
             allItensBaixados.push(...optionBaixados)
           } else {
